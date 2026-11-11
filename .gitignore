@@ -1,0 +1,42 @@
+# 忽略规则
+# 构建产物
+target/
+dist/
+build/
+node_modules/
+*.o
+*.so
+*.dylib
+*.dll
+*.wasm.tmp
+__pycache__/
+.venv/
+*.pyc
+
+# 运行期
+*.log
+*.pcap
+*.pcapng
+*.trace
+/tmp/
+/.cache/
+/run/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 会话临时脚本（不属于项目）
+.dsh_*
+.ssh_known_hosts
+.tech-selection-lead-backup.md
+
+# 其他项目的讨论稿（不属于本仓库）
+ai-team-*.md
+
+# 本地覆盖
+.env
+.env.local
+*.local.md
