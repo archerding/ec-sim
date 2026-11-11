@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-11-12（人工会话）— 仓库迁移到 D 盘
+
+**做了什么**
+- 按用户要求把 EC-Sim 仓库迁到 `D:\tokengence.ai\ec-sim`：以 `git clone` 方式复制，3 个提交与 `DeepSeek Harness` 作者身份完整保留，远端配置已移除。
+- 旧工作区 `<legacy-workspace>` 保留为历史副本（**并行会话的 `<other-project>/` 项目仍在其中活跃写入，未触碰**）。
+
+**验证结果**
+- 新仓库 `git log` 三提交一致；`git status` 干净；身份 `DeepSeek Harness <deepseek-harness@users.noreply.github.com>`。
+
+**卡点**
+- 本会话（以及定时任务创建的会话）**沙箱工作区根仍是 C 盘**，无法直接写 D 盘（每次写需审批）。夜班任务已暂停，待以 `D:\tokengence.ai\ec-sim` 为工作目录新建会话后重建。
+
+**下次开工第一件事**
+- 在新工作区会话里恢复定时任务；代码任务仍从 **B1（Rust workspace 骨架）** 或 **B2b（最小 ESC 应答器）** 开始。
+
+---
 ## 2026-11-12（人工会话，非自动）— 服务器与线缆层验收到位
 
 **做了什么**
