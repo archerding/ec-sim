@@ -89,6 +89,6 @@ tests-gpl/      只跑 GPL 主站的夹具（独立目录、独立许可、不�
 - `ssh root@<LINUX-HOST>`（已免密；**自 2026-11-12 起为本项目专用机**，用户授权可自由改造）。
 - 现状：Linux / kernel 6.x / 8 核 / 15G；Rust、gcc/cmake、**IgH 1.6.13（已构建并验证）**、**SOEM（已构建并验证）**、TAP/AF_PACKET 全部可用。
 - 细节、踩坑记录、重建清单：**[docs/LINUX-SERVER.md](docs/LINUX-SERVER.md)**（改动机器前必读）。
-- **网络限制**：GitHub 不可达。IgH 走 gitlab；GitHub 仓库走 gitee 镜像或 `https://ghproxy.net/https://github.com/...`。
+- **网络**：直连 GitHub 不通，但本机有代理 `<PROXY>`，服务器通过 SSH 反向隧道复用。完整用法、已验证命令与兜底镜像：**[docs/NETWORK.md](docs/NETWORK.md)**（遇到网络失败先看它）。
 - 服务器实验目录：`<LINUX-WORKDIR>/`（`work/` 放脚本、`fixtures/` 放 IgH/SOEM 源码、`igh/` 是安装前缀）。
 - 需要 Linux 能力（TAP/AF_PACKET/SOEM/IgH）的验证**一律在服务器上做**，把命令与关键输出写进 WORKLOG；不要把 IgH/SOEM 源码或二进制提交进本仓库。
