@@ -40,3 +40,6 @@ ai-team-*.md
 .env
 .env.local
 *.local.md
+
+# 本地运维/凭据（服务器、代理等，禁止入库）
+.local/

@@ -66,7 +66,7 @@ HOLDER_FRAME #1 len=60 cmd=0x07 head=ffffffffffff02ec514d000188a40e1007000000300
 
 1. **网络级方案（Linux TAP）在 IgH 与 SOEM 上都成立**，且不需要改主站一行代码 —— "未修改的主站开箱即用"这个核心卖点有了硬证据。
 2. IgH 侧待补的是**从站应答**（否则每帧 timeout）；这正是 M1 的第一目标：让主站看到 ≥1 个从站。
-3. 运行注意：IgH 模块加载顺序（先 `ec_master main_devices=<MAC>` 再 `ec_generic`）、`make modules`、参数只在首次加载生效 —— 详见 [docs/LINUX-SERVER.md](../LINUX-SERVER.md) §5。
+3. 运行注意：IgH 模块加载顺序（先 `ec_master main_devices=<MAC>` 再 `ec_generic`）、`make modules`、参数只在首次加载生效 —— 详见本地 `.local/ops.md`。
 
 ## 下一步
 

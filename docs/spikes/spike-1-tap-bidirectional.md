@@ -4,7 +4,7 @@
 - **假设**：用户态进程持有 L2 TAP 设备（`IFF_TAP|IFF_NO_PI`）时，可以与主站侧的 AF_PACKET 原始套接字双向交换 EtherCAT 帧。
 - **结论**：✅ **成立**。两个方向逐字节一致。
 - **脚本**：[scripts/spikes/tap_ethernet_loopback.py](../../scripts/spikes/tap_ethernet_loopback.py)
-- **环境**：Linux / kernel 6.x / root（见 [docs/LINUX-SERVER.md](../LINUX-SERVER.md)）
+- **环境**：Linux x86_64（内核 6.x，root）
 
 ## 方法
 

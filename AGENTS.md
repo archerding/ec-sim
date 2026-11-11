@@ -84,11 +84,9 @@ tests/          跨 crate 集成测试（不含 GPL 夹具）
 tests-gpl/      只跑 GPL 主站的夹具（独立目录、独立许可、不进发行物）
 ```
 
-## 8. 专用 Linux 验证机
+## 8. 运行环境（不入库）
 
-- `ssh root@<LINUX-HOST>`（已免密；**自 2026-11-12 起为本项目专用机**，用户授权可自由改造）。
-- 现状：Linux / kernel 6.x / 8 核 / 15G；Rust、gcc/cmake、**IgH 1.6.13（已构建并验证）**、**SOEM（已构建并验证）**、TAP/AF_PACKET 全部可用。
-- 细节、踩坑记录、重建清单：**[docs/LINUX-SERVER.md](docs/LINUX-SERVER.md)**（改动机器前必读）。
-- **网络**：直连 GitHub 不通，但本机有代理 `<PROXY>`，服务器通过 SSH 反向隧道复用。完整用法、已验证命令与兜底镜像：**[docs/NETWORK.md](docs/NETWORK.md)**（遇到网络失败先看它）。
-- 服务器实验目录：`<LINUX-WORKDIR>/`（`work/` 放脚本、`fixtures/` 放 IgH/SOEM 源码、`igh/` 是安装前缀）。
-- 需要 Linux 能力（TAP/AF_PACKET/SOEM/IgH）的验证**一律在服务器上做**，把命令与关键输出写进 WORKLOG；不要把 IgH/SOEM 源码或二进制提交进本仓库。
+- 服务器地址、账号、代理、端口等**运维信息不写入仓库**（本仓库后续会开源），统一放在本地 `.local/ops.md`（已被 `.gitignore` 排除）。
+- 仓库内提到远端时只用中性说法（"Linux 验证机""远端"），不写主机名/IP/端口/账号/代理地址；WORKLOG 记录验证结果时同样脱敏。
+- 需要 TAP / AF_PACKET / SOEM / IgH 等 Linux 能力时，在远端验证机执行，把命令要点与关键输出（脱敏）写进 WORKLOG。
+- 不要把 IgH/SOEM 源码或二进制提交进本仓库。

@@ -2,6 +2,27 @@
 
 > 约定：**最新条目在最上面**。每条含 `日期 / 做了什么 / 验证结果 / 卡点 / 下次开工第一件事`。
 > 夜班 agent 每次唤醒先读这里的第一条。
+> **脱敏规则**：不写主机地址、端口、账号、代理地址；远端一律称"Linux 验证机"或"远端"。运维细节见本地 `.local/ops.md`（gitignored）。
+
+---
+
+## 2026-11-12（人工会话）— 仓库脱敏
+
+**做了什么**
+- 按用户要求：**仓库内不记录服务器与代理信息**。
+- 删除 `docs/LINUX-SERVER.md`、`docs/NETWORK.md`（内容移入本地 `.local/ops.md`，已被 `.gitignore` 排除）。
+- `AGENTS.md` §8 改为"运行环境（不入库）"的约束条款；spike 文档中的环境描述改为中性表述。
+- 用 `git filter-branch` 重写全部历史，删除上述文件并替换历史中出现过的地址/端口/主机名。
+
+**验证结果**
+- `git log -p --all` 中已无地址、端口、主机名等敏感串（见本次提交后的核查命令）。
+- 工作区 `git status` 干净。
+
+**卡点**
+- 旧工作区里的历史副本（另一项目在用）未做同样清理；待其退役时一并处理。
+
+**下次开工第一件事**
+- 回到 **B1 Rust workspace 骨架**。
 
 ---
 
@@ -10,71 +31,73 @@
 **做了什么**
 - 定时任务「低峰时段多班次推进 EC-Sim」：`RRULE:FREQ=DAILY;BYHOUR=0,2,4,6;BYMINUTE=30` → 每天 **00:30 / 02:30 / 04:30 / 06:30** 各一班（Asia/Shanghai），覆盖整个 DeepSeek 低峰窗口（00:30–08:30）。
 - 目标会话改为 `new`（每班一个全新会话，互不阻塞），靠 WORKLOG 衔接；**每班限时 90 分钟**，班间留 30 分钟缓冲，08:30 后绝不动作。
-- prompt 增加**开工自检**：先写 `.write-probe` 验证 D 盘可写；失败则立即停止并报 `BLOCKED: 沙箱未继承 full access`，防止退回到 C 盘副本干活。
+- prompt 增加**开工自检**：先写 `.write-probe` 验证仓库目录可写；失败则立即停止并报 `BLOCKED: 沙箱未继承 full access`，防止退回到旧副本干活。
 
 **验证结果**
 - `schedule_list`：任务 active，下次触发 `2026-11-13T00:30:00+08:00`。
 
 **卡点**
-- 定时任务创建的新会话 `cwd` 仍继承 C 盘旧工作区（调度器捕获创建时会话的工作区根），故 prompt 强制 `Set-Location` 到 D 盘并以自检兜底。
+- 定时任务创建的新会话 `cwd` 仍继承旧工作区（调度器捕获创建时会话的工作区根），故 prompt 强制 `Set-Location` 到主仓库并以自检兜底。
 
 **下次开工第一件事**
-- 00:30 首班：**B1 Rust workspace 骨架**（若首班自检失败，人工介入确认沙箱策略继承）。
+- 00:30 首班：**B1 Rust workspace 骨架**。
 
 ---
+
 ## 2026-11-12（人工会话）— 文件策略放开，迁移收口，夜班恢复
 
 **做了什么**
-- 会话文件策略改为 `danger-full-access`：**D 盘可直接读写，无需逐次审批**（此前阻塞迁移的根因消失）。
-- 定时任务「低峰期自动开工推进 EC-Sim」**恢复 active**，并改写 prompt：第一步强制 `Set-Location 'D:\tokengence.ai\ec-sim'`，明令禁止在旧工作区提交。
-- 仍保留旧工作区副本（并行会话的 `<other-project>/` 有 2395 个文件在活跃写入，`<legacy-workspace>\.git` 被其共用）。
+- 会话文件策略改为 `danger-full-access`：主仓库所在盘可直接读写，无需逐次审批（此前阻塞迁移的根因消失）。
+- 定时任务恢复 active，并改写 prompt：第一步强制切到主仓库路径，明令禁止在旧工作区提交。
+- 仍保留旧工作区副本（并行项目 `<other-project>/` 在活跃写入，其 `.git` 与旧副本共用）。
 
 **验证结果**
-- D 盘仓库写入成功；`git status` 干净；服务器 `root@<LINUX-HOST>` 连通、内核 6.6 正常。
+- 主仓库写入成功；`git status` 干净；远端 Linux 验证机连通正常。
 
 **卡点**
-- 无（迁移阻塞已解除）。唯一残留：旧副本尚未退役，待 `<other-project>` 会话结束后再处理。
+- 旧副本尚未退役，待 `<other-project>` 会话结束后再处理。
 
 **下次开工第一件事**
-- **B1 Rust workspace 骨架**（或若想先出证据：**B2b 最小 ESC 应答器**，让 IgH/SOEM 看到 1 个从站）。
+- **B1 Rust workspace 骨架**（或 **B2b 最小 ESC 应答器**，先出"主站看到 1 个从站"的证据）。
 
 ---
-## 2026-11-12（人工会话）— 仓库迁移到 D 盘
+
+## 2026-11-12（人工会话）— 仓库迁移到项目根目录
 
 **做了什么**
-- 按用户要求把 EC-Sim 仓库迁到 `D:\tokengence.ai\ec-sim`：以 `git clone` 方式复制，3 个提交与 `DeepSeek Harness` 作者身份完整保留，远端配置已移除。
-- 旧工作区 `<legacy-workspace>` 保留为历史副本（**并行会话的 `<other-project>/` 项目仍在其中活跃写入，未触碰**）。
+- 按用户要求把 EC-Sim 仓库迁到 `D:\tokengence.ai\ec-sim`：以 `git clone` 方式复制，提交与 `DeepSeek Harness` 作者身份完整保留，远端配置已移除。
+- 旧工作区保留为历史副本（并行项目的 `<other-project>/` 仍在其中活跃写入，未触碰）。
 
 **验证结果**
-- 新仓库 `git log` 三提交一致；`git status` 干净；身份 `DeepSeek Harness <deepseek-harness@users.noreply.github.com>`。
+- 新仓库 `git log` 一致；`git status` 干净；身份 `DeepSeek Harness <deepseek-harness@users.noreply.github.com>`。
 
 **卡点**
-- 本会话（以及定时任务创建的会话）**沙箱工作区根仍是 C 盘**，无法直接写 D 盘（每次写需审批）。夜班任务已暂停，待以 `D:\tokengence.ai\ec-sim` 为工作目录新建会话后重建。
+- 新会话沙箱根仍指向旧工作区，导致无法直接写新仓库（每次写需审批）。夜班任务已暂停，待以新仓库为工作目录新建会话后重建。
 
 **下次开工第一件事**
-- 在新工作区会话里恢复定时任务；代码任务仍从 **B1（Rust workspace 骨架）** 或 **B2b（最小 ESC 应答器）** 开始。
+- 在新工作区会话里恢复定时任务；代码任务从 **B1** 或 **B2b** 开始。
 
 ---
-## 2026-11-12（人工会话，非自动）— 服务器与线缆层验收到位
+
+## 2026-11-12（人工会话，非自动）— 线缆层验收
 
 **做了什么**
-- 接入专用 Linux 验证机 `root@<LINUX-HOST>`（Linux / kernel 6.x / 8 核 15G），登记见 [docs/LINUX-SERVER.md](docs/LINUX-SERVER.md)。
-- 装 Rust 1.99.1、`kernel-devel`（与运行内核精确匹配，**无需升级内核/重启**）、gcc/cmake/autotools。
-- 停用并禁用 <removed-workload>（现场快照留档）；原 podman 容器已停、数据卷保留；podman 保留备用。
+- 接入一台专用 Linux 验证机（信息本地留存，不入库）；装好 Rust 工具链、与内核精确匹配的 kernel-devel、gcc/cmake/autotools。
+- 停用验证机上原有的容器编排服务（快照留档），保留容器运行时备用。
 - **Spike 1**（TAP 双向承载 0x88A4）→ PASS，证据 [docs/spikes/spike-1-tap-bidirectional.md](docs/spikes/spike-1-tap-bidirectional.md)。
-- **Spike 2**（未修改的 SOEM / IgH 在 TAP 上）→ **两者都成立**：SOEM `ecx_init on tapsoem0 succeeded`；IgH `ec_generic` 绑定 TAP、`/dev/EtherCAT0` 出现、Tx 496 帧/秒，模拟器侧收到 BRD 帧。证据 [docs/spikes/spike-2-masters-on-tap.md](docs/spikes/spike-2-masters-on-tap.md)。
+- **Spike 2**（未修改的 SOEM / IgH 在 TAP 上）→ **两者都成立**：SOEM `ecx_init` 成功；IgH `ec_generic` 绑定 TAP、`/dev/EtherCAT0` 出现、约 496 帧/秒，模拟器侧收到 BRD 帧。证据 [docs/spikes/spike-2-masters-on-tap.md](docs/spikes/spike-2-masters-on-tap.md)。
 - 新增验证脚本：`scripts/spikes/tap_ethernet_loopback.py`、`tap_hold.py`、`sniff_ecat.py`。
 
 **验证结果**
 - 线缆层最大技术风险（TAP 能否被真实主站使用）**已关闭**，且双主站均"零修改"。
-- IgH 1.6.13 与 SOEM 均已在服务器构建完成并通过绑定验证。
+- IgH 1.6.13 与 SOEM 均已在验证机构建完成并通过绑定验证。
 
 **卡点**
 - 尚无从站应答，IgH 侧每帧 timeout（预期）。下一步要让主站看到 1 个从站（B2b）。
-- GitHub 不可达 → IgH 走 gitlab、SOEM 走 gitee 镜像/ghproxy（已写入服务器文档）。
+- 验证机直连 GitHub 不通，已配置代理链路（细节不入库）。
 
 **下次开工第一件事**
-- **B1：Rust workspace 骨架**；若夜班想先拿"主站看到 1 个从站"的证据，可先做 **B2b 最小 ESC 应答器**（Python 原型即可）。
+- **B1：Rust workspace 骨架**；若想先拿"主站看到 1 个从站"的证据，可先做 **B2b 最小 ESC 应答器**。
 
 ---
 
@@ -100,4 +123,4 @@
 - **B1：Rust workspace 骨架**（若用户尚未拍板 D1–D6，按文档推荐值默认执行，并在提交信息里注明"按推荐默认值"）。
 
 **自动化**
-- 已创建每日定时任务「低峰期自动开工推进 EC-Sim」：**每天 01:00（Asia/Shanghai）** 触发，投递到固定「夜班」会话，按 `AGENTS.md` §5 协议执行；首次触发 2026-11-13 01:00。
+- 已创建低峰期自动开工定时任务，按 `AGENTS.md` §5 协议执行。
