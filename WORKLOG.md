@@ -5,6 +5,29 @@
 
 ---
 
+## 2026-11-12（人工会话，非自动）— 服务器与线缆层验收到位
+
+**做了什么**
+- 接入专用 Linux 验证机 `root@<LINUX-HOST>`（Linux / kernel 6.x / 8 核 15G），登记见 [docs/LINUX-SERVER.md](docs/LINUX-SERVER.md)。
+- 装 Rust 1.99.1、`kernel-devel`（与运行内核精确匹配，**无需升级内核/重启**）、gcc/cmake/autotools。
+- 停用并禁用 <removed-workload>（现场快照留档）；原 podman 容器已停、数据卷保留；podman 保留备用。
+- **Spike 1**（TAP 双向承载 0x88A4）→ PASS，证据 [docs/spikes/spike-1-tap-bidirectional.md](docs/spikes/spike-1-tap-bidirectional.md)。
+- **Spike 2**（未修改的 SOEM / IgH 在 TAP 上）→ **两者都成立**：SOEM `ecx_init on tapsoem0 succeeded`；IgH `ec_generic` 绑定 TAP、`/dev/EtherCAT0` 出现、Tx 496 帧/秒，模拟器侧收到 BRD 帧。证据 [docs/spikes/spike-2-masters-on-tap.md](docs/spikes/spike-2-masters-on-tap.md)。
+- 新增验证脚本：`scripts/spikes/tap_ethernet_loopback.py`、`tap_hold.py`、`sniff_ecat.py`。
+
+**验证结果**
+- 线缆层最大技术风险（TAP 能否被真实主站使用）**已关闭**，且双主站均"零修改"。
+- IgH 1.6.13 与 SOEM 均已在服务器构建完成并通过绑定验证。
+
+**卡点**
+- 尚无从站应答，IgH 侧每帧 timeout（预期）。下一步要让主站看到 1 个从站（B2b）。
+- GitHub 不可达 → IgH 走 gitlab、SOEM 走 gitee 镜像/ghproxy（已写入服务器文档）。
+
+**下次开工第一件事**
+- **B1：Rust workspace 骨架**；若夜班想先拿"主站看到 1 个从站"的证据，可先做 **B2b 最小 ESC 应答器**（Python 原型即可）。
+
+---
+
 ## 2026-11-12（人工会话，非自动）
 
 **做了什么**

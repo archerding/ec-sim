@@ -58,7 +58,8 @@ user.email = deepseek-harness@users.noreply.github.com
 ## 6. 当前 Backlog（按优先级，顶部先做）
 
 - [ ] **B1 Rust workspace 骨架**：`crates/esc-core`、`crates/wire`、`crates/coe`、`crates/plugin-host`、`crates/control-plane`、`crates/cli`；`cargo fmt/clippy/test` 与 GitHub Actions 跑通（三平台）。
-- [ ] **B2 Spike 1（Linux TAP）**：建 `IFF_TAP|IFF_NO_PI` 设备，收发自造 0x88A4 帧，附最小可复现测试与结论记录（记录在 `docs/spikes/`）。
+- [ ] **B2b 最小 ESC 应答器（Python/Rust 原型均可，先验证协议）**：在服务器上让持 TAP 的进程响应 `BRD 0x0000`、`APWR 0x0010`、`APRD 0x0130`，目标 = IgH `ethercat slaves` 与 SOEM `slaveinfo` 都看到 **1 个从站**（尚未要求进 OP）。产出结论写入 `docs/spikes/`。
+- [x] ~~**B2 Spike 1（Linux TAP）**~~ ✅ **2026-11-12 完成**：TAP 双向承载 0x88A4，且**未修改的 SOEM 与 IgH 都能绑定 TAP 并发出真实帧**（IgH `ec_generic` 按 MAC 匹配 TAP）。证据：[spike-1](docs/spikes/spike-1-tap-bidirectional.md)、[spike-2](docs/spikes/spike-2-masters-on-tap.md)。
 - [ ] **B3 Spike 4（SOEM oshw shim）**：把 SOEM 的 `oshw` 收发包替换成 UDS，跑通 `ec_config_init` + `ec_config_map`（SOEM 以独立进程/容器方式使用）。
 - [ ] **B4 `wire` crate**：EtherCAT 帧/datagram 编解码 + 严格 WKC 语义 + 一帧多 datagram（M 位）+ 地址匹配（ADP/FPRD/BRD/LRD），单元测试覆盖两主站的期望行为。
 - [ ] **B5 `esc-core` 最小 ESC**：寄存器阵列 + SM/FMMU + AL 状态机 INIT/PREOP 握手 + EEPROM 接口状态机（Busy/8 字节能力位）。
@@ -76,3 +77,12 @@ web/            前端（M2 起）
 tests/          跨 crate 集成测试（不含 GPL 夹具）
 tests-gpl/      只跑 GPL 主站的夹具（独立目录、独立许可、不进发行物）
 ```
+
+## 8. 专用 Linux 验证机
+
+- `ssh root@<LINUX-HOST>`（已免密；**自 2026-11-12 起为本项目专用机**，用户授权可自由改造）。
+- 现状：Linux / kernel 6.x / 8 核 / 15G；Rust、gcc/cmake、**IgH 1.6.13（已构建并验证）**、**SOEM（已构建并验证）**、TAP/AF_PACKET 全部可用。
+- 细节、踩坑记录、重建清单：**[docs/LINUX-SERVER.md](docs/LINUX-SERVER.md)**（改动机器前必读）。
+- **网络限制**：GitHub 不可达。IgH 走 gitlab；GitHub 仓库走 gitee 镜像或 `https://ghproxy.net/https://github.com/...`。
+- 服务器实验目录：`<LINUX-WORKDIR>/`（`work/` 放脚本、`fixtures/` 放 IgH/SOEM 源码、`igh/` 是安装前缀）。
+- 需要 Linux 能力（TAP/AF_PACKET/SOEM/IgH）的验证**一律在服务器上做**，把命令与关键输出写进 WORKLOG；不要把 IgH/SOEM 源码或二进制提交进本仓库。
