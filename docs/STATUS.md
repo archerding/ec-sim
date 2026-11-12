@@ -15,9 +15,10 @@ Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/
 | crate | 职责 | 测试数 |
 | --- | --- | --- |
 | `esc-core` | 寄存器、SM/FMMU、AL 状态机、EEPROM-SII 生成、邮箱解析、watchdog | 86 |
-| `esc-node` | 从站应答器、PDI 内存、邮箱处理、CiA 402 行为、`ec-sim-esc` 二进制 | 70 |
-| `plugin-host` | plugin.yaml 解析/校验、SII/字典/ESI 生成 | 27 + 2 集成 |
+| `esc-node` | 从站应答器、PDI 内存、邮箱处理、CiA 402 行为、`ec-sim-esc` 二进制 | 71 |
+| `plugin-host` | plugin.yaml 解析/校验、SII/字典/ESI 生成 | 27 + 3 集成 |
 | `wire` | EtherCAT 帧/datagram 编解码 + WKC 语义 | 23 |
+| `control-plane` | 只读快照 API：state-v1 / dict-v1 JSON + 路由表（`/state`、`/dict`） | 4 |
 
 `cargo fmt --check`、`cargo clippy --workspace --all-targets -D warnings`、`cargo test --workspace`
 均为 0 失败；`cargo doc --workspace --no-deps` 0 警告。

@@ -57,65 +57,7 @@ fn dump_dict_and_exit(
         }
     };
     if json {
-        use std::fmt::Write as _;
-        let entry_count: usize = dict
-            .objects()
-            .iter()
-            .map(|object| usize::from(object.max_subindex) + 1)
-            .sum();
-        let mut out = String::new();
-        let _ = writeln!(out, "{{");
-        let _ = writeln!(out, "  \"schema\": \"ec-sim/dict-v1\",");
-        let _ = writeln!(
-            out,
-            "  \"tool\": \"ec-sim-esc {}\",",
-            env!("CARGO_PKG_VERSION")
-        );
-        let _ = writeln!(out, "  \"object_count\": {},", dict.objects().len());
-        let _ = writeln!(out, "  \"entry_count\": {entry_count},");
-        let _ = writeln!(out, "  \"objects\": [");
-        for (object_pos, object) in dict.objects().iter().enumerate() {
-            let _ = writeln!(out, "    {{");
-            let _ = writeln!(out, "      \"index\": \"0x{:04X}\",", object.index);
-            let _ = writeln!(out, "      \"max_sub\": {},", object.max_subindex);
-            let _ = writeln!(out, "      \"code\": \"0x{:04X}\",", object.object_code);
-            let _ = writeln!(out, "      \"name\": \"{}\",", json_escape(&object.name));
-            let _ = writeln!(out, "      \"entries\": [");
-            let mut wrote_entry = false;
-            for subindex in 0..=object.max_subindex {
-                let Some(entry) = dict.entry(object.index, subindex) else {
-                    continue;
-                };
-                if wrote_entry {
-                    out.push_str(",\n");
-                }
-                let access = if entry.writable { "rw" } else { "ro" };
-                let value_hex: String = entry
-                    .value
-                    .iter()
-                    .map(|byte| format!("{byte:02x}"))
-                    .collect();
-                let _ = write!(
-                    out,
-                    "        {{\"sub\": {subindex}, \"type\": \"0x{:04X}\", \"bits\": {}, \"access\": \"{access}\", \"name\": \"{}\", \"value_hex\": \"{value_hex}\"}}",
-                    entry.data_type,
-                    entry.bit_length,
-                    json_escape(&entry.name)
-                );
-                wrote_entry = true;
-            }
-            let _ = writeln!(out);
-            let tail = if object_pos + 1 == dict.objects().len() {
-                ""
-            } else {
-                ","
-            };
-            let _ = writeln!(out, "      ]");
-            let _ = writeln!(out, "    }}{tail}");
-        }
-        let _ = writeln!(out, "  ]");
-        let _ = writeln!(out, "}}");
-        print!("{out}");
+        print!("{}", control_plane::dict_json(&dict));
         return std::process::ExitCode::SUCCESS;
     }
 
@@ -219,21 +161,6 @@ fn dump_sii_and_exit(
     }
     std::process::ExitCode::SUCCESS
 }
-/// JSON 字符串转义（只处理常用控制字符；`--dump-state` 输出为机器可读 JSON）。
-fn json_escape(text: &str) -> String {
-    let mut escaped = String::with_capacity(text.len() + 2);
-    for ch in text.chars() {
-        match ch {
-            '"' => escaped.push_str("\\\""),
-            '\\' => escaped.push_str("\\\\"),
-            '\n' => escaped.push_str("\\n"),
-            '\r' => escaped.push_str("\\r"),
-            '\t' => escaped.push_str("\\t"),
-            other => escaped.push(other),
-        }
-    }
-    escaped
-}
 
 /// `--dump-state`：把（manifest/ESI/内置）画像的只读状态以 JSON 输出后退出（M2 WebUI 数据源）。
 fn dump_state_and_exit(
@@ -241,7 +168,6 @@ fn dump_state_and_exit(
     esi_path: Option<&str>,
 ) -> std::process::ExitCode {
     use esc_core::sii::{simulated_spec, SiiSpec};
-    use std::fmt::Write as _;
 
     let manifest = match manifest_path {
         Some(path) => match plugin_host::manifest::PluginManifest::load(path) {
@@ -287,119 +213,18 @@ fn dump_state_and_exit(
             return std::process::ExitCode::from(2);
         }
     };
+    let profile = manifest
+        .as_ref()
+        .map(|manifest| (manifest.id.as_str(), manifest.name.as_str()));
     let dict_objects = manifest.as_ref().and_then(|manifest| {
         plugin_host::dict_gen::dictionary_from_manifest(manifest)
             .ok()
             .map(|dict| dict.objects().len())
     });
-
-    let mut out = String::new();
-    let _ = writeln!(out, "{{");
-    let _ = writeln!(out, "  \"schema\": \"ec-sim/state-v1\",");
-    let _ = writeln!(
-        out,
-        "  \"tool\": \"ec-sim-esc {}\",",
-        env!("CARGO_PKG_VERSION")
+    print!(
+        "{}",
+        control_plane::state_json(&spec, dict_objects, profile)
     );
-    let _ = writeln!(
-        out,
-        "  \"identity\": {{\"vendor_id\": \"0x{:08X}\", \"product_code\": \"0x{:08X}\", \"revision\": \"0x{:08X}\", \"serial\": \"0x{:08X}\"}},",
-        spec.vendor_id, spec.product_code, spec.revision, spec.serial
-    );
-    let names: Vec<String> = spec
-        .names
-        .iter()
-        .map(|name| format!("\"{}\"", json_escape(name)))
-        .collect();
-    let _ = writeln!(out, "  \"names\": [{}],", names.join(", "));
-    let _ = writeln!(out, "  \"mailbox_declared\": {},", spec.mailbox.is_some());
-    let _ = writeln!(out, "  \"coe_details\": {},", spec.coe_details);
-    let _ = writeln!(out, "  \"general_flags\": {},", spec.general_flags);
-    let _ = writeln!(out, "  \"ebus_current_ma\": {},", spec.ebus_current);
-
-    let _ = writeln!(out, "  \"sync_managers\": [");
-    for (index, sm) in spec.sync_managers.iter().enumerate() {
-        if index + 1 == spec.sync_managers.len() {
-            let _ = writeln!(
-                out,
-                "    {{\"start\": \"0x{:04X}\", \"length\": {}, \"control\": \"0x{:02X}\", \"status\": {}, \"enable\": {}}}",
-                sm.physical_start_address, sm.length, sm.control, sm.status, sm.enable
-            );
-        } else {
-            let _ = writeln!(
-                out,
-                "    {{\"start\": \"0x{:04X}\", \"length\": {}, \"control\": \"0x{:02X}\", \"status\": {}, \"enable\": {}}},",
-                sm.physical_start_address, sm.length, sm.control, sm.status, sm.enable
-            );
-        }
-    }
-    let _ = writeln!(out, "  ],");
-
-    for (label, pdos) in [("tx", &spec.tx_pdos), ("rx", &spec.rx_pdos)] {
-        let _ = writeln!(out, "  \"pdo_{label}\": [");
-        for (index, pdo) in pdos.iter().enumerate() {
-            let entries: Vec<String> = pdo
-                .entries
-                .iter()
-                .map(|entry| {
-                    format!(
-                        "{{\"index\": \"0x{:04X}\", \"sub\": {}, \"bits\": {}}}",
-                        entry.index, entry.subindex, entry.bit_length
-                    )
-                })
-                .collect();
-            let tail = if index + 1 == pdos.len() { "" } else { "," };
-            let _ = writeln!(
-                out,
-                "    {{\"index\": \"0x{:04X}\", \"sync_manager\": {}, \"entries\": [{}]}}{tail}",
-                pdo.index,
-                pdo.sync_manager,
-                entries.join(", ")
-            );
-        }
-        let _ = writeln!(out, "  ],");
-    }
-
-    match &spec.dc {
-        Some(dc) => {
-            let _ = writeln!(
-                out,
-                "  \"dc\": {{\"cycle_time0_ns\": {}, \"shift_time0_ns\": {}, \"shift_time1_ns\": {}, \"sync0_cycle_factor\": {}, \"sync1_cycle_factor\": {}, \"assign_activate\": \"0x{:04X}\"}},",
-                dc.cycle_time0,
-                dc.shift_time0,
-                dc.shift_time1,
-                dc.sync0_cycle_factor,
-                dc.sync1_cycle_factor,
-                dc.assign_activate
-            );
-        }
-        None => {
-            let _ = writeln!(out, "  \"dc\": null,");
-        }
-    }
-    match &manifest {
-        Some(manifest) => {
-            let _ = writeln!(
-                out,
-                "  \"profile\": {{\"id\": \"{}\", \"name\": \"{}\"}},",
-                json_escape(&manifest.id),
-                json_escape(&manifest.name)
-            );
-        }
-        None => {
-            let _ = writeln!(out, "  \"profile\": null,");
-        }
-    }
-    match dict_objects {
-        Some(count) => {
-            let _ = writeln!(out, "  \"dict_objects\": {count}");
-        }
-        None => {
-            let _ = writeln!(out, "  \"dict_objects\": null");
-        }
-    }
-    let _ = writeln!(out, "}}");
-    print!("{out}");
     std::process::ExitCode::SUCCESS
 }
 

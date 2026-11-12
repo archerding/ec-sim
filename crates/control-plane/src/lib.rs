@@ -1,7 +1,295 @@
-//! 控制面。
+//! 控制面（M2 起点）。
 //!
-//! 规划：对外提供 REST/gRPC 与 MCP 操作面，承载"虚拟总线 + 插件宿主 + AI 可操作"
-//! 中的可操作性；Web 前端（`web/`）从 M2 起接这里，B1 仅占位模块边界。
+//! 本模块先提供**只读快照 API 的最小骨架**：把 ESC 状态/对象字典序列化为稳定的 JSON
+//! （`state-v1` / `dict-v1`），并提供极简路由表（`/state`、`/dict`），供后续 HTTP/JSON
+//! API 与 `web/` 前端复用。当前不引入网络/序列化依赖，保持核心宽松许可与零依赖。
 //!
-//! 依赖方向：`control-plane` → `esc-core`/`plugin-host`/`wire`；不得被这些 crate 反向依赖
-//! （避免控制面把 web/网络依赖带进实时路径）。
+//! 依赖方向：`control-plane` → `esc-core`。后续接入实时状态时，若需要依赖 `esc-node`，
+//! 应把 CLI 二进制迁到 `cli` crate，避免 `esc-node` ↔ `control-plane` 循环依赖。
+
+use std::fmt::Write as _;
+
+use esc_core::obj_dict::ObjectDictionary;
+use esc_core::sii::SiiSpec;
+
+/// 只读路由表条目（M2 API 的占位；当前只有快照 JSON）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Route {
+    /// 路径（如 `/state`）。
+    pub path: &'static str,
+    /// 返回的 JSON schema 名。
+    pub schema: &'static str,
+}
+
+/// 已注册的只读路由。
+pub const ROUTES: &[Route] = &[
+    Route {
+        path: "/state",
+        schema: "ec-sim/state-v1",
+    },
+    Route {
+        path: "/dict",
+        schema: "ec-sim/dict-v1",
+    },
+];
+
+/// 按路径查找路由；未注册返回 `None`。
+#[must_use]
+pub fn route(path: &str) -> Option<&'static Route> {
+    ROUTES.iter().find(|route| route.path == path)
+}
+
+/// JSON 字符串转义（只处理常用控制字符；输出为机器可读 JSON）。
+#[must_use]
+pub fn json_escape(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len() + 2);
+    for ch in text.chars() {
+        match ch {
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            other => escaped.push(other),
+        }
+    }
+    escaped
+}
+
+/// 生成 `state-v1` JSON：SII 画像的只读状态快照（身份/SM/PDO/DC 等）。
+///
+/// - `dict_objects`：manifest 画像的运行时字典对象数（无 manifest 时为 `None`）；
+/// - `profile`：manifest 画像的 `(id, name)`（无 manifest 时为 `None`）。
+#[must_use]
+pub fn state_json(
+    spec: &SiiSpec,
+    dict_objects: Option<usize>,
+    profile: Option<(&str, &str)>,
+) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "{{");
+    let _ = writeln!(out, "  \"schema\": \"ec-sim/state-v1\",");
+    let _ = writeln!(out, "  \"tool\": \"ec-sim-esc {}\",", crate::TOOL_VERSION);
+    let _ = writeln!(
+        out,
+        "  \"identity\": {{\"vendor_id\": \"0x{:08X}\", \"product_code\": \"0x{:08X}\", \"revision\": \"0x{:08X}\", \"serial\": \"0x{:08X}\"}},",
+        spec.vendor_id, spec.product_code, spec.revision, spec.serial
+    );
+    let names: Vec<String> = spec
+        .names
+        .iter()
+        .map(|name| format!("\"{}\"", json_escape(name)))
+        .collect();
+    let _ = writeln!(out, "  \"names\": [{}],", names.join(", "));
+    let _ = writeln!(out, "  \"mailbox_declared\": {},", spec.mailbox.is_some());
+    let _ = writeln!(out, "  \"coe_details\": {},", spec.coe_details);
+    let _ = writeln!(out, "  \"general_flags\": {},", spec.general_flags);
+    let _ = writeln!(out, "  \"ebus_current_ma\": {},", spec.ebus_current);
+
+    let _ = writeln!(out, "  \"sync_managers\": [");
+    for (index, sm) in spec.sync_managers.iter().enumerate() {
+        let tail = if index + 1 == spec.sync_managers.len() {
+            ""
+        } else {
+            ","
+        };
+        let _ = writeln!(
+            out,
+            "    {{\"start\": \"0x{:04X}\", \"length\": {}, \"control\": \"0x{:02X}\", \"status\": {}, \"enable\": {}}}{tail}",
+            sm.physical_start_address, sm.length, sm.control, sm.status, sm.enable
+        );
+    }
+    let _ = writeln!(out, "  ],");
+
+    for (label, pdos) in [("tx", &spec.tx_pdos), ("rx", &spec.rx_pdos)] {
+        let _ = writeln!(out, "  \"pdo_{label}\": [");
+        for (index, pdo) in pdos.iter().enumerate() {
+            let entries: Vec<String> = pdo
+                .entries
+                .iter()
+                .map(|entry| {
+                    format!(
+                        "{{\"index\": \"0x{:04X}\", \"sub\": {}, \"bits\": {}}}",
+                        entry.index, entry.subindex, entry.bit_length
+                    )
+                })
+                .collect();
+            let tail = if index + 1 == pdos.len() { "" } else { "," };
+            let _ = writeln!(
+                out,
+                "    {{\"index\": \"0x{:04X}\", \"sync_manager\": {}, \"entries\": [{}]}}{tail}",
+                pdo.index,
+                pdo.sync_manager,
+                entries.join(", ")
+            );
+        }
+        let _ = writeln!(out, "  ],");
+    }
+
+    match &spec.dc {
+        Some(dc) => {
+            let _ = writeln!(
+                out,
+                "  \"dc\": {{\"cycle_time0_ns\": {}, \"shift_time0_ns\": {}, \"shift_time1_ns\": {}, \"sync0_cycle_factor\": {}, \"sync1_cycle_factor\": {}, \"assign_activate\": \"0x{:04X}\"}},",
+                dc.cycle_time0,
+                dc.shift_time0,
+                dc.shift_time1,
+                dc.sync0_cycle_factor,
+                dc.sync1_cycle_factor,
+                dc.assign_activate
+            );
+        }
+        None => {
+            let _ = writeln!(out, "  \"dc\": null,");
+        }
+    }
+    match profile {
+        Some((id, name)) => {
+            let _ = writeln!(
+                out,
+                "  \"profile\": {{\"id\": \"{}\", \"name\": \"{}\"}},",
+                json_escape(id),
+                json_escape(name)
+            );
+        }
+        None => {
+            let _ = writeln!(out, "  \"profile\": null,");
+        }
+    }
+    match dict_objects {
+        Some(count) => {
+            let _ = writeln!(out, "  \"dict_objects\": {count}");
+        }
+        None => {
+            let _ = writeln!(out, "  \"dict_objects\": null");
+        }
+    }
+    let _ = writeln!(out, "}}");
+    out
+}
+
+/// 生成 `dict-v1` JSON：运行时对象字典的只读快照（对象/条目/类型/访问/值 hex）。
+#[must_use]
+pub fn dict_json(dict: &ObjectDictionary) -> String {
+    let entry_count: usize = dict
+        .objects()
+        .iter()
+        .map(|object| usize::from(object.max_subindex) + 1)
+        .sum();
+    let mut out = String::new();
+    let _ = writeln!(out, "{{");
+    let _ = writeln!(out, "  \"schema\": \"ec-sim/dict-v1\",");
+    let _ = writeln!(out, "  \"tool\": \"ec-sim-esc {}\",", crate::TOOL_VERSION);
+    let _ = writeln!(out, "  \"object_count\": {},", dict.objects().len());
+    let _ = writeln!(out, "  \"entry_count\": {entry_count},");
+    let _ = writeln!(out, "  \"objects\": [");
+    for (object_pos, object) in dict.objects().iter().enumerate() {
+        let _ = writeln!(out, "    {{");
+        let _ = writeln!(out, "      \"index\": \"0x{:04X}\",", object.index);
+        let _ = writeln!(out, "      \"max_sub\": {},", object.max_subindex);
+        let _ = writeln!(out, "      \"code\": \"0x{:04X}\",", object.object_code);
+        let _ = writeln!(out, "      \"name\": \"{}\",", json_escape(&object.name));
+        let _ = writeln!(out, "      \"entries\": [");
+        let mut wrote_entry = false;
+        for subindex in 0..=object.max_subindex {
+            let Some(entry) = dict.entry(object.index, subindex) else {
+                continue;
+            };
+            if wrote_entry {
+                out.push_str(",\n");
+            }
+            let access = if entry.writable { "rw" } else { "ro" };
+            let value_hex: String = entry
+                .value
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            let _ = write!(
+                out,
+                "        {{\"sub\": {subindex}, \"type\": \"0x{:04X}\", \"bits\": {}, \"access\": \"{access}\", \"name\": \"{}\", \"value_hex\": \"{value_hex}\"}}",
+                entry.data_type,
+                entry.bit_length,
+                json_escape(&entry.name)
+            );
+            wrote_entry = true;
+        }
+        let _ = writeln!(out);
+        let tail = if object_pos + 1 == dict.objects().len() {
+            ""
+        } else {
+            ","
+        };
+        let _ = writeln!(out, "      ]");
+        let _ = writeln!(out, "    }}{tail}");
+    }
+    let _ = writeln!(out, "  ]");
+    let _ = writeln!(out, "}}");
+    out
+}
+
+/// 工具版本（随包版本）。
+pub const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use esc_core::sii::simulated_spec;
+
+    #[test]
+    fn routes_are_registered_and_dispatch() {
+        assert_eq!(
+            route("/state").map(|route| route.schema),
+            Some("ec-sim/state-v1")
+        );
+        assert_eq!(
+            route("/dict").map(|route| route.schema),
+            Some("ec-sim/dict-v1")
+        );
+        assert!(route("/nope").is_none());
+        assert_eq!(ROUTES.len(), 2);
+    }
+
+    #[test]
+    fn state_json_contains_identity_sm_pdo_and_profile() {
+        let spec = simulated_spec();
+        let json = state_json(&spec, Some(15), Some(("test.profile", "Test (SIMULATED)")));
+        assert!(json.contains("\"schema\": \"ec-sim/state-v1\""));
+        assert!(json.contains(&format!("\"vendor_id\": \"0x{:08X}\"", spec.vendor_id)));
+        assert!(json.contains("\"sync_managers\": ["));
+        assert!(json.contains("\"pdo_tx\": ["));
+        assert!(json.contains("\"pdo_rx\": ["));
+        assert!(json.contains("\"profile\": {\"id\": \"test.profile\""));
+        assert!(json.contains("\"dict_objects\": 15"));
+        assert!(json.trim_end().ends_with('}'));
+    }
+
+    #[test]
+    fn state_json_handles_builtin_without_profile_or_dict() {
+        let json = state_json(&simulated_spec(), None, None);
+        assert!(json.contains("\"profile\": null"));
+        assert!(json.contains("\"dict_objects\": null"));
+    }
+
+    #[test]
+    fn dict_json_matches_object_dictionary_entries() {
+        let dict = ObjectDictionary::simulated();
+        let json = dict_json(&dict);
+        assert!(json.contains("\"schema\": \"ec-sim/dict-v1\""));
+        assert!(json.contains(&format!("\"object_count\": {},", dict.objects().len())));
+        for object in dict.objects() {
+            assert!(
+                json.contains(&format!("\"index\": \"0x{:04X}\"", object.index)),
+                "缺少对象 0x{:04X}",
+                object.index
+            );
+        }
+        // 值以原始小端字节 hex 表示。
+        let entry = dict.entry(0x1018, 1).expect("0x1018:01");
+        let value_hex: String = entry
+            .value
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        assert!(json.contains(&format!("\"value_hex\": \"{value_hex}\"")));
+    }
+}

@@ -1,5 +1,35 @@
 ---
 
+## 2026-11-13 05:35 班（低峰）— **B20：`control-plane` 只读快照 API 骨架（state-v1 / dict-v1 + 路由）**
+
+**做了什么**
+- `control-plane` 从占位模块变为**最小只读 API**：
+  - `state_json(&SiiSpec, dict_objects, profile)` → state-v1 JSON（身份/名称/邮箱/CoE/SM/PDO/DC/画像/字典数）；
+  - `dict_json(&ObjectDictionary)` → dict-v1 JSON（对象/条目/类型/位长/访问/值 hex）；
+  - 极简路由表 `ROUTES = [/state, /dict]` 与 `route(path)` 查找；
+  - 依赖仅 `esc-core`（零网络/序列化依赖），并保留依赖方向说明（未来接实时状态需把 CLI 迁到 `cli` crate）。
+- `ec-sim-esc --dump-state` 与 `--dump-dict --json` 改为调用 control-plane API；用重构前输出做
+  `fc /b` 对比：CST/SV660N 的 state 与 dict 输出**逐字节一致**。
+- 新增 4 个 control-plane 单元测试（路由、state 身份/SM/PDO/profile、内置空 profile、dict 条目一致）。
+- 更新 `docs/STATUS.md` 测试表（esc-node 71、plugin-host 27+3、control-plane 4）、AGENTS
+  （B20 完成、新增 B21 HTTP JSON API）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **214 passed**
+  （control-plane 4 / esc-core 86 / esc-node 71 / plugin-host 27+3 / wire 23）；
+  `dump-state-probe.sh`、`dump-dict-probe.sh` 均通过（输出与重构前字节一致）。
+- 验证机：重建后两个探针 **EXIT=0**（state/dict JSON 与 profile/0x6502 校验均通过）。
+
+**卡点**
+- 只有只读快照与路由表；没有 HTTP 监听/实时数据（B21）。
+
+**下次开工第一件事**
+- **B21**：`ec-sim-esc --serve <addr>`（std `TcpListener`，无外部依赖）提供 `GET /state`、
+  `GET /dict`；`web/app.js` 支持直接 fetch；探针用 HTTP 校验 JSON 与只读默认（仅本机）。
+
+---
+---
+
 ## 2026-11-13 05:31 班（低峰）— **B19：`--dump-dict --json`（dict-v1）+ Web 对象字典视图**
 
 **做了什么**

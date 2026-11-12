@@ -18,3 +18,4 @@ path = "src/bin/ec_sim_esc.rs"
 esc-core = { path = "../esc-core" }
 plugin-host = { path = "../plugin-host" }
 wire = { path = "../wire" }
+control-plane = { path = "../control-plane" }
