@@ -1,5 +1,38 @@
 ---
 
+## 2026-11-13 04:45 班（低峰）— **B14：无特权容器跑通（podman；Docker 兼容）**
+
+**做了什么**
+- 新增 `docker/Dockerfile`：标准多阶段构建（`rust:1-slim` → `debian:bookworm-slim`），
+  运行 `ec-sim-esc --uds`（UDS shim 不需要 root/TAP/特权）。
+- 新增 `docker/Dockerfile.prebuilt`：离线预构建二进制变体（`BASE_IMAGE` 可覆盖），
+  供无 registry 网络的验证机使用。
+- 新增 `scripts/spikes/podman-unprivileged-probe.sh`：podman 构建预构建变体并以
+  **无 `--privileged`/无 `--network=host`** 运行 `--slaves 8`，宿主机合成主站经共享卷
+  UDS 文件验证全链路；共享卷按**同路径**挂载（`-v WORK:WORK`），保证 peer pathname
+  在容器内可解析（否则 `send_to` 报 `No such file or directory`）。
+- 更新 `docs/VERIFICATION.md`、`docs/plan/M1-exit-checklist.md`（M1 第 4 项改 ✅（podman））、
+  AGENTS（B14 完成、新增 B15 隔离 CPU/1kHz/p99 复测）。
+
+**验证结果**
+- 验证机（podman 4.9.4 + 缓存 openeuler 基础镜像，无 registry 网络）：
+  `podman-unprivileged-probe.sh` **EXIT=0**——4 条 OK：容器内启动（无 `--privileged`）、
+  8 从站广播 WKC/逐站地址分配、UDS 线缆层全链路（BRD/APRD/APWR/FPRD/SM watchdog/ESM）、
+  最终通过（`podman` 无 `--privileged/--network=host`）。
+- 本机：纯容器/脚本改动（无 Rust 代码变更），`cargo fmt --check` 通过；测试基线
+  **210 passed** 不变。
+
+**卡点**
+- `docker/Dockerfile` 标准多阶段构建未实际执行（验证机无 registry 网络；⚠️ 待有网环境复核）。
+- 隔离 CPU 下的 1kHz/p99 复测仍未做（B15）。
+
+**下次开工第一件事**
+- **B15**：在 isolcpus/实时调度环境复测 8 从站循环频率与 p99（目标 1kHz/p99<100µs），
+  或记录硬件限制；并在有 registry 的环境构建 `docker/Dockerfile` 复核。
+
+---
+---
+
 ## 2026-11-13 04:29 班（低峰）— **B13：TAP 8 从站链 + shim 延迟基准（记录环境限制）**
 
 **做了什么**

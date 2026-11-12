@@ -10,8 +10,8 @@
 | --- | --- | --- | --- | --- |
 | 1 | 未修改的 `ethercat slaves`（IgH）与 `slaveinfo`（SOEM）**零补丁看到 OP** | ✅ 已达成 | SOEM：`soem-process-data-probe.sh`/`simple_ng` OP + WKC 3；IgH：`igh-op-probe.sh`/`igh-cia402-*-op-probe.sh`（ecrt 夹具，验证机本地）OP；`sv660n-capability-probe.sh` 同时跑两家 | 保持回归（`docs/VERIFICATION.md`） |
 | 2 | **8 从站 @ 1 kHz** | 🟡 部分达成 | **UDS shim 与 TAP 均已支持 8 从站**：未修改 SOEM `slaveinfo` 报 `8 slaves found`、`simple_ng` 映射 8O+8I 且 WKC 24 稳定（`soem-multi-slave-probe.sh` / `tap-multi-slave-probe.sh`）；**实测循环 ≈425 Hz**（非隔离 CPU），1 kHz 未达成 | 实时调度/隔离 CPU 后复测（B14） |
-| 3 | **p99 抖动 < 100 µs**（shim，隔离 CPU） | 🟡 部分达成 | 基准脚本已加：`scripts/bench/shim-latency.sh`（1 从站 p50≈110µs/p99≈201µs；8 从站 p50≈112µs/p99≈191µs，**非隔离 CPU**）；p99 <100µs 未达成 | 隔离 CPU + 实时调度复测（B14） |
-| 4 | **Docker 无特权跑通** | ❌ 未达成 | 无 Dockerfile / 容器 CI；UDS shim 本身无需 root（能力上可行） | B14：`docker/Dockerfile` + 容器内 `uds-loopback.sh`/合成主站冒烟 |
+| 3 | **p99 抖动 < 100 µs**（shim，隔离 CPU） | 🟡 部分达成 | 基准脚本已加：`scripts/bench/shim-latency.sh`（1 从站 p50≈110µs/p99≈201µs；8 从站 p50≈112µs/p99≈191µs，**非隔离 CPU**）；p99 <100µs 未达成 | 隔离 CPU + 实时调度复测（B15） |
+| 4 | **Docker 无特权跑通** | ✅ 已达成（podman） | `docker/Dockerfile`（标准多阶段）+ `docker/Dockerfile.prebuilt`（离线预构建变体）；`podman-unprivileged-probe.sh` **EXIT=0**：无 `--privileged/--network=host` 容器内 8 从站 UDS shim 全链路通过。⚠️ 标准多阶段 Dockerfile 因验证机无 registry 网络未实际构建 | 在有 registry 的环境构建 `docker/Dockerfile` 复核（B15） |
 | 5 | CLI | ✅ 已达成 | `ec-sim-esc`（TAP/UDS/manifest/ESI/behavior/fault/dump-sii/dump-dict） | — |
 | 6 | 8DI/8DO 画像 | ✅ 已达成 | `generic-io`/`beckhoff-el2008` 画像 + `manifest-slave-probe.sh`/`igh-el2008-op-probe.sh` | — |
 | 7 | ESC 内核（寄存器/FMMU/SM/AL/SII/WDT） | ✅ 已达成 | `esc-core` + `esc-node`；208+ 单元/集成测试；`docs/VERIFICATION.md` | — |
