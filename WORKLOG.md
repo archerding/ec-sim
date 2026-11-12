@@ -6,6 +6,47 @@
 
 ---
 
+## 2026-11-12 19:53 班（低峰）— B8 里程碑：**未修改 IgH 零补丁进入 OP**（ecrt 应用夹具）
+
+**做了什么**
+- 在 Linux 验证机写了一个**不入库**的最小 ecrt 应用夹具
+  （`/opt/ecsim/work/igh-op/ecrt-op-probe.c`：因链接 GPL 的 libethercat，按红线只放验证机，
+  不进仓库）：`ecrt_request_master(0)` → `ecrt_master_create_domain` →
+  `ecrt_master_slave_config(0, 0, SIM_VENDOR_ID, SIM_PRODUCT_CODE)` →
+  `ecrt_slave_config_pdos`（sync2 = 输出 `0x1600`/`0x7000:00` 8bit、sync3 = 输入
+  `0x1A00`/`0x6000:00` 8bit）→ `ecrt_slave_config_reg_pdo_entry` → `ecrt_master_activate` →
+  2 ms 周期 LRW 交换 1 字节输入/输出；结束时打印 `RESULT al_states=… wc=…`。
+- 新增可复现断言脚本 `scripts/spikes/igh-op-probe.sh`：启动模拟器 → `modprobe ec_master/ec_generic`
+  → 后台跑夹具 → `ethercat slaves` 断言 **OP**、应用输出 `al_states=0x08` + `wc=3`、
+  应答器侧 `al=0x08`。
+
+**验证结果**
+- Linux 验证机（**未修改的** IgH 1.6.13、未修改的 `ecrt.h`/`libethercat`，夹具为独立进程）：
+  - 应用运行期间 `ethercat slaves`：`0  0:0  OP  +  0x00000ec5:0x0000e5c1`；
+  - 应用输出：`RESULT al_states=0x08 slaves_responding=1 wc=3 out=00 in=00`（退出码 0）；
+  - IgH 内核日志：`Domain 0: Working counter changed to 3/3.`、`Slave states on main device: OP.`；
+  - 应答器侧 `al=0x08`、过程数据 datagram hit 持续增长（LRW 命中）。
+- 新脚本 `igh-op-probe.sh` → `OK: 未修改 IgH 经 ecrt 应用把模拟器从站推入 OP（… wc=3 …）`。
+- 回归全部通过：`sdo-upload-probe.sh`（SOEM CoE 映射 + IgH SDO 上传/下载）、
+  `soem-process-data.sh`（SOEM OP / 1055 轮 WKC 3）、`soem-mailbox-probe.sh`、
+  `minimal-esc-responder.sh`（双主站扫描）。
+- 本班**未改动 Rust 代码**（只新增验证机夹具 + 断言脚本），fmt/clippy/test 沿用上一班；
+  收尾前重跑 `cargo fmt/clippy/test` 确认仍为 100 passed。
+
+**卡点**
+- 夹具源码不入库（GPL 链接），仓库只保留脚本 + 文档说明；验证机重装需按本条目/AGENTS 重建。
+- IgH 的 OP 是**应用激活期间**的状态：单独跑 `ethercat slaves`（没有应用）时从站回到 PREOP，
+  这是 IgH 主站工具的行为，不是从站问题。
+- 过程数据内容仍静态：应用写 `0x7000:00` 后模拟器只存储、无 PDI 回环，输入恒 0。
+- ⚠️ 未验证：多从站、DC、SM watchdog 与 OP 状态下的 AL 错误恢复。
+
+**下次开工第一件事**
+- **B8 收尾**：把双主站合并冒烟记录写成 `docs/spikes/spike-4-dual-master-op.md`（SOEM
+  `slaveinfo`/`simple_ng` + IgH `ethercat slaves` OP + 应用 `wc=3`；命令、脱敏输出、断言脚本清单），
+  更新 AGENTS §6 B8 的完成条件；随后转向 **B9 声明式插件加载器**。
+
+---
+
 ## 2026-11-12 19:49 班（低峰）— B7 子项 3：SDO Download（写配置对象）→ 未修改 IgH 可写对象字典
 
 **做了什么**

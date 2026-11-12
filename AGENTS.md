@@ -84,9 +84,9 @@ user.email = deepseek-harness@users.noreply.github.com
   （`Man: 00000ec5 ID: 0000e5c1`），IgH `ethercat slaves` 报 `0  0:0  PREOP  +  0x00000ec5:0x0000e5c1`。
   证据：[spike-3](docs/spikes/spike-3-minimal-esc-responder.md)、[复现脚本](scripts/spikes/minimal-esc-responder.sh)。
   顺带修正 `wire::auto_increment_step` 的 ADP 方向（主站 ADP = 环位置相反数、转发前 +1）。
-  ⚠️ **OP 状态**：SOEM 零补丁已能进 OP（2026-11-12 19:26 班起，SII SM/PDO 类别 + FMMU 逻辑寻址，
-  8 位 PDO 交换、每轮 WKC 3；见 B8 进度）；**IgH 仍停在 PREOP**（19:36 班已声明 mailbox/CoE 并回
-  SDO Abort，仍需 B7 对象字典/SDO 上传才能配置 PDO 域）。
+  ⚠️ **OP 状态**：**两家未修改主站都能把从站推入 OP**——SOEM 零补丁（2026-11-12 19:26 班起，
+  `simple_ng`：8 位 PDO、每轮 WKC 3）；IgH 零补丁（19:53 班起，需 ecrt 应用夹具，见 B8 进度；
+  单独跑 `ethercat slaves` 时无应用会显示 PREOP，这是 IgH 工具行为）。
   IgH 拓扑计算已修（DL Status 0x0110 位按 ETG.1000.4 table 34 修正为单从站正确值 `0x5610`，
   `Failed to calculate bus topology` 消失，2026-11-12 18:56 班；多从站拓扑待 B8）；
   SII 固定区 CRC-8 已补齐（word 0x0007，B6 子项，2026-11-12 晚班）。
@@ -141,8 +141,13 @@ user.email = deepseek-harness@users.noreply.github.com
     SAFEOP → `all slaves are now operational`，每轮 **WKC 3**（1055 轮、0 次 wrong）；
     `slaveinfo`：`Output size: 8bits / Input size: 8bits / State: 4`。断言脚本：
     [soem-process-data.sh](scripts/spikes/soem-process-data.sh)。
-  - 待做：IgH 进 OP（19:44 班起 IgH 已能经 CoE 读对象字典，但 `ethercat slaves` 无应用；
-    需 ecrt 应用夹具配置 domain 才能进 OP）、双主站合并冒烟记录与截图。
+  - 进度（2026-11-12 19:53 班）：**IgH 侧也已零补丁进入 OP**——验证机本地最小 ecrt 应用夹具
+    （不入库，链接 GPL libethercat）：按本仓库对象字典配置 domain（0x1600/0x1A00、8bit I/O），
+    `ethercat slaves` 显示 `OP`，应用 `al_states=0x08`、domain `wc=3`，IgH 日志
+    `Working counter changed to 3/3` / `Slave states on main device: OP`。
+    断言脚本：[igh-op-probe.sh](scripts/spikes/igh-op-probe.sh)。
+  - 待做：把双主站证据合并成 `docs/spikes/spike-4-dual-master-op.md`（含命令/脱敏输出/截图），
+    然后勾选 B8；多从站、DC、watchdog 仍未验证。
 
 ## 7. 目录约定
 

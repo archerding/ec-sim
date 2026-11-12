@@ -146,8 +146,34 @@ PDO mapping according to CoE :
   接受写入并回成功响应（命令 0x60），写入值可被 Upload 回读；只读对象回 Abort `0x06010002`。
   未修改 IgH：`ethercat download -p 0 -t uint16 0x1c13 0x01 0x1a01` 成功，随后
   `ethercat upload` 回读 `0x1a01`；写 0x1018:01 / 0x2000:00 返回 `Input/output error`（Abort）。
-- IgH 仍显示 PREOP：`ethercat slaves` 不包含应用程序，IgH 需要 ecrt 应用配置 domain
-  才会把从站推进 OP（B8 的应用夹具；SDO 上传/下载现已具备）。
+- IgH 单独运行 `ethercat slaves`（无应用）显示 PREOP；经 ecrt 应用配置 domain 可进 OP（§3.4）。
+
+### 3.4 双主站 OP：未修改 IgH 经 ecrt 应用进入 OP（2026-11-12 19:53 班）
+
+IgH 侧需要一个应用程序（ecrt）来配置 domain；夹具在验证机本地构建、**不入库**
+（链接 GPL `libethercat`，按许可红线只作为独立进程夹具）：
+
+```
+# 运行期间的 ethercat slaves
+0  0:0  OP  +  0x00000ec5:0x0000e5c1
+
+# 应用输出（2 ms 周期，8 秒）
+RESULT al_states=0x08 slaves_responding=1 wc=3 out=00 in=00
+
+# IgH 内核日志
+EtherCAT 0: Domain 0: Working counter changed to 3/3.
+EtherCAT 0: Slave states on main device: OP.
+```
+
+- 夹具要点：`ecrt_request_master(0)` → `ecrt_master_create_domain` →
+  `ecrt_master_slave_config(0,0,0x00000EC5,0x0000E5C1)` → `ecrt_slave_config_pdos`
+  （sync2 = 0x1600/0x7000:00 8bit 输出、sync3 = 0x1A00/0x6000:00 8bit 输入）→
+  `ecrt_slave_config_reg_pdo_entry` → activate → 周期 LRW。
+- 复现脚本：[igh-op-probe.sh](../../scripts/spikes/igh-op-probe.sh)
+  （断言 `ethercat slaves` = OP、应用 `al_states=0x08` + `wc=3`、应答器 `al=0x08`）。
+- 注意：单独跑 `ethercat slaves`（无应用）时 IgH 显示 PREOP，这是主站工具行为；
+  OP 只在应用激活期间维持。
+- 过程数据内容仍静态：应用写输出后模拟器只存储、无 PDI 回环；输入恒 0。
 
 ## 4. 过程中发现并修正的四个真问题
 
@@ -190,13 +216,13 @@ PDO mapping according to CoE :
   验证证据：未修改的 SOEM `eepromtool -i` 对 TAP 上的应答器输出
   `Checksum: 0030` / `calculated: 0030`、`Size: 0001 = 256 bytes`、`Version: 0001`；
   同时 `slaveinfo` 与 IgH `ethercat slaves` 无回归。仍属"预回归"，**不构成**一致性测试/认证结论。
-- ~~**未进 OP**~~ ✅ **SOEM 已进 OP（2026-11-12 19:26 班）**：SII SM/TxPDO/RxPDO 类别 + FMMU
-  逻辑寻址 + LRW WKC 修正后，未修改 SOEM `simple_ng` 进入 OP 并做 8 位 PDO 交换（§3.1）。
-  **IgH 仍停在 PREOP**：19:36 班已通邮箱、19:44 班已能经 CoE 读对象字典（§3.2/§3.3），
-  但 IgH 需要 ecrt 应用配置 domain 才会推从站进 OP（B8 下一步）。
+- ~~**未进 OP**~~ ✅ **两家未修改主站都已进 OP**：SOEM 零补丁（§3.1，`simple_ng`，19:26 班起）、
+  IgH 零补丁（§3.4，ecrt 应用夹具，19:53 班起；单独 `ethercat slaves` 无应用时显示 PREOP）。
 - **SDO 仍不完整**：Upload 支持 expedited（≤4 字节）；Download 只对配置对象
   （PDO assign/映射、0x1C32/0x1C33）开放且值只存进程内；SDO Info、Complete Access、
   分段传输未实现，`ethercat sdos`/`slaveinfo -sdo` 会超时。
+- **过程数据内容静态**：应用写 0x7000:00 后模拟器只存储、无 PDI 回环，输入恒 0；
+  DC、SM watchdog、OP 下的 AL 错误恢复未实现/未验证。
 - **输入/输出数据是静态的**：模拟器没有 PDI/应用层，输入恒 0；SM2/SM3 的 buffered/SM 握手语义、
   邮箱、watchdog 均未实现。
 - **SII 暂无 FMMU 类别 0x0028 与 DC 类别**：SOEM `FMMUfunc` 仍显示 `0:0`；
@@ -206,11 +232,9 @@ PDO mapping according to CoE :
 
 ## 6. 下一步
 
-- **B8 IgH 应用夹具**：用 IgH 自带示例或最小 ecrt 应用（独立进程夹具，不入库）在 TAP 上
-  发起 domain（按本字典 0x1C12/0x1A00 映射），观察 IgH 把从站推进 **OP** 并得到 WKC 3/周期；
-  邮箱、SDO 上传与配置对象下载均已通（§3.2/§3.3，断言脚本 `soem-mailbox-probe.sh`、
-  `sdo-upload-probe.sh`）；
-- 之后可补 SDO Info（0x8）与对象字典扩展（0x1C32/0x1C33 等），以及 SII FMMU/DC 类别；
-- **B8 双主站冒烟**：SOEM 已零补丁进 OP（§3.1，断言脚本 `soem-process-data.sh`）；待 IgH 进 OP 后
-  把两主站证据合并为最终冒烟记录；
+- **B8 收尾**：两家未修改主站都已进 OP（SOEM `simple_ng` §3.1、IgH ecrt 应用 §3.4，断言脚本
+  `soem-process-data.sh` / `igh-op-probe.sh`）；把双主站证据合并成
+  `docs/spikes/spike-4-dual-master-op.md`（命令、脱敏输出、截图、脚本清单）并勾选 B8；
+- 之后可补 SDO Info（0x8）、对象字典扩展（0x1C32/0x1C33 等）、SII FMMU/DC 类别，
+  以及多从站/DC/watchdog 场景；
 - DL Status 将在**多从站**场景下按实际拓扑继续验证（单从站已 ✅）。
