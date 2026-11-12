@@ -321,6 +321,7 @@ def main():
     cia402_fault = False
     cia402_cst = False
     dc_clock = False
+    cia402_homing = False
     sdo_retransmit = False
     for arg in sys.argv[1:]:
         if arg.startswith("--timeout="):
@@ -341,6 +342,8 @@ def main():
             sdo_ca = True
         if arg == "--sdo-retransmit":
             sdo_retransmit = True
+        if arg == "--cia402-homing":
+            cia402_homing = True
         if arg == "--dc-clock":
             dc_clock = True
         if arg == "--cia402-cst":
@@ -490,6 +493,40 @@ def main():
             t2 = read_dc_time()
             check(t2 > t1, f"DC 系统时间未前进：{t1} -> {t2}")
             print(f"OK: DC 模拟时钟前进（0x0910：{t1} -> {t2}）")
+
+        # 5l) 可选：CiA 402 HM（模式 6，7 字节 PDO，Tier0 简化）。
+        if cia402_homing:
+            def write_rx(controlword, mode, target):
+                master.transact(
+                    [(CMD["APWR"], 0, 0x1100, struct.pack("<HbI", controlword, mode, target))]
+                )
+
+            def read_tx():
+                reply = master.transact([(CMD["APRD"], 0, 0x1110, bytes(7))])
+                return struct.unpack("<HbI", reply[0][3][:7])
+
+            write_rx(0x0006, 8, 1000)
+            write_rx(0x0007, 8, 1000)
+            write_rx(0x000F, 8, 1000)
+            sw, mode_display, pos = read_tx()
+            check(sw & 0x0004, f"CSP 未进入 Operation enabled（sw={sw:#06x}）")
+            check(pos == 1000, f"CSP 位置未跟随（pos={pos}）")
+
+            write_rx(0x000F, 6, 0)
+            sw, mode_display, pos = read_tx()
+            check(mode_display == 6 and pos == 1000, "HM 未保持位置")
+
+            write_rx(0x001F, 6, 0)  # HM + start homing(bit4)
+            sw, mode_display, pos = read_tx()
+            check(mode_display == 6, "HM 模式显示错误")
+            check(pos == 0, f"HM 未把位置归零（pos={pos}）")
+            check(sw & 0x1000, f"HM 未置 Homing attained（sw={sw:#06x}）")
+
+            write_rx(0x000F, 6, 0)  # 清除 bit4
+            sw, mode_display, pos = read_tx()
+            check(mode_display == 6 and pos == 0, "HM 清除 bit4 后位置应保持 0")
+            check(not (sw & 0x1000), "清除 bit4 后不应再置 Homing attained")
+            print("OK: CiA 402 HM（模式 6，位置归零 + Homing attained）通过")
 
         # 5k) 可选：CiA 402 CST（5 字节 PDO，转矩模式，Tier0 镜像）。
         if cia402_cst:

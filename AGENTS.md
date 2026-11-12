@@ -370,6 +370,7 @@ user.email = deepseek-harness@users.noreply.github.com
   - 进度（2026-11-13 02:46 班）：**SOEM DC 配置路径验证**——未修改 SOEM `simple_ng` 的 `ecx_configdc()` 在 SV660N 画像上 `Configuring distributed clock... done`、`mapped 7O+7I`、OP、`WKC 3`；应答器 `--verbose` 新增 `dc_rd/dc_wr` 统计（本次 `dc_rd=5300 dc_wr=5302`），证明主站确实读写 DC 寄存器。新增 `scripts/spikes/soem-dc-probe.sh`；测试 **202 passed**。⚠️ 仅路径验证，非同步精度。
   - 进度（2026-11-13 02:52 班）：**IgH DC 配置路径验证**——ecrt 夹具显式 `ecrt_slave_config_dc(0x0300, 1ms)` 后仍进 OP：`al_states=0x08`、`sw=0x0237`、`torque=300`；应答器 `STATS dc_rd=5 dc_wr=8`。新增 `scripts/spikes/igh-dc-op-probe.sh`（夹具为验证机本地文件，不入库）。⚠️ 仅配置路径，非同步精度。
   - 进度（2026-11-13 02:57 班）：**SV660N 画像 IgH ecrt OP+CSP+DC 验证**——`scripts/spikes/igh-sv660n-op-probe.sh` **EXIT=0**：`ethercat slaves` 显示 `OP + 0x00000ec5:0x0000e5f1`；`RESULT al_states=0x08`；`STATUS sw=0x0637 modes_display=8 pos=12345`（启用+Target reached+位置跟随）；应答器 `dc_rd=3 dc_wr=7`。ecrt 夹具为验证机本地文件（不入库）。⚠️ 默认 PDO 仍为 Tier0 通用布局。
+  - 进度（2026-11-13 03:05 班）：**HM（回零，模式 6）Tier0 行为**——`Operation enabled` 且控制字 bit4=1 时位置归零并置状态字 bit12（Homing attained），bit4 清除后不再置位；新增单测 `cia402_homing_mode_zeroes_position_and_sets_attained`、UDS 探针 `--cia402-homing`、脚本 `cia402-homing-probe.sh`；验证机 **EXIT=0**。测试 **204 passed**。⚠️ Tier0：不模拟寻零过程/开关信号/回零方式 0x6098。
 - [ ] **B11 CiA402 行为插件**：以 Inovance SV660N 兼容画像为第一个目标，实现 CSP 状态机（Tier0/内置 profile 起步）。
   - 依赖 B10 已完成（声明式画像 + `--manifest` + 验证脚本可复用）；先 facts.md + 声明式画像，
     行为 WASM 只做 Tier0 状态机骨架。

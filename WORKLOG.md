@@ -32,6 +32,36 @@
 
 ---
 
+## 2026-11-13 03:05 班（低峰）— B11：**HM（回零，模式 6）Tier0 行为**
+
+**做了什么**
+- `esc-node::cia402`：新增控制字位 `BIT4`（模式相关：CSP new set-point / HM start homing）
+  与状态字位 `HOMING_ATTAINED`（bit12）。
+- `--behavior cia402` 行为：**HM（模式 6，7 字节 PDO）**——`Operation enabled` 且控制字
+  bit4=1 时实际位置归零并置 `Homing attained`；bit4 清除后不再置位（位置保持 0）。
+  ⚠️ Tier0 简化：不模拟寻零过程/开关信号/回零方式 `0x6098`。
+- 新增单测 `cia402_homing_mode_zeroes_position_and_sets_attained`（CSP 走到 1000 →
+  切 HM 保持 → HM+bit4 归零并置位 → 清 bit4 不再置位）。
+- 新验证设施：`uds_master_probe.py` 新增 `--cia402-homing`、脚本
+  `scripts/spikes/cia402-homing-probe.sh`（7 字节 PDO 画像）。
+- 文档：`docs/plugins/cia402-state-machine.md` 增补 HM 小节、`docs/VERIFICATION.md` 索引、
+  AGENTS B11。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **204 passed**
+  （esc-core 86 / esc-node 67 / plugin-host 27 + 1 集成 / wire 23）。
+- Linux 验证机（重建后）：`cia402-homing-probe.sh` → **EXIT=0**：
+  `BEHAVIOR cia402 sm2_out=0x1100/7B sm3_in=0x1110/7B`；CSP 到 1000 → HM 保持 →
+  HM+bit4 位置 0 且状态字含 bit12 → 清 bit4 后不再置位。
+
+**卡点**
+- HM 仅 Tier0：无寻零过程/开关信号/回零方式对象；`Target reached` 仍只用于 CSP。
+
+**下次开工第一件事**
+- B11：继续找 SV660N 默认 PDO 条目；或评估真实 DC 同步（SYNC0 脉冲）。
+
+---
+
 ## 2026-11-13 03:03 班（低峰）— 健壮性：**`Responder::handle_frame` 随机帧无 panic 测试**
 
 **为什么要做这个**：B11 顶部子项（SV660N 默认 PDO）仍缺公开来源（本轮又试了 r.jina.ai PDF

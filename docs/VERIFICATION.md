@@ -18,6 +18,7 @@
 | `igh-cia402-cst-op-probe.sh` | IgH ecrt 5B CST：OP、`al_states=0x08`、`sw=0x0237`、模式 10、`0x6077=300` | **EXIT=0** |
 | `cia402-cst-op-probe.sh` | CST 画像双主站：SOEM 40/40 bits、`0x6071`/`0x6077` 映射、`5O+5I` 进 OP；IgH PREOP+身份 `0xe5e2` | **EXIT=0** |
 | `cia402-cst-probe.sh` | 5 字节 PDO CST：状态机序列 + 实际转矩镜像 `0x6071`→`0x6077`、禁用后归零 | **EXIT=0** |
+| `cia402-homing-probe.sh` | 7B PDO HM（模式 6）：位置归零 + Homing attained（bit12），bit4 清除后不再置位 | **EXIT=0** |
 | `cia402-fault-probe.sh` | `--fault 0x7500`：Fault bit、控制字 bit7 复位、`0x603F` 回读 | **EXIT=0** |
 | `dc-clock-probe.sh` | 模拟 DC 时钟：0x0910 系统时间随帧前进（Tier0 帧驱动） | **EXIT=0** |
 | `cia402-sdo-download-probe.sh` | 20 字节可写配置字符串 `0x2100` 的分段 SDO 下载 + 回读一致 | **EXIT=0** |

@@ -333,7 +333,11 @@ impl Responder {
     /// Tier0 简化：Operation enabled 时实际位置直接跟随目标位置（无运动环/限幅），
     /// 并置状态字 bit10 Target reached；SM 长度不足 7 字节时只处理/写状态字 2 字节。
     fn step_cia402_behavior(&mut self) {
-        use crate::cia402::{statusword::TARGET_REACHED, Cia402State};
+        use crate::cia402::{
+            controlword::BIT4,
+            statusword::{HOMING_ATTAINED, TARGET_REACHED},
+            Cia402State,
+        };
 
         let Responder { cia402, memory, .. } = self;
         let Some(behavior) = cia402.as_mut() else {
@@ -375,6 +379,13 @@ impl Responder {
         } else if enabled && csv {
             behavior.position_actual = behavior.position_actual.saturating_add(target_velocity);
         }
+        // HM（模式 6，7 字节 PDO）Tier0：enabled 且控制字 bit4=1 时位置归零并置 Homing attained
+        //（不模拟寻零过程/开关信号；bit4 清除后不再置位）。
+        let homing = modes == 6 && out_bytes.len() >= 7;
+        let homing_attained = enabled && homing && (controlword & BIT4) != 0;
+        if homing_attained {
+            behavior.position_actual = 0;
+        }
         let velocity_actual = if enabled && csv { target_velocity } else { 0 };
         behavior.velocity_actual = velocity_actual;
         // CST（模式 10，5 字节 PDO）：Tier0 只镜像目标转矩为实际转矩（不模拟运动）。
@@ -387,6 +398,9 @@ impl Responder {
             && behavior.position_actual == target
         {
             statusword |= TARGET_REACHED;
+        }
+        if homing_attained {
+            statusword |= HOMING_ATTAINED;
         }
         behavior.modes_display = modes;
         if usize::from(behavior.in_len) == 5 {
@@ -1563,6 +1577,74 @@ mod tests {
             (0x0237, 9, 1000),
             "非 CSP 模式位置冻结、无 Target reached"
         );
+    }
+
+    #[test]
+    fn cia402_homing_mode_zeroes_position_and_sets_attained() {
+        fn write_rx(responder: &mut Responder, controlword: u16, mode: i8, target: i32) {
+            let mut data = vec![0u8; 7];
+            data[0..2].copy_from_slice(&controlword.to_le_bytes());
+            data[2] = mode as u8;
+            data[3..7].copy_from_slice(&target.to_le_bytes());
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Apwr,
+                1,
+                0,
+                0x1100,
+                data,
+            )]);
+            responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APWR reply");
+        }
+        fn read_tx(responder: &mut Responder) -> (u16, i8, i32) {
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Aprd,
+                1,
+                0,
+                0x1110,
+                vec![0u8; 7],
+            )]);
+            let reply = responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APRD reply");
+            let start = ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10;
+            (
+                u16::from_le_bytes([reply[start], reply[start + 1]]),
+                reply[start + 2] as i8,
+                i32::from_le_bytes([
+                    reply[start + 3],
+                    reply[start + 4],
+                    reply[start + 5],
+                    reply[start + 6],
+                ]),
+            )
+        }
+
+        let mut responder = Responder::default().with_cia402_behavior(0x1100, 7, 0x1110, 7);
+        // 先在 CSP 把位置走到 1000。
+        write_rx(&mut responder, 0x0006, 8, 1000);
+        responder.tick(1);
+        write_rx(&mut responder, 0x0007, 8, 1000);
+        responder.tick(2);
+        write_rx(&mut responder, 0x000F, 8, 1000);
+        responder.tick(3);
+        assert_eq!(read_tx(&mut responder), (0x0637, 8, 1000));
+
+        // 切到 HM（模式 6），未置 bit4：位置冻结、无 Homing attained。
+        write_rx(&mut responder, 0x000F, 6, 0);
+        responder.tick(4);
+        assert_eq!(read_tx(&mut responder), (0x0237, 6, 1000));
+
+        // HM + bit4：位置归零并置 Homing attained（bit12）。
+        write_rx(&mut responder, 0x001F, 6, 0);
+        responder.tick(5);
+        assert_eq!(read_tx(&mut responder), (0x0237 | 0x1000, 6, 0));
+
+        // 清除 bit4：不再置位，位置保持 0。
+        write_rx(&mut responder, 0x000F, 6, 0);
+        responder.tick(6);
+        assert_eq!(read_tx(&mut responder), (0x0237, 6, 0));
     }
 
     #[test]

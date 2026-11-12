@@ -24,6 +24,8 @@ pub mod controlword {
     pub const ENABLE_OPERATION: u16 = 0x0008;
     /// Fault reset（bit7，上升沿有效）。
     pub const FAULT_RESET: u16 = 0x0080;
+    /// 模式相关 bit4：CSP 的 new set-point / HM 的 start homing。
+    pub const BIT4: u16 = 0x0010;
 }
 
 /// 状态字位（`0x6041`，CiA 402）。
@@ -38,6 +40,8 @@ pub mod statusword {
     pub const FAULT: u16 = 0x0008;
     /// Voltage enabled（bit4）。
     pub const VOLTAGE_ENABLED: u16 = 0x0010;
+    /// Homing attained（bit12，HM 模式）。
+    pub const HOMING_ATTAINED: u16 = 0x1000;
     /// Quick stop（低有效，bit5）。
     pub const QUICK_STOP: u16 = 0x0020;
     /// Switch on disabled（bit6）。
