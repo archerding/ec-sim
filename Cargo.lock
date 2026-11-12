@@ -19,6 +19,14 @@ name = "esc-core"
 version = "0.0.1"
 
 [[package]]
+name = "esc-node"
+version = "0.0.1"
+dependencies = [
+ "esc-core",
+ "wire",
+]
+
+[[package]]
 name = "plugin-host"
 version = "0.0.1"
 

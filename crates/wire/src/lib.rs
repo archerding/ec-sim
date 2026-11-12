@@ -496,13 +496,21 @@ pub struct AutoIncrementStep {
 
 /// 按 EtherCAT 自增寻址规则处理一次 ADP。
 ///
-/// 规则：入站 ADP 为 1 的从站处理该 datagram；所有从站在入站 ADP > 0 时将其减 1 后转发。
-/// 等价于"主站把 ADP 设为从站环位置，沿环递减到 0 的那一站点执行"。
+/// 规则（ESC Sec.II / ETG.1000.4，2026-11-12 用两份未修改主站源码复核）：
+/// 主站把 ADP 写成**环位置的相反数**（16 位二补数），每个从站在转发前把 ADP 加 1；
+/// 入站 ADP 为 0 的从站执行命令。一帧沿环每经过一个从站加 1，因此
+/// ADP = -(N) 命中环上第 N 个从站（0 起算）。
+///
+/// 证据：
+/// - IgH `master/datagram.c`：`ec_datagram_aprd/apwr` 写入 `(int16_t) ring_position * (-1)`；
+/// - SOEM `src/ec_config.c`：`ADPh = (uint16)(1 - slave)`（1 起算的从站号）。
+///
+/// 早先实现（"ADP==1 执行、转发时减 1"）在真实主站上会整体偏移一个从站，已修正。
 #[must_use]
 pub fn auto_increment_step(incoming_adp: u16) -> AutoIncrementStep {
     AutoIncrementStep {
-        process: incoming_adp == 1,
-        forward_adp: incoming_adp.saturating_sub(1),
+        process: incoming_adp == 0,
+        forward_adp: incoming_adp.wrapping_add(1),
     }
 }
 
@@ -688,16 +696,20 @@ mod tests {
     }
 
     #[test]
-    fn auto_increment_decrements_and_processes_at_one() {
-        let step = auto_increment_step(1);
-        assert!(step.process);
-        assert_eq!(step.forward_adp, 0);
-        let step = auto_increment_step(3);
-        assert!(!step.process);
-        assert_eq!(step.forward_adp, 2);
+    fn auto_increment_increments_and_processes_at_zero() {
+        // 环上第一个从站：主站 ADP = -(0) = 0。
         let step = auto_increment_step(0);
+        assert!(step.process);
+        assert_eq!(step.forward_adp, 1);
+        // 环上第二个从站：主站 ADP = -(1) = 0xFFFF，第一个从站转发后变为 0。
+        let step = auto_increment_step(0xFFFF);
         assert!(!step.process);
         assert_eq!(step.forward_adp, 0);
+        let step = auto_increment_step(0xFFFE);
+        assert!(!step.process);
+        assert_eq!(step.forward_adp, 0xFFFF);
+        // 转发是 16 位回绕（不能饱和）。
+        assert_eq!(auto_increment_step(0xFFFF).forward_adp, 0);
     }
 
     #[test]

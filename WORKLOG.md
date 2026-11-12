@@ -6,6 +6,41 @@
 
 ---
 
+## 2026-11-12 13:27 班（低峰）— B2b 最小 ESC 应答器（IgH + SOEM 各看到 1 个从站）
+
+**做了什么**
+- 新增 `crates/esc-node`（二进制 `ec-sim-esc`，零第三方依赖）：Linux TAP 上应答 EtherCAT 帧；
+  TAP 由进程自己 `open /dev/net/tun` + `TUNSETIFF` 创建并持有 fd（无持有者 = NO-CARRIER）。
+- `esc-core` 新增 `sii`（最小 SII 镜像：我方占位 VID/PID、字符串类别 0x000A、通用类别 0x001E 32 B、0xFFFF 终止、无 mailbox）
+  与 `eeprom`（0x0500–0x050F EEPROM 接口：R64 状态位、8 字节读、写命令计数）；
+  `esc-node` 组合寄存器/AL 状态机/EEPROM/帧应答（BRD/BWR、APRD/APWR 按 ADP、FPRD/FPWR 按站地址/别名、WKC 累加）。
+- 修正 `wire::auto_increment_step`：主站 ADP = 环位置相反数、从站转发前 **+1**、收到 0 者执行
+  （证据：IgH `master/datagram.c` `ring_position * (-1)`；SOEM `ec_config.c` `ADPh = 1 - slave`）。
+- 新增 `scripts/spikes/minimal-esc-responder.sh` 与 `docs/spikes/spike-3-minimal-esc-responder.md`。
+
+**验证结果**
+- 本机 Windows：`cargo fmt --all -- --check` / `cargo clippy --workspace --all-targets -- -D warnings` 均 exit 0；
+  `cargo test --workspace` 全绿（新增 esc-node 10 条、esc-core 11 条、wire 修正 1 条）。
+- Linux 验证机（未修改主站）：
+  - SOEM `slaveinfo`：`1 slaves found and configured`，`Name:EC-Sim SIMULATED slave`，
+    `Man: 00000ec5 ID: 0000e5c1 Rev: 00000001`，`Configured address: 1001`。
+  - IgH `ethercat slaves`：`0  0:0  PREOP  +  0x00000ec5:0x0000e5c1`（无错误位；
+    `ethercat master` 显示 Slaves: 1、Rx frames 1102、Lost frames 0）。
+  - 应答器统计：`in=1100 out=1094 dropped=6 hits=1094 al=0x02(PREOP)`。
+- 过程中修正的真问题：以太网 60 字节填充被当成非法帧（IgH 全部 TIMEOUT）；
+  通用类别必须 32 字节（否则 IgH 标 `E`）；ADP 方向（见上）。
+
+**卡点**
+- IgH 仍打印 `Failed to calculate bus topology`（从站列表/状态正常，无 `E`）：DL Status 端口
+  0/1 的链路/环回语义未完全对上 `ec_master_calc_topology_rec()`，⚠️ 待验证（下一步小项）。
+- SII CRC-8（word 0x3F）未实现：两家主站扫描都不校验，接会校验 CRC 的主站前需 B6 补。
+- 未进 OP（无 mailbox/PDO/SM/FMMU）→ 属 B8；本次目标（看到 1 个从站）已达成。
+
+**下次开工第一件事**
+- **B8 双主站冒烟**：补 SM/FMMU/PDO 让 IgH 与 SOEM 都进 OP；先修 IgH 拓扑端口位（小项、可独立验证）。
+
+---
+
 ## 2026-11-12 12:30 班（低峰）— B1 Rust workspace 骨架
 
 **做了什么**

@@ -1,0 +1,90 @@
+# Spike 3：最小 ESC 应答器 —— 未修改主站看到 1 个从站
+
+- **日期**：2026-11-12 13:27 班（低峰）
+- **假设**：在 Linux TAP 上跑一个**只实现 ESC 寄存器 + SII EEPROM 接口 + 帧应答**的进程，
+  未修改的 IgH 1.6.13 与 SOEM 就能扫描到 1 个从站（不要求进 OP）。
+- **结论**：✅ **成立**。IgH `ethercat slaves` 输出 `0  0:0  PREOP  +  0x00000ec5:0x0000e5c1`（无错误位），
+  SOEM `slaveinfo` 输出 `1 slaves found and configured` 并读到正确的 Name/Man/ID/Rev。
+- **实现**：`crates/esc-node`（新 crate，二进制 `ec-sim-esc`）+ `crates/esc-core` 的
+  `sii`/`eeprom` 模块；零第三方依赖，TAP 只声明用到的 libc 符号。
+- **可复现脚本**：[minimal-esc-responder.sh](../../scripts/spikes/minimal-esc-responder.sh)
+
+## 1. 方法
+
+1. `ec-sim-esc --tap escsim0`：进程自己 open `/dev/net/tun` + `TUNSETIFF` 附着 TAP 并持有 fd
+   （Spike 2 的教训：无持有者的 TAP 是 NO-CARRIER，主站发不出帧）。
+2. 外部把 TAP MAC 设为 IgH `main_devices` 使用的 MAC 并 `ip link set up`
+   （`ec_generic` 按 MAC 匹配设备；SOEM 不关心 MAC）。
+3. SOEM：`slaveinfo escsim0`；IgH：`modprobe ec_master main_devices=<MAC>` → `modprobe ec_generic`
+   → `ethercat slaves`。主站均**未修改**，来自仓库外的既有构建。
+
+## 2. 应答器实现了什么
+
+- ESC 寄存器：识别寄存器（Type/Revision/Build/FMMU/SM 数/端口描述/Features）、
+  站地址 0x0010（可写，主站扫描时分配）、DL Status 0x0110、AL Control/Status/Status Code；
+- AL 状态机复用 `esc-core::EscAl`（INIT→PREOP 握手、非法迁移 0x0011、Error ACK）；
+- SII EEPROM 接口 0x0500–0x050F：状态字（`R64=0x0040`、无 busy/error）、8 字节读、写命令计数；
+- SII 镜像：固定区（Vendor `0x00000EC5`、Product `0x0000E5C1`、Rev/Serial 1，均为我方占位值，
+  非 ETG 注册号）、字符串类别 0x000A（`EC-Sim SIMULATED slave`）、通用类别 0x001E（32 字节）、
+  `0xFFFF` 终止；**无 mailbox**（因此主站不会协商 CoE，扫描后停在 INIT/PREOP）；
+- datagram：BRD/BWR/BRW 广播命中，APRD/APWR 收到 ADP==0 命中，FPRD/FPWR 按站地址/别名命中，
+  WKC 按读/写属性累加；逻辑寻址（需 FMMU）本阶段不命中。
+
+## 3. 实测输出（脱敏）
+
+SOEM（`slaveinfo`，节选）：
+
+```
+ecx_init on escsim0 succeeded.
+1 slaves found and configured.
+Slave:1
+ Name:EC-Sim SIMULATED slave
+ State: 4
+ Configured address: 1001
+ Man: 00000ec5 ID: 0000e5c1 Rev: 00000001
+ MBX length wr: 0 rd: 0 MBX protocols : 00
+```
+
+IgH（`ethercat slaves` / `ethercat master`）：
+
+```
+0  0:0  PREOP  +  0x00000ec5:0x0000e5c1
+
+Master0
+  Slaves: 1
+    Main: 02:ec:51:4d:00:01 (attached)
+      Link: UP
+      Rx frames: 1102   Lost frames: 0
+```
+
+应答器侧统计（`--verbose` 每 50 帧打印一次）：`in=1100 out=1094 dropped=6 hits=1094`，
+`al=0x02`（PREOP），说明主站 AL 握手被正确处理。
+
+## 4. 过程中发现并修正的三个真问题
+
+1. **以太网填充**：IgH 主站把短 EtherCAT 帧补零到 60 字节（`Tx bytes / Tx frames = 60`），
+   帧头声明长度小于实际长度。严格"声明长度==实际长度"的校验会**静默丢弃全部 IgH 帧**
+   （现象：主站 `Rx frames: 0`、全部 datagram TIMEOUT，而 SOEM 正常）。
+   应答器现在接受"声明长度之后全是填充"的帧；新增单测覆盖。
+2. **通用类别必须 32 字节**：IgH `ec_slave_fetch_sii_general()` 硬性要求 `data_size == 32`，
+   否则报 `Wrong size of general category (16/32)` 并把从站标错（`E`）。
+3. **自增地址方向错误**（修复 `wire::auto_increment_step`）：主站把 ADP 写成环位置的相反数
+   （IgH `master/datagram.c`：`(int16_t) ring_position * (-1)`；SOEM `src/ec_config.c`：
+   `ADPh = (uint16)(1 - slave)`），每个从站转发前把 ADP **加 1**，收到 0 的从站执行。
+   原实现"ADP==1 执行、转发减 1"会整体偏移一个从站号，已按源码证据修正并更新单测。
+
+## 5. 已知限制 / ⚠️ 待验证
+
+- **拓扑计算仍报错**：IgH 日志有 `Failed to calculate bus topology`（从站列表本身正常、无 `E` 标志）。
+  `ec_master_calc_topology_rec()` 只对端口 3/2 检查 `loop_closed`；当前 DL Status 置了这两个端口的
+  闭合位但仍不满足，端口 0/1 的真实链路语义待按 ESC Sec.II 逐位复核（⚠️ 待验证）。
+- **SII CRC-8（word 0x3F）未实现**：IgH/SOEM 扫描不校验 CRC；接 TwinCAT 等会校验 CRC 的主站前必须补（B6）。
+- **未进 OP**：无 mailbox/PDO/SM/FMMU，`slaveinfo` 的 `State: 4` 与 IgH `PREOP` 说明只到 PREOP；
+  OP 需要 B5 的 SM/FMMU + B7 CoE，属 B8 范畴。
+- **非认证**：以上只是"用例映射/预回归"，**不构成**一致性测试或 CTT 认证结论。
+- 验证机侧模块加载/卸载顺序、TAP MAC 等运维细节见本地 `.local/ops.md`（不入库）。
+
+## 6. 下一步
+
+- **B8 双主站冒烟**：补齐 SM/FMMU/PDO 让两个主站都进 OP，并把本 spike 的脚本升级为断言脚本；
+- 先修 IgH 拓扑端口位（小项，可独立验证）。

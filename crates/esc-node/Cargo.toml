@@ -1,0 +1,19 @@
+[package]
+name = "esc-node"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "EC-Sim 最小 ESC 从站节点：ESC 寄存器 + EEPROM + EtherCAT 帧应答（B2b）"
+
+[lib]
+name = "esc_node"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ec-sim-esc"
+path = "src/bin/ec_sim_esc.rs"
+
+[dependencies]
+esc-core = { path = "../esc-core" }
+wire = { path = "../wire" }

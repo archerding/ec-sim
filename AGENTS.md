@@ -78,7 +78,13 @@ user.email = deepseek-harness@users.noreply.github.com
 ## 6. 当前 Backlog（按优先级，顶部先做）
 
 - [x] ~~**B1 Rust workspace 骨架**~~ ✅ **2026-11-12 完成**：6 个成员 crate 骨架（`esc-core`/`wire`/`coe`/`plugin-host`/`control-plane`/`cli`）+ 三平台 CI 全绿。证据：commit `93a2fbf`，CI run `43158276907`（ubuntu/macos/windows 的 `fmt --check`/`clippy -D warnings`/`test` 均 success）。
-- [ ] **B2b 最小 ESC 应答器（Python/Rust 原型均可，先验证协议）**：在服务器上让持 TAP 的进程响应 `BRD 0x0000`、`APWR 0x0010`、`APRD 0x0130`，目标 = IgH `ethercat slaves` 与 SOEM `slaveinfo` 都看到 **1 个从站**（尚未要求进 OP）。产出结论写入 `docs/spikes/`。
+- [x] ~~**B2b 最小 ESC 应答器（Python/Rust 原型均可，先验证协议）**~~ ✅ **2026-11-12 完成**：
+  `crates/esc-node`（`ec-sim-esc`）+ `esc-core` 的 `sii`/`eeprom`：TAP 上应答 BRD/APRD/APWR/FPRD/FPWR，
+  AL 状态机到 PREOP，SII 可被读取；**未修改的** SOEM `slaveinfo` 报 `1 slaves found and configured`
+  （`Man: 00000ec5 ID: 0000e5c1`），IgH `ethercat slaves` 报 `0  0:0  PREOP  +  0x00000ec5:0x0000e5c1`。
+  证据：[spike-3](docs/spikes/spike-3-minimal-esc-responder.md)、[复现脚本](scripts/spikes/minimal-esc-responder.sh)。
+  顺带修正 `wire::auto_increment_step` 的 ADP 方向（主站 ADP = 环位置相反数、转发前 +1）。
+  ⚠️ 未进 OP（无 mailbox/PDO/SM/FMMU）；IgH 拓扑计算仍报错（端口位待复核）；SII CRC-8 归 B6。
 - [x] ~~**B2 Spike 1（Linux TAP）**~~ ✅ **2026-11-12 完成**：TAP 双向承载 0x88A4，且**未修改的 SOEM 与 IgH 都能绑定 TAP 并发出真实帧**（IgH `ec_generic` 按 MAC 匹配 TAP）。证据：[spike-1](docs/spikes/spike-1-tap-bidirectional.md)、[spike-2](docs/spikes/spike-2-masters-on-tap.md)。
 - [ ] **B3 Spike 4（SOEM oshw shim）**：把 SOEM 的 `oshw` 收发包替换成 UDS，跑通 `ec_config_init` + `ec_config_map`（SOEM 以独立进程/容器方式使用）。
 - [x] ~~**B4 `wire` crate**~~ ✅ **2026-11-12 完成**：帧/datagram 编解码、M 位串联、13 命令 WKC 规则、自增/配置/广播/逻辑寻址、FMMU 区间判定；16 个单元测试；fmt/clippy(-D warnings) 通过。证据：commit `9d32597`。

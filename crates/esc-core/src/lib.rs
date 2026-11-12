@@ -6,7 +6,12 @@
 //! - AL Control (0x0120) / AL Status (0x0130) / AL Status Code (0x0134) 语义；
 //! - ESM 合法迁移表、错误位与 Error ACK、ID Request。
 //!
-//! 尚未实现（后续子步骤）：SM/FMMU 寄存器块、EEPROM 接口状态机、watchdog、DC。
+//! 尚未实现（后续子步骤）：SM/FMMU 寄存器块、watchdog、DC。
+//!
+//! 已实现（B2b 起）：[`sii`] 最小 SII 镜像、[`eeprom`] EEPROM 寄存器接口状态机。
+
+pub mod eeprom;
+pub mod sii;
 
 /// ESC 标准寄存器空间大小（0x0000–0x0FFF）。
 pub const REG_SPACE_LEN: usize = 0x1000;
