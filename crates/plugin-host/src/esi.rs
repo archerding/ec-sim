@@ -645,6 +645,8 @@ pub fn sii_spec_from_esi(device: &EsiDevice) -> Result<SiiSpec, String> {
         coe_details,
         general_flags: 0,
         ebus_current: 0,
+        // DC 类别：ESI 的 DC 参数尚未映射（模拟器未实现 DC 同步），保持不声明。
+        dc: None,
     })
 }
 

@@ -32,6 +32,38 @@
 
 ---
 
+## 2026-11-13 01:56 班（低峰）— B6：**SII DC 类别（0x003C）生成已实现**
+
+**做了什么**
+- 新增 `SiiDc`（分布式时钟类别内容，24 字节 / 12 words）与 `SiiDc::to_bytes()`：
+  `cycleTime0` u32 @0、`shiftTime0` u32 @4、`shiftTime1` u32 @8、
+  `sync1CycleFactor` i16 @0x0C、`assignActivate` u16 @0x0E、`sync0CycleFactor` i16 @0x10、
+  `nameIndex` u8 @0x12、`descIndex` u8 @0x13、`reserved[4]` @0x14。
+  依据公开资料 [CSDN《EtherCAT EEPROM详解》](https://blog.csdn.net/weixin_42927110/article/details/136050157)
+  的 DC 类别表（只读参考，2026-11-13 通过图片表格核对）。
+- `SiiSpec` 增加 `dc: Option<SiiDc>`；`SiiImage::from_spec` 在 FMMU 类别之后插入 DC 类别
+  （类别头 `0x003C`、长度字 12）。
+- **内置镜像 / manifest / ESI 均保持 `dc: None`**：模拟器尚未实现 DC 同步，声明 DC 会让
+  主站进入 DC 配置路径；等 DC 仿真实现后再由 profile 显式声明。
+- 新增单测 `dc_category_encodes_documented_layout`（逐字段偏移/长度）与
+  `from_spec_with_dc_adds_dc_category`（类别存在、长度字=12、内容一致）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **195 passed**（esc-core 85 / esc-node 61 / plugin-host 25 + 1 集成 / wire 23）。
+- 内置镜像字节不变（既有 `from_spec == simulated_slave` 逐 word 断言仍通过），
+  因此未重跑验证机（扫描/OP 路径无变化）。
+
+**卡点**
+- DC 类别只是**生成能力**：无任何 profile 声明 DC，也未实现 DC 同步/漂移补偿；
+  开启前需先实现 DC 仿真（0x0900 寄存器、SYNC0 驱动 `tick`）与 manifest 时序字段。
+
+**下次开工第一件事**
+- B6 收尾：为 manifest 增加 DC 时序字段并在 DC 仿真可用时声明；或 B11 SV660N
+  默认 PDO 条目查找（HTML 在线手册）。
+
+---
+
 ## 2026-11-13 01:51 班（低峰）— B6：**SII FMMU 类别（0x0028）已实现**
 
 **做了什么**

@@ -140,6 +140,8 @@ pub fn sii_spec_from_manifest(manifest: &PluginManifest) -> Result<SiiSpec, Stri
         coe_details,
         general_flags: 0,
         ebus_current: 0,
+        // DC 类别：manifest 未声明 DC 时序参数（模拟器未实现 DC 同步），保持不声明。
+        dc: None,
     })
 }
 

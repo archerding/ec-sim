@@ -165,6 +165,11 @@ user.email = deepseek-harness@users.noreply.github.com
     资料（只读参考，2026-11-13 访问）；新增测试并更新类别链期望。验证机 soem-process-data/
     minimal-esc-responder/igh-el2008-op-probe 全部 EXIT=0（FMMU 类别未影响 OP）。测试 **193 passed**。
     ⚠️ 仍剩 **DC 类别（0x003C）**未实现（需 ETG 原文）。
+  - 进度（2026-11-13 01:56 班）：**DC 类别（0x003C）生成已实现**——`SiiDc` 结构按公开资料
+    文档化布局（cycleTime0/shiftTime0/1、sync1/0CycleFactor、assignActivate、name/desc、
+    reserved，24 字节）编码；`SiiSpec.dc = Some(..)` 时在 FMMU 后插入 DC 类别；新增 2 单测。
+    ⚠️ 内置镜像/manifest/ESI 均**不声明** DC（模拟器尚未实现 DC 同步），因此不影响 SOEM/IgH；
+    开启需先实现 DC 仿真与 manifest 时序字段。测试 **195 passed**。
   - 进度（2026-11-12 19:26 班）：**SM 类别 0x0029 + TxPDO 0x0032 + RxPDO 0x0033 已实现**
     （SM0/SM1 = mailbox、SM2 输出 0x1100、SM3 输入 0x1110；PDO 0x1A00/0x1600，
     对象 0x6000:00/0x7000:00）。字节布局按 IgH `slave.c` 与 SOEM `ec_main.c` 的解析代码逐字节复核；

@@ -84,6 +84,8 @@ pub mod category {
     pub const GENERAL: u16 = 0x001E;
     /// FMMU 类别（FMMU 用途字节，见 [`SIM_FMMU_USAGE`]）。
     pub const FMMU: u16 = 0x0028;
+    /// 分布式时钟类别（DC，内容见 [`SiiDc`]）。
+    pub const DC: u16 = 0x003C;
     /// Sync Manager 类别（每条 8 字节）。
     pub const SYNC_MANAGER: u16 = 0x0029;
     /// TxPDO 类别（从站 → 主站，输入方向）。
@@ -399,6 +401,52 @@ pub struct SiiSpec {
     pub general_flags: u8,
     /// Ebus 电流（mA，通用类别 `data[12]`）。
     pub ebus_current: i16,
+    /// 分布式时钟类别（0x003C）；`None` = 不声明 DC（模拟器未实现 DC 同步时保持 None）。
+    pub dc: Option<SiiDc>,
+}
+
+/// SII 分布式时钟类别（0x003C）内容（24 字节，12 words）。
+///
+/// 字节布局（公开资料 CSDN《EtherCAT EEPROM 详解》DC 表，访问 2026-11-13；只读参考）：
+/// `cycleTime0` u32 @0、`shiftTime0` u32 @4、`shiftTime1` u32 @8、
+/// `sync1CycleFactor` i16 @0x0C、`assignActivate` u16 @0x0E、`sync0CycleFactor` i16 @0x10、
+/// `nameIndex` u8 @0x12、`descIndex` u8 @0x13、`reserved[4]` @0x14。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SiiDc {
+    /// DC 周期时间（ns）。
+    pub cycle_time0: u32,
+    /// SYNC0 相对参考时钟的偏移（ns）。
+    pub shift_time0: u32,
+    /// SYNC1 相对 SYNC0 的偏移（ns）。
+    pub shift_time1: u32,
+    /// SYNC1 周期因子（i16，-1 = 禁用）。
+    pub sync1_cycle_factor: i16,
+    /// SYNC 激活位（ETG.1000.6 assign activate）。
+    pub assign_activate: u16,
+    /// SYNC0 周期因子（i16）。
+    pub sync0_cycle_factor: i16,
+    /// 字符串类别中的名称索引（0 = 无名称）。
+    pub name_index: u8,
+    /// 字符串类别中的描述索引（0 = 无描述）。
+    pub desc_index: u8,
+}
+
+impl SiiDc {
+    /// 编码为 SII DC 类别数据（不含类别头；固定 24 字节）。
+    #[must_use]
+    pub fn to_bytes(self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(24);
+        bytes.extend_from_slice(&self.cycle_time0.to_le_bytes());
+        bytes.extend_from_slice(&self.shift_time0.to_le_bytes());
+        bytes.extend_from_slice(&self.shift_time1.to_le_bytes());
+        bytes.extend_from_slice(&self.sync1_cycle_factor.to_le_bytes());
+        bytes.extend_from_slice(&self.assign_activate.to_le_bytes());
+        bytes.extend_from_slice(&self.sync0_cycle_factor.to_le_bytes());
+        bytes.push(self.name_index);
+        bytes.push(self.desc_index);
+        bytes.extend_from_slice(&[0u8; 4]); // reserved
+        bytes
+    }
 }
 
 /// 最小 SII 镜像（word 数组，1 word = 2 字节小端）。
@@ -463,6 +511,9 @@ impl SiiImage {
             &sync_manager_category(&spec.sync_managers),
         );
         push_category(&mut words, category::FMMU, &SIM_FMMU_USAGE);
+        if let Some(dc) = &spec.dc {
+            push_category(&mut words, category::DC, &dc.to_bytes());
+        }
         if !spec.tx_pdos.is_empty() {
             push_category(&mut words, category::TX_PDO, &pdo_category(&spec.tx_pdos));
         }
@@ -694,6 +745,7 @@ pub fn simulated_spec() -> SiiSpec {
         coe_details: SIM_COE_DETAILS,
         general_flags: 0,
         ebus_current: 0,
+        dc: None,
     }
 }
 
@@ -787,6 +839,78 @@ mod tests {
                 break;
             }
             assert_ne!(cat_type, 0xFFFF, "FMMU 类别应存在于链中");
+            word += 2 + usize::from(sii.words()[word + 1]);
+        }
+    }
+
+    #[test]
+    fn dc_category_encodes_documented_layout() {
+        let dc = SiiDc {
+            cycle_time0: 0x000F_4240, // 1 ms
+            shift_time0: 0x0000_03E8,
+            shift_time1: 0x0000_07D0,
+            sync1_cycle_factor: -1,
+            assign_activate: 0x0300,
+            sync0_cycle_factor: 1,
+            name_index: 0,
+            desc_index: 0,
+        };
+        let bytes = dc.to_bytes();
+        assert_eq!(bytes.len(), 24);
+        assert_eq!(
+            u32::from_le_bytes(bytes[0..4].try_into().expect("u32")),
+            0x000F_4240
+        );
+        assert_eq!(
+            u32::from_le_bytes(bytes[4..8].try_into().expect("u32")),
+            0x03E8
+        );
+        assert_eq!(
+            u32::from_le_bytes(bytes[8..12].try_into().expect("u32")),
+            0x07D0
+        );
+        assert_eq!(
+            i16::from_le_bytes(bytes[12..14].try_into().expect("i16")),
+            -1
+        );
+        assert_eq!(
+            u16::from_le_bytes(bytes[14..16].try_into().expect("u16")),
+            0x0300
+        );
+        assert_eq!(
+            i16::from_le_bytes(bytes[16..18].try_into().expect("i16")),
+            1
+        );
+        assert_eq!(&bytes[18..24], &[0u8; 6]); // name/desc 索引 + reserved
+    }
+
+    #[test]
+    fn from_spec_with_dc_adds_dc_category() {
+        let dc = SiiDc {
+            cycle_time0: 1_000_000,
+            shift_time0: 0,
+            shift_time1: 0,
+            sync1_cycle_factor: -1,
+            assign_activate: 0x0300,
+            sync0_cycle_factor: 1,
+            name_index: 0,
+            desc_index: 0,
+        };
+        let spec = SiiSpec {
+            dc: Some(dc),
+            ..simulated_spec()
+        };
+        let sii = SiiImage::from_spec(&spec);
+        assert_eq!(sii.category_bytes(category::DC), Some(dc.to_bytes()));
+        // DC 类别头长度字 = 12（24 字节 / 2）。
+        let mut word = usize::from(SII_FIRST_CATEGORY_WORD);
+        loop {
+            let cat_type = sii.words()[word];
+            if cat_type == category::DC {
+                assert_eq!(sii.words()[word + 1], 12);
+                break;
+            }
+            assert_ne!(cat_type, 0xFFFF, "DC 类别应存在于链中");
             word += 2 + usize::from(sii.words()[word + 1]);
         }
     }
@@ -1102,6 +1226,7 @@ mod tests {
             coe_details: SIM_COE_DETAILS,
             general_flags: 0,
             ebus_current: 0,
+            dc: None,
         };
         let sii = SiiImage::from_spec(&spec);
         assert_eq!(sii.read_word(0x000A), 0xE5C2);
