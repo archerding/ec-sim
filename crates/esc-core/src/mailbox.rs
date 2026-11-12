@@ -366,6 +366,26 @@ pub fn parse_complete_access_download(service: &[u8]) -> Option<(u16, &[u8])> {
     Some((index, &service[10..10 + size]))
 }
 
+/// 解析 **Complete Access 下载 initiate 请求**（normal、size indicated，命令字节 `0x31`）。
+///
+/// 返回 `(index, total_size, 首帧携带的数据)`；CA 数据超过首帧容量时，剩余部分由后续
+/// segment 请求（`0x20|toggle<<4|last`）携带，与普通分段下载一致。
+pub fn parse_complete_access_download_initiate(service: &[u8]) -> Option<(u16, u32, &[u8])> {
+    if service.len() < 10 {
+        return None;
+    }
+    let coe = u16::from_le_bytes([service[0], service[1]]);
+    if coe >> 12 != COE_COMMAND_SDO_REQUEST {
+        return None;
+    }
+    if service[2] != 0x31 {
+        return None;
+    }
+    let index = u16::from_le_bytes([service[3], service[4]]);
+    let size = u32::from_le_bytes([service[6], service[7], service[8], service[9]]);
+    Some((index, size, &service[10..]))
+}
+
 /// 构造 SDO **expedited upload 响应**服务数据（CoE 头 + 命令 + 索引/子索引 + 4 字节值）。
 #[must_use]
 pub fn sdo_upload_service(index: u16, subindex: u8, value: &[u8]) -> Vec<u8> {

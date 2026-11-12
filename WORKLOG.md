@@ -32,6 +32,36 @@
 
 ---
 
+## 2026-11-13 00:47 班（低峰）— B7：**Complete Access（CA）分段下载**
+
+**做了什么**
+- `esc-core::mailbox::parse_complete_access_download_initiate`：解析 CA 下载 initiate
+  （命令 `0x31`）的 u32 总长 + **首帧携带的数据**（不再要求整段都在首帧）。
+- `esc-node`：`SegmentedDownload` 增加 `complete_access` 标记；首帧不足 total 时沿用既有
+  分段下载 FSM（segment 命令 `0x20|toggle<<4|unused<<1|last`），**末段完成后**把完整数据
+  交给新抽出的 `write_complete_access()`（按子索引长度拆分、逐项写 `object_writes`，
+  错误码同单帧 CA）；单帧路径行为不变。
+- 新增单测 `mailbox_complete_access_download_handles_segmented_transfer`：130 字节可写字符串
+  对象，首帧 112 字节 + 3 段（7/7/4，toggle 0/1/0，末段 last=1），断言
+  `object_writes[(0x2000,0)]` 完整等于写入值、分段状态清零。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **177 passed**（esc-core 79 / esc-node 56 / plugin-host 25 + 1 集成 / wire 16）。
+- Linux 验证机：`sdo-ca-probe.sh` 回归 **EXIT=0**（CA 上传 0x1C12/0x1600、单帧 CA 下载
+  0x1600 写入并回读一致、UDS 基础断言全过）→ 重构未影响既有 CA 单帧路径。
+
+**卡点**
+- **CA 分段下载尚未做端到端主站验证**：合成主站 `--sdo-ca-download` 目前只发单帧，
+  130 字节以上的多段 CA 下载仅由单测覆盖 → ⚠️ 待验证（下一步可扩展 UDS 主站发多段）。
+- 仍不校验 CA 的"部分写/子索引顺序"语义；IgH 1.6.13 公共 API 不下发 CA 位，IgH 侧无法验证。
+
+**下次开工第一件事**
+- 扩展 UDS 主站 `--sdo-ca-download` 支持多段（>112 字节对象），端到端验证 CA 分段下载；
+  或继续 B11（SV660N 公开手册 PDO/扩展对象核对）；B6 FMMU/DC 原文核实仍待条件。
+
+---
+
 ## 2026-11-13 00:41 班（低峰）— B7：**Complete Access（CA）SDO 下载（单帧）**
 
 **做了什么**

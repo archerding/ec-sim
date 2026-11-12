@@ -233,7 +233,15 @@ user.email = deepseek-harness@users.noreply.github.com
     `--sdo-segmented-download`（initiate `0x21` + 7B/5B 分段 + 分段上传回读比对），
     验证机 `scripts/spikes/cia402-sdo-download-probe.sh` **EXIT=0**。IgH 侧 SDO
     （上传/下载）在该验证机上仍**阻塞**（ecrt ioctl，已复现两次）→ ⚠️ 待验证。
-  - 待做：IgH 侧分段上传/下载验证（环境恢复后）、CA 多帧下载（当前仅支持单帧）。
+  - 待做：IgH 侧分段上传/下载验证（环境恢复后）、CA 的 Abort/部分写语义细化。
+  - 进度（2026-11-13 00:47 班）：**CA 分段下载已实现**——`mailbox::parse_complete_access_download_initiate`
+    解析 CA initiate 的 size + 首帧数据；首帧不足 total 时转入 `SegmentedDownload`（保留既有
+    分段 FSM），末段完成后按子索引长度拆分写入；命令 `0x20|toggle<<4|unused<<1|last` 与普通
+    分段下载一致。证据：单测 `mailbox_complete_access_download_handles_segmented_transfer`
+    （130 字节对象：首帧 112 + 3 段 7/7/4，断言完整写入）；验证机 `sdo-ca-probe.sh`
+    回归 **EXIT=0**（CA 上传/单帧下载不回归）。测试 **177 passed**。
+    ⚠️ CA 分段下载未做端到端主站验证（合成主站仅覆盖单帧；`⚠️ 待验证`）；仍不校验 CA
+    部分写/顺序语义；IgH 公共 API 不下发 CA 位。
   - 进度（2026-11-13 00:41 班）：**Complete Access（CA）下载（单帧）已实现**——
     `mailbox::parse_complete_access_download` 解析命令 `0x31`（initiate normal download +
     CA 位），应答器按字典各子索引字节长度拆分数据逐项写入 `object_writes`（未知对象

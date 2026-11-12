@@ -134,6 +134,8 @@ struct SegmentedDownload {
     total_size: u32,
     /// 已收到的数据。
     data: Vec<u8>,
+    /// 是否为 Complete Access 下载（完成时按子索引长度拆分写入）。
+    complete_access: bool,
 }
 
 /// CiA 402 状态机行为：每个帧周期读 SM2 的控制字，写 SM3 的状态字（Tier0 骨架）。
@@ -749,9 +751,11 @@ impl Responder {
                     mailbox::sdo_abort_payload(ca_index, 0x00, mailbox::SDO_ABORT_OBJECT_NOT_EXIST)
                 }
             }
-        } else if let Some((ca_index, ca_data)) = mailbox::parse_complete_access_download(service) {
-            // Complete Access 下载（单帧，数据按子索引长度拆分后逐项写）。
-            self.handle_download_complete_access(ca_index, ca_data)
+        } else if let Some((ca_index, ca_size, ca_chunk)) =
+            mailbox::parse_complete_access_download_initiate(service)
+        {
+            // Complete Access 下载（首帧/分段；完成时按子索引长度拆分后逐项写）。
+            self.handle_download_complete_access(ca_index, ca_size, ca_chunk)
         } else if let Some(info_request) = mailbox::parse_sdo_info_request(service) {
             // CoE SDO Information 服务（`ethercat sdos` / SOEM `slaveinfo -sdo`）。
             match info_request {
@@ -861,6 +865,7 @@ impl Responder {
                 index: initiate.index,
                 subindex: initiate.subindex,
                 total_size: initiate.total_size,
+                complete_access: false,
                 data,
             });
         }
@@ -876,9 +881,15 @@ impl Responder {
         let total = usize::try_from(state.total_size).unwrap_or(usize::MAX);
         state.data.truncate(total);
         if segment.last || state.data.len() >= total {
-            self.object_writes
-                .insert((state.index, state.subindex), state.data);
+            let response = if state.complete_access {
+                self.write_complete_access(state.index, &state.data)
+            } else {
+                self.object_writes
+                    .insert((state.index, state.subindex), state.data);
+                mailbox::sdo_download_segment_ok_service(segment.toggle)
+            };
             self.download = None;
+            return response;
         } else {
             self.download = Some(state);
         }
@@ -918,8 +929,31 @@ impl Responder {
 
     /// 处理 **Complete Access 下载**：把单帧数据按各子索引的字节长度拆分，逐项写入
     /// object_writes（要求每一项都可写；未知对象/只读对象回对应 Abort；数据长度不符回
-    /// 0x05040000）。⚠️ 仅支持单帧 CA 下载。
-    fn handle_download_complete_access(&mut self, index: u16, data: &[u8]) -> Vec<u8> {
+    /// 0x05040000）。首帧未携带完整数据时转入分段下载；完成后再拆分写入。
+    fn handle_download_complete_access(
+        &mut self,
+        index: u16,
+        total_size: u32,
+        chunk: &[u8],
+    ) -> Vec<u8> {
+        let total = usize::try_from(total_size).unwrap_or(usize::MAX);
+        let mut data = chunk.to_vec();
+        data.truncate(total);
+        if data.len() >= total {
+            return self.write_complete_access(index, &data);
+        }
+        self.download = Some(SegmentedDownload {
+            index,
+            subindex: 0,
+            total_size,
+            complete_access: true,
+            data,
+        });
+        mailbox::sdo_download_ok_service(index, 0)
+    }
+
+    /// 把完整的 CA 数据按对象子索引长度拆分写入 `object_writes`。
+    fn write_complete_access(&mut self, index: u16, data: &[u8]) -> Vec<u8> {
         let Some(object) = self.dict.object(index) else {
             return mailbox::sdo_abort_payload(index, 0x00, mailbox::SDO_ABORT_OBJECT_NOT_EXIST);
         };
@@ -2149,6 +2183,100 @@ mod tests {
         assert!(!mailbox::mailbox_full(read_sm1_status(&mut responder)));
         assert_eq!(responder.stats().mailbox_requests, 1);
         assert_eq!(responder.stats().mailbox_responses, 1);
+    }
+
+    #[test]
+    fn mailbox_complete_access_download_handles_segmented_transfer() {
+        use esc_core::obj_dict::{RuntimeEntry, RuntimeObject};
+
+        // 130 字节可写字符串对象：CA 首帧最多 112 字节，剩余 18 字节走 3 个 segment。
+        let value = vec![b'A'; 130];
+        let dict = ObjectDictionary::new(
+            vec![RuntimeObject {
+                index: 0x2000,
+                max_subindex: 0,
+                object_code: esc_core::obj_dict::object_code::VAR,
+                data_type: esc_core::obj_dict::data_type::VISIBLE_STRING,
+                name: "Config blob".to_string(),
+            }],
+            vec![RuntimeEntry {
+                index: 0x2000,
+                subindex: 0,
+                value: value.clone(),
+                data_type: esc_core::obj_dict::data_type::VISIBLE_STRING,
+                bit_length: 130 * 8,
+                access: esc_core::obj_dict::access::READ_WRITE_PREOP,
+                value_info: 0,
+                name: "Config blob".to_string(),
+                writable: true,
+            }],
+        );
+        let mut responder = Responder::default().with_dictionary(dict);
+
+        // CA 下载 initiate：命令 0x31 + size=130 + 首帧 112 字节。
+        let new_value: Vec<u8> = (0..130).map(|i| b'a' + (i % 26) as u8).collect();
+        let mut payload = vec![0u8; mailbox::MAILBOX_SIZE];
+        let service_len = 10 + 112;
+        payload[0..2].copy_from_slice(&(service_len as u16).to_le_bytes());
+        payload[2..4].copy_from_slice(&0x1001u16.to_le_bytes());
+        payload[5] = mailbox::MAILBOX_TYPE_COE;
+        payload[6..8].copy_from_slice(&(mailbox::COE_COMMAND_SDO_REQUEST << 12).to_le_bytes());
+        payload[8] = 0x31;
+        payload[9..11].copy_from_slice(&0x2000u16.to_le_bytes());
+        payload[11] = 0x00;
+        payload[12..16].copy_from_slice(&130u32.to_le_bytes());
+        payload[16..16 + 112].copy_from_slice(&new_value[..112]);
+        let write = request(&[DatagramData::auto_increment(
+            Command::Apwr,
+            1,
+            0,
+            mailbox::MAILBOX_RX_OFFSET,
+            payload,
+        )]);
+        responder
+            .handle_frame(&write, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let response = read_tx_mailbox(&mut responder);
+        assert_eq!(response[8], 0x60, "CA 分段下载 initiate 响应 0x60");
+        assert!(responder.download.is_some(), "首帧未完成 → 进入分段状态");
+
+        // 3 个 segment：7 / 7 / 4 字节，toggle 0/1/0，末段 last=1。
+        let chunks: [&[u8]; 3] = [
+            &new_value[112..119],
+            &new_value[119..126],
+            &new_value[126..130],
+        ];
+        for (i, chunk) in chunks.iter().enumerate() {
+            let toggle = (i % 2) as u8;
+            let unused = 7u8 - chunk.len() as u8;
+            let last = u8::from(i == 2);
+            let command = 0x20u8 | (toggle << 4) | (unused << 1) | last;
+            let mut segment = vec![0u8; 3 + chunk.len()];
+            segment[0..2].copy_from_slice(&(mailbox::COE_COMMAND_SDO_REQUEST << 12).to_le_bytes());
+            segment[2] = command;
+            segment[3..].copy_from_slice(chunk);
+            let mut payload = vec![0u8; mailbox::MAILBOX_SIZE];
+            payload[0..2].copy_from_slice(&(segment.len() as u16).to_le_bytes());
+            payload[2..4].copy_from_slice(&0x1001u16.to_le_bytes());
+            payload[5] = mailbox::MAILBOX_TYPE_COE;
+            payload[6..6 + segment.len()].copy_from_slice(&segment);
+            let write = request(&[DatagramData::auto_increment(
+                Command::Apwr,
+                1,
+                0,
+                mailbox::MAILBOX_RX_OFFSET,
+                payload,
+            )]);
+            responder
+                .handle_frame(&write, DEFAULT_SIM_MAC)
+                .expect("reply");
+        }
+        assert!(responder.download.is_none(), "末段完成后清零分段状态");
+        assert_eq!(
+            responder.object_writes.get(&(0x2000, 0)),
+            Some(&new_value),
+            "CA 分段下载数据应完整写入对象"
+        );
     }
 
     #[test]
