@@ -27,7 +27,7 @@
 | W3 | SDO 只读浏览 | `GET /sdo?index&sub` 从运行时字典读值（不 mailbox） | 探针：已知对象值/名称/类型；未知 404 | ✅ 已完成（B39：`sdo-read-probe.sh`；sdo-v1 schema） |
 | W4 | SDO 受控写 | `POST /sdo`（`--serve-write` + manifest `writable` 白名单 + 审计） | 探针：默认拒绝、白名单成功、非白名单 403、审计记录 | ✅ 已完成（B40：`sdo-write-probe.sh`；`/sdo-audit`、`ecsim_sdo_writes_total`） |
 | W5 | 可选 token | `--serve-token-env VAR`（`Authorization: Bearer`）；空 = 现状 | 探针：带/不带 token 的 200/401 行为 | ✅ 已完成（B41：`serve-token-probe.sh`；401/403/200、静态资源豁免、写路径同保护） |
-| W6 | Web SDO 面板 | 只读浏览；写入需二次确认且仅当写开关启用 | `node --check` + 人工验收（⚠️ 无 DOM 测试） | ❌ 未开始 |
+| W6 | Web SDO 面板 | 只读浏览；写入需二次确认且仅当写开关启用 | `node --check` + 人工验收（⚠️ 无 DOM 测试） | ✅ 实现完成（B42：`web-sdo-panel-check.py` 静态资源回归 + `serve-web-probe.sh` 同源资源断言；`GET /sdo` 浏览 + `--serve-write` 勾选/confirm 二次确认写入）；⚠️ 浏览器人工点击验收待补 |
 | W7 | 32 从站 @1 kHz 调研 | 瓶颈记录与可行路径（SOEM 线程/内核旁路） | 文档结论；不承诺达成 | ❌ 未开始 |
 | W8 | MCP/Agent 桥接 stub | 工具清单与只读端点映射（不含写） | 设计文档；无外部依赖 | ❌ 未开始 |
 
@@ -50,5 +50,4 @@
 
 1. W1 spike（wasm 运行时选型 + 最小宿主）——M3 当前主阻塞项。
 2. W2 arena 同步（W1 依赖）。
-3. W6 Web SDO 面板（只读浏览；写入需二次确认且仅当写开关启用）。
-4. W7 32 从站调研 / W8 MCP stub（文档级交付）。
+3. W7 32 从站调研 / W8 MCP stub（文档级交付）。

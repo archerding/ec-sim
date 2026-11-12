@@ -1,8 +1,9 @@
-// EC-Sim 只读视图（M2 起点）：仅原生 JS，无第三方依赖。
+// EC-Sim 只读状态视图（M2 起点）：仅原生 JS，无第三方依赖。
 // 支持四类输入（可分别/同时载入）：
 //   - `ec-sim-esc --dump-state` 的 state-v1 JSON（实时模式下含 live 字段）；
 //   - `ec-sim-esc --dump-dict --json` 的 dict-v1 JSON；
 //   - `ec-sim-esc --serve` 实时模式的 `/pdo` 的 pdo-v1 JSON。
+// B42：另含 SDO 面板（`GET /sdo` 只读浏览；`--serve-write` 下勾选+confirm 二次确认写入）。
 "use strict";
 
 const app = document.getElementById("app");
@@ -625,4 +626,191 @@ Promise.all([tryFetchJson("state.json"), tryFetchJson("dict.json"), tryFetchJson
 document.getElementById("live").addEventListener("change", (event) => {
   if (event.target.checked) startLive();
   else stopLive();
+});
+
+// ---- B42：SDO 面板（`GET /sdo` 只读浏览 + `--serve-write` 下二次确认写入）----
+// 说明：本页无法探测服务端是否开启 `--serve-write`，因此写入默认关闭；
+// 勾选“允许写入”是第一步，点击“写入…”后的 confirm 对话框是第二步（二次确认）。
+// 服务端仍会做白名单/长度/安全排除校验，并以 405/403/404/400 拒绝非法的写请求。
+
+function sdoApiBase() {
+  return (document.getElementById("api").value || "").trim().replace(/\/+$/, "");
+}
+
+function setSdoMessage(id, text, isError) {
+  const node = document.getElementById(id);
+  if (!node) return;
+  node.textContent = text;
+  node.className = isError ? "sub error" : "sub";
+}
+
+function parseSdoIndex(raw) {
+  const text = String(raw || "").trim();
+  // 面板标注为十六进制；允许 0x 前缀，也允许裸 hex（如 6040 → 0x6040）。
+  if (/^0x[0-9a-f]{1,4}$/i.test(text)) return Number.parseInt(text.slice(2), 16);
+  if (/^[0-9a-f]{1,4}$/i.test(text)) return Number.parseInt(text, 16);
+  return null;
+}
+
+function parseSdoSub(raw) {
+  const text = String(raw || "").trim();
+  if (text === "") return 0;
+  if (!/^\d{1,3}$/.test(text)) return null;
+  const value = Number.parseInt(text, 10);
+  return value >= 0 && value <= 255 ? value : null;
+}
+
+function sdoQuery() {
+  const index = parseSdoIndex(document.getElementById("sdo-index").value);
+  if (index == null) {
+    setSdoMessage("sdo-status", "索引非法：请输入十六进制 0x0000–0xFFFF（可省略 0x）。", true);
+    return null;
+  }
+  const sub = parseSdoSub(document.getElementById("sdo-sub").value);
+  if (sub == null) {
+    setSdoMessage("sdo-status", "子索引非法：0–255。", true);
+    return null;
+  }
+  return { index, sub, query: `?index=0x${index.toString(16).padStart(4, "0").toUpperCase()}&sub=${sub}` };
+}
+
+function hexToBytes(hex) {
+  const text = String(hex || "").replace(/\s+/g, "");
+  if (!text || !/^[0-9a-f]+$/i.test(text) || text.length % 2 !== 0) return null;
+  const bytes = [];
+  for (let i = 0; i < text.length; i += 2) bytes.push(Number.parseInt(text.slice(i, i + 2), 16));
+  return bytes;
+}
+
+function renderSdoResult(data) {
+  const container = document.getElementById("sdo-result");
+  container.replaceChildren();
+  if (!data || data.schema !== "ec-sim/sdo-v1") {
+    container.append(el("p", { class: "sub error" }, "响应不是 ec-sim/sdo-v1。"));
+    return;
+  }
+  const rows = [
+    ["索引", `${data.index}（子索引 ${String(data.sub).padStart(2, "0")}）`],
+    ["对象名", data.object_name || "-"],
+    ["条目名", data.name || "-"],
+    ["类型", data.type],
+    ["位长", `${data.bits} 位`],
+    ["访问", data.access],
+    ["值（大端显示）", hexToBigEndian(data.value_hex)],
+    ["值（原始小端 hex）", data.value_hex === "" ? "-" : data.value_hex],
+  ];
+  container.append(table(["字段", "值"], rows));
+}
+
+async function sdoFailureHint(response) {
+  let detail = "";
+  try {
+    const data = JSON.parse(await response.text());
+    detail = [data.error, data.hint].filter(Boolean).join(" / ");
+  } catch (error) {
+    detail = "";
+  }
+  if (response.status === 401) {
+    return "401：需要 Authorization: Bearer token。浏览器 fetch 无法自动带 token，请经反向代理注入或改用 curl（--serve-token-env 模式）。";
+  }
+  if (response.status === 403) return `403：服务端拒绝${detail ? `（${detail}）` : ""}`;
+  if (response.status === 404) return `404：对象/子索引不存在或参数缺失${detail ? `（${detail}）` : ""}`;
+  if (response.status === 405) return `405：写操作未启用${detail ? `（${detail}）` : ""}——服务端需 --serve-write`;
+  return `${response.status}：${detail || response.statusText || "请求失败"}`;
+}
+
+async function readSdo() {
+  const base = sdoApiBase();
+  const parsed = sdoQuery();
+  if (!parsed) return;
+  if (!base) {
+    setSdoMessage("sdo-status", "请先在上方填写 API 地址（--serve）并载入。", true);
+    return;
+  }
+  setSdoMessage("sdo-status", `读取中：/sdo${parsed.query}`, false);
+  try {
+    const response = await fetch(`${base}/sdo${parsed.query}`, { cache: "no-store" });
+    if (!response.ok) {
+      setSdoMessage("sdo-status", await sdoFailureHint(response), true);
+      return;
+    }
+    const data = JSON.parse(await response.text());
+    renderSdoResult(data);
+    setSdoMessage(
+      "sdo-status",
+      `已读取 ${data.index}:${String(data.sub).padStart(2, "0")} ${data.name || ""}`.trim(),
+      false,
+    );
+  } catch (error) {
+    setSdoMessage("sdo-status", `读取失败：${error.message}`, true);
+  }
+}
+
+async function writeSdo() {
+  const base = sdoApiBase();
+  const parsed = sdoQuery();
+  if (!parsed) return;
+  if (!base) {
+    setSdoMessage("sdo-write-status", "请先在上方填写 API 地址（--serve）并载入。", true);
+    return;
+  }
+  if (!document.getElementById("sdo-write-enable").checked) {
+    setSdoMessage("sdo-write-status", "写入未开启：请先勾选“允许写入”。", true);
+    return;
+  }
+  const bytes = hexToBytes(document.getElementById("sdo-write-value").value);
+  if (bytes == null || bytes.length === 0) {
+    setSdoMessage("sdo-write-status", "新值非法：需要偶数个十六进制字符（小端原始字节，如 0f00）。", true);
+    return;
+  }
+  const written = bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  // 二次确认：勾选“允许写入”是第一步，此 confirm 是第二步。
+  const confirmed = window.confirm(
+    `确认写入对象 ${parsed.index.toString(16).toUpperCase().padStart(4, "0")}h:${String(parsed.sub).padStart(2, "0")}？\n` +
+      `新值（小端 hex）：${written}\n\n` +
+      "该操作仅在服务端以 --serve-write 启动时生效；写入会记入 /sdo-audit。",
+  );
+  if (!confirmed) {
+    setSdoMessage("sdo-write-status", "已取消写入。", false);
+    return;
+  }
+  setSdoMessage("sdo-write-status", "写入中…", false);
+  try {
+    const response = await fetch(`${base}/sdo${parsed.query}`, {
+      method: "POST",
+      body: new Uint8Array(bytes),
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      setSdoMessage("sdo-write-status", await sdoFailureHint(response), true);
+      return;
+    }
+    const data = JSON.parse(await response.text());
+    setSdoMessage(
+      "sdo-write-status",
+      `写入成功：${data.old_hex || "-"} → ${data.written_hex}（审计见 GET /sdo-audit）`,
+      false,
+    );
+    await readSdo();
+  } catch (error) {
+    setSdoMessage("sdo-write-status", `写入失败：${error.message}`, true);
+  }
+}
+
+document.getElementById("sdo-read").addEventListener("click", () => {
+  void readSdo();
+});
+document.getElementById("sdo-index").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") void readSdo();
+});
+document.getElementById("sdo-write-enable").addEventListener("change", (event) => {
+  document.getElementById("sdo-write-fields").style.display = event.target.checked ? "" : "none";
+  setSdoMessage(
+    "sdo-write-status",
+    event.target.checked ? "写入已允许：点击“写入…”后还会再次确认。" : "",
+    false,
+  );
+});
+document.getElementById("sdo-write").addEventListener("click", () => {
+  void writeSdo();
 });

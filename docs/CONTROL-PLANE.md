@@ -204,9 +204,14 @@ curl -si http://127.0.0.1:8091/nope   # 404 JSON
 
 ## 8. 与 WebUI 的关系
 
-`web/` 是零依赖只读页面：可载入 `--dump-state` / `--dump-dict --json` 生成的 JSON 文件，也可用 `--web-root web`
+`web/` 是零依赖页面：可载入 `--dump-state` / `--dump-dict --json` 生成的 JSON 文件，也可用 `--web-root web`
 同源托管（`http://127.0.0.1:<port>/`），或另起静态服务器后填 API 地址，从本控制面拉取
 `/state`、`/dict`、`/pdo`、`/pdo?history=1`、`/topology`、`/metrics`；支持“从站 N”切换、拓扑行点击切换、1s 实时轮询与 PDO Canvas 波形。
+
+**SDO 面板（B42 / M3-W6）**：页内可按 `index`/`sub` 调用 `GET /sdo` 只读浏览（对象名/类型/位长/访问/值 hex）；
+写入默认关闭——需先勾选“允许写入”，并在 `confirm()` **二次确认**后才发 `POST /sdo`，服务端仍以
+`--serve-write`、manifest 白名单与安全排除表把关（405/403/404/400）。页面无法探测写开关，以服务端响应为准。
+token 模式下 `fetch` 不能自动带 `Authorization`，页面提示经反向代理注入或改用 `curl`（§6）。
 
 ## 9. 验证
 
@@ -219,6 +224,7 @@ curl -si http://127.0.0.1:8091/nope   # 404 JSON
 | SDO 只读浏览 | `scripts/spikes/sdo-read-probe.sh` |
 | SDO 受控写/审计 | `scripts/spikes/sdo-write-probe.sh` |
 | 可选 token 鉴权矩阵 | `scripts/spikes/serve-token-probe.sh` |
+| Web SDO 面板（静态资源回归，无 DOM 自动化） | `scripts/spikes/web-sdo-panel-check.py` |
 | 写操作（默认关闭） | `scripts/spikes/write-pdo-probe.sh` |
 | 实时状态/PDO/历史/拓扑/逐站/指标 | `live-state-probe.sh`、`pdo-live-probe.sh`、`pdo-history-probe.sh`、`pdo-decode-probe.sh`、`topology-probe.sh`、`slave-select-probe.sh`、`metrics-probe.sh`、`metrics-filter-probe.sh`（Linux/UDS） |
 | TAP 实时 | `scripts/spikes/tap-live-state-probe.sh`（root，验证机） |

@@ -28,7 +28,7 @@ This project is **a virtual bus + a plugin host + an AI-operable test infrastruc
 | CoE SDO / CA / SDO Info, CiA 402 Tier0 (PP/VL/PV/TQ/HM/IP/CSP/CSV/CST) | ✅ | [cia402 模式矩阵](docs/plugins/cia402-modes-matrix.md)、[VERIFICATION](docs/VERIFICATION.md) |
 | Declarative device plugins (SII/OD/ESI, own VID/PID + SIMULATED) | ✅ | [DEVICE-PLUGINS](docs/DEVICE-PLUGINS.md)、`plugins/` |
 | Multi-slave chain (8 slaves @ 1 kHz) | 🚧 B12 | [M1 退出清单](docs/plan/M1-exit-checklist.md) |
-| WebUI (topology / PDO / SDO / ESI import) | 🚧 M2（只读页 + HTTP API 已可用） | [CONTROL-PLANE](docs/CONTROL-PLANE.md) |
+| WebUI (topology / PDO / SDO / ESI import) | 🚧 M2/M3（只读页 + SDO 面板 + HTTP API 已可用） | [CONTROL-PLANE](docs/CONTROL-PLANE.md) |
 
 ## Architecture (5 layers)
 
@@ -50,7 +50,7 @@ Read the decision record: [technology selection](ethercat-slave-simulator-tech-s
 ## Control plane & Web UI
 
 - **只读 HTTP API**：`ec-sim-esc --serve <addr> [--uds ... | --tap ...]` 提供 `GET /state`、`/dict`、`/pdo`、`/pdo?history=1`、`/topology`、`/metrics`，均支持 `?slave=N` 逐从站查看；std `TcpListener` 实现、零外部依赖。详见 **[docs/CONTROL-PLANE.md](docs/CONTROL-PLANE.md)**。
-- **零依赖 Web 页**：`web/` 打开即可载入 dump JSON，或填 API 地址实时轮询状态/PDO/拓扑/指标并画 PDO 波形。见 **[web/README.md](web/README.md)**。M2 退出条件核对见 **[docs/plan/M2-exit-checklist.md](docs/plan/M2-exit-checklist.md)**；M3（插件宿主/写路径/鉴权）见 **[docs/plan/M3-scope.md](docs/plan/M3-scope.md)**、**[ADR 0002](docs/adr/0002-m3-plugin-host-and-write-paths.md)**。
+- **零依赖 Web 页**：`web/` 打开即可载入 dump JSON，或填 API 地址实时轮询状态/PDO/拓扑/指标并画 PDO 波形；SDO 面板支持 `GET /sdo` 只读浏览，写入需服务端 `--serve-write` + 页面勾选/`confirm` 二次确认（⚠️ 无 DOM 自动化，静态回归 + 人工验收）。见 **[web/README.md](web/README.md)**。M2 退出条件核对见 **[docs/plan/M2-exit-checklist.md](docs/plan/M2-exit-checklist.md)**；M3（插件宿主/写路径/鉴权）见 **[docs/plan/M3-scope.md](docs/plan/M3-scope.md)**、**[ADR 0002](docs/adr/0002-m3-plugin-host-and-write-paths.md)**。
 
 ## Plugin ecosystem
 

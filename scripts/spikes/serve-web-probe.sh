@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # B33 预回归：`--serve --web-root <dir>` 同源托管 web/ 静态文件：
-#   - 静态模式（无 --uds/--tap）：`GET /` → text/html（含 EC-Sim），`GET /app.js` → JS
-#     （含 renderTopologyGraph），`GET /state` 仍为 JSON，未知路径 404；
+#   - 静态模式（无 --uds/--tap）：`GET /` → text/html（含 EC-Sim 与 B42 SDO 面板控件），
+#     `GET /app.js` → JS（含 renderTopologyGraph 与 readSdo/writeSdo），
+#     `GET /state` 仍为 JSON，未知路径 404；
 #   - 实时模式（--uds）：同样托管 web/，且 `/state` 含 live 字段（API 不受影响）；
 #   - `--web-root` 指向不存在目录时：`GET /` 404，但 `/state` 仍 200。
 #
@@ -65,10 +66,15 @@ def get(path):
 status, ctype, body = get("/")
 assert status == 200 and ctype.startswith("text/html"), (status, ctype)
 assert "EC-Sim" in body, body[:80]
+# B42：同源托管的 HTML 必须包含 SDO 面板控件与 token 提示。
+assert 'id="sdo-index"' in body and 'id="sdo-write-enable"' in body, body[:80]
+assert "--serve-token-env" in body and "Authorization" in body
 
 status, ctype, body = get("/app.js")
 assert status == 200 and "javascript" in ctype, (status, ctype)
 assert "renderTopologyGraph" in body
+# B42：同源托管的脚本必须包含 SDO 面板逻辑。
+assert "readSdo" in body and "writeSdo" in body and "window.confirm" in body
 
 status, ctype, body = get("/state")
 assert status == 200 and ctype.startswith("application/json"), (status, ctype)

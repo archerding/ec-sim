@@ -1,5 +1,43 @@
 ---
 
+## 2026-11-13 08:00 班（低峰）— **B42：M3-W6 Web SDO 面板（只读浏览 + 二次确认写入）**
+
+> 调度上下文计划重点（B2b 最小 ESC 应答器 / B8 双主站冒烟 / B4 wire crate）均已完成，
+> 按 `AGENTS.md` §5 取 backlog 顶部未完成项 B42。
+
+**做了什么**
+- `web/index.html`：新增 SDO 面板（索引/子索引/读取、结果表、写开关+新值+写入按钮、token 提示），
+  页面标题改为“EC-Sim 状态视图”；`web/app.js` 新增 `readSdo`（`GET /sdo?index&sub`，`cache: no-store`，
+  显示对象名/条目名/类型/位长/访问/值大端 + 原始小端 hex）、`writeSdo`（勾选“允许写入” → 填小端 hex →
+  `window.confirm()` **二次确认** → `POST /sdo` 发送 `Uint8Array` 原始字节体）、错误映射
+  405（未开 `--serve-write`）/401（token 需反向代理或 curl）/403/404/400；本页不保存 token。
+- 新增 `scripts/spikes/web-sdo-panel-check.py`：静态资源回归（10 个控件 id、13 个逻辑标记、README 断言 +
+  `node --check`；无 node 时 SKIP，⚠️ 无 DOM 自动化）；`serve-web-probe.sh` 增加同源资源断言（`/` 含面板控件、
+  `/app.js` 含 `readSdo`/`writeSdo`）；`run-all-probes.sh` 加入 `web-sdo-panel`；`control-plane-doc-check.py`
+  期望探针 16 → 17，M2 清单检查排除 M3 面板探针、M3 范围检查包含它。
+- 文档同步：`web/README.md`（用法/写入二次确认/405/401/无 DOM 测试）、`CONTROL-PLANE.md` §8/§9、
+  `M3-scope.md` W6 实现完成（⚠️ 浏览器人工点击待补）、`VERIFICATION.md`、`STATUS.md`、`README.md`；
+  `AGENTS.md` B42 标记完成并新增 **B43 = M3-W1 WASM 插件宿主 spike**。
+
+**验证结果**
+- 本机：`node --check web/app.js` OK；`web-sdo-panel-check.py` EXIT=0；`control-plane-doc-check.py` EXIT=0
+  （14 条路径 / 17 个探针）；`serve-web-probe.sh` 静态段 OK（实时段仅 Linux，按探针类别跳过）；
+  `cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets -- -D warnings` 通过；
+  `cargo test --workspace` **230 passed**。
+- 验证机（EC-Sim 专用）：`web-sdo-panel-check.py` EXIT=0（node v24.22.2 + `node --check`）；doc-check EXIT=0；
+  `run-all-probes.sh` **18 PASS / 0 FAIL / 0 SKIP**（含新增 `web-sdo-panel` 与 `serve-web` 新断言）。
+- ⚠️ 浏览器人工点击验收未做（面板无 DOM 自动化测试；M3 W6 已标注）。
+
+**卡点**
+- 页面无法探测服务端是否开启 `--serve-write`（控制面无 capability 端点），写入口以服务端 405 提示为准；
+  若需“未开写开关时隐藏入口”，后续可给 `/health` 或 `/state` 增加 `write_enabled` 字段（本班未改后端）。
+- token 模式下浏览器 `fetch` 无法自动带 `Authorization`（既有 B41 限制），页面仅提示反向代理/curl。
+
+**下次开工第一件事**
+- **B43**：M3-W1 WASM 插件宿主 spike（wasmi vs wasmtime 选型 + 最小 `read_pdo/write_pdo/log` 宿主）。
+
+---
+
 ## 2026-11-13 07:44 班（低峰）— **B41：M3-W5 可选静态 Bearer token（`--serve-token-env`）**
 
 **做了什么**

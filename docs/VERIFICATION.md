@@ -5,8 +5,8 @@
 
 > 环境基线：Linux 验证机（见 `docs/LINUX-SERVER.md`）上的**未修改** SOEM 2.0.0 与 IgH 1.6.13；
 > IgH 的 ecrt 应用夹具只在验证机本地构建、**不入库**（GPL 边界，见 `AGENTS.md` §3）。
-> 最近的完整验证状态：**2026-11-13 08:20**（详见 `WORKLOG.md` 同日各条目与 [STATUS.md](STATUS.md)）；
-> 验证机 `run-all-probes.sh` **17 PASS / 0 FAIL / 0 SKIP**（含 TAP live 与 M3 写路径/token 探针）。
+> 最近的完整验证状态：**2026-11-13 08:00**（详见 `WORKLOG.md` 同日各条目与 [STATUS.md](STATUS.md)）；
+> 验证机 `run-all-probes.sh` **18 PASS / 0 FAIL / 0 SKIP**（含 TAP live 与 M3 写路径/token/Web SDO 面板探针）。
 
 ## 无特权（UDS 合成主站，任意平台可跑）
 
@@ -54,12 +54,13 @@
 | `uds-multi-slave-probe.sh` | `--slaves 8` 多从站链：广播 WKC=8、逐站地址分配、配置地址寻址 | **EXIT=0** |
 | `sdo-write-probe.sh` | `POST /sdo` 受控写：静态/未开开关 405；`--serve-write` 写 0x6040=0x000F 成功、`/sdo-audit` 有记录、`ecsim_sdo_writes_total=1`；0x1018→403、未知→404、长度错→400 | **EXIT=0** |
 | `serve-token-probe.sh` | 可选静态 Bearer token（`--serve-token-env`）：默认/空变量维持不鉴权；非空时缺头→401（`WWW-Authenticate`）、错误 token→403、正确→200；静态资源与 `/health` 豁免；实时 `POST /sdo`、`/sdo-audit`、`/metrics`、`/events` 同保护 | **EXIT=0** |
+| `web-sdo-panel-check.py` | Web SDO 面板静态资源回归：`index.html` 控件 id（索引/子索引/读取/结果/写开关/写值/写按钮）+ token 提示；`app.js` 含 `readSdo`/`writeSdo`/`window.confirm`/405/401/403/404 提示与 `POST` 小端字节体；`node --check` 通过（无 node 时 SKIP）；⚠️ 无 DOM 自动化点击 | **EXIT=0** |
 | `sdo-read-probe.sh` | `GET /sdo`：静态/实时均返回 sdo-v1（0x6040 Controlword/0x0006/16/rw），缺 index/非法/未知对象/未知子索引 → 404 | **EXIT=0** |
 | `run-all-probes.sh` | 一键聚合：按平台/root 选择探针并汇总；本机 3 PASS/14 SKIP，验证机 17 PASS/0 FAIL | **EXIT=0**（验证机） |
 | `write-pdo-probe.sh` | `POST /pdo` 写操作：默认 405 且 PDO 不变；`--serve-write` 后写 slave0=beef、slave1=1234；`POST /state` 404 | **EXIT=0** |
 | `events-probe.sh` | SSE `/events`：Content-Type、state-v1 + live、两事件间 frames_in 递增（0→2）、断开后 `/state` 仍 200 | **EXIT=0** |
-| `serve-web-probe.sh` | `--serve --web-root web`：`/` HTML、`/app.js` JS、`/state` JSON、未知 404；实时模式同源+live；无效 web-root 回退 API | **EXIT=0** |
-| `control-plane-doc-check.py` | 文档 `docs/CONTROL-PLANE.md` 路由表/探针/源码引用与代码逐条一致（14 条路径、16 个探针） | **EXIT=0** |
+| `serve-web-probe.sh` | `--serve --web-root web`：`/` HTML（含 B42 SDO 面板控件）、`/app.js` JS（含 `readSdo`/`writeSdo`）、`/state` JSON、未知 404；实时模式同源+live；无效 web-root 回退 API | **EXIT=0** |
+| `control-plane-doc-check.py` | 文档 `docs/CONTROL-PLANE.md` 路由表/探针/源码引用与代码逐条一致（14 条路径、17 个探针） | **EXIT=0** |
 | `metrics-filter-probe.sh` | `/metrics?slave=1` 仅导出 1 站（全量 3 站），越界/非法 slave → 404 | **EXIT=0** |
 | `metrics-probe.sh` | `/metrics` Prometheus 文本：Content-Type、`# TYPE ecsim_frames_in_total counter`、两站 label 行、发帧后计数单调递增 | **EXIT=0** |
 | `slave-select-probe.sh` | 逐站 `/state?slave=N`、`/pdo?slave=N`：N=1（站地址 0x0002/SM2=beef）、N=0（SM2=0000，默认同旧行为）、越界/非法 slave → 404 | **EXIT=0** |

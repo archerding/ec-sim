@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>EC-Sim 只读状态视图</title>
+  <title>EC-Sim 状态视图</title>
   <style>
     :root { color-scheme: light dark; }
     body { font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; padding: 24px; background: #0f1115; color: #e6e8ee; }
@@ -25,12 +25,19 @@
     .error { color: #ff9a9a; }
       .kv .ok { color: #8fe3a8; }
     .kv .warn { color: #f0b45a; }
+    .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .row label { display: inline-flex; align-items: center; gap: 6px; }
+    .row input, .row textarea { background: #0f1115; color: #e6e8ee; border: 1px solid #2a3040; border-radius: 6px; padding: 4px 8px; }
+    button { background: #24304a; color: #e6e8ee; border: 1px solid #33405e; border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+    button:hover { background: #2c3a58; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
   </style>
 </head>
 <body>
-  <h1>EC-Sim 只读状态视图</h1>
+  <h1>EC-Sim 状态视图</h1>
   <div class="sub">
-    数据源：<code>ec-sim-esc --dump-state</code> 生成的 JSON（M2 WebUI 的最小起点，只读）。
+    数据源：<code>ec-sim-esc --dump-state</code> 生成的 JSON（M2 WebUI 起点；状态/PDO/拓扑/指标只读，
+    SDO 面板只读浏览，写入需显式开启且二次确认）。
     可直接把 JSON 文件拖入下方，或先执行
     <code>ec-sim-esc --dump-state --manifest plugins/… &gt; web/state.json</code> 或
     <code>ec-sim-esc --dump-dict --json --manifest plugins/… &gt; web/dict.json</code> 后
@@ -49,6 +56,39 @@
       （<code>ec-sim-esc --serve 127.0.0.1:8090 --manifest plugins/…</code>）
     </div>
     <div id="message" class="sub"></div>
+  </section>
+
+  <section>
+    <h2>SDO 浏览（只读 API）</h2>
+    <p class="sub">
+      经 <code>GET /sdo?index&amp;sub</code> 从运行时对象字典读取（<strong>不经过</strong> mailbox/CoE 往返）。
+      需先在上方填写 API 地址（<code>--serve</code> 的地址）并载入。
+    </p>
+    <div class="row">
+      <label>索引（hex，可省略 0x）<input id="sdo-index" type="text" value="0x6040" size="10" placeholder="0x6040" /></label>
+      <label>子索引 <input id="sdo-sub" type="number" min="0" max="255" value="0" style="width:64px" /></label>
+      <button id="sdo-read">读取</button>
+      <span id="sdo-status" class="sub"></span>
+    </div>
+    <div id="sdo-result"></div>
+    <div id="sdo-write-box" style="margin-top:12px">
+      <label><input id="sdo-write-enable" type="checkbox" /> 允许写入（需服务端 <code>--serve-write</code>，写入前二次确认）</label>
+      <div id="sdo-write-fields" class="row" style="display:none; margin-top:8px">
+        <label>新值（小端 hex，如 <code>0f00</code>）<input id="sdo-write-value" type="text" size="24" placeholder="0f00" /></label>
+        <button id="sdo-write">写入…</button>
+        <span id="sdo-write-status" class="sub"></span>
+      </div>
+      <p class="sub" style="margin:6px 0 0">
+        写操作默认关闭：仅当服务端以 <code>--serve-write</code> 启动、且对象在 manifest 中声明
+        <code>writable</code> 时才会成功；身份/配置类对象（0x1000/0x1008/0x1009/0x1010/0x1011/0x1018/
+        0x1C12/0x1C13）与长度不匹配会被服务端拒绝。本页无法探测写开关，最终以服务端响应为准。
+      </p>
+    </div>
+    <p class="sub" style="margin:8px 0 0">
+      ⚠️ token 模式：若服务端以 <code>--serve-token-env</code> 开启鉴权，浏览器 <code>fetch</code> 无法自动携带
+      <code>Authorization</code> 头，请经反向代理注入请求头，或改用
+      <code>curl -H "Authorization: Bearer &lt;token&gt;"</code>；本页不保存 token。
+    </p>
   </section>
 
   <div id="app"></div>

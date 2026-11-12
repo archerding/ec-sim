@@ -1,4 +1,4 @@
-# EC-Sim 当前状态快照（2026-11-13 03:40）
+# EC-Sim 当前状态快照（2026-11-13 08:00）
 
 > 本页是**项目状态索引**，不是规范或认证结论。所有"已验证"都指仓库内脚本/单测的
 > 可复现结果，**不构成**一致性测试或认证（见 `AGENTS.md` §3/§4）。
@@ -8,7 +8,7 @@
 核心 ESC（寄存器/SM/FMMU/AL/EEPROM-SII/邮箱/watchdog）+ CoE（SDO 加速/分段/SDO Info/
 Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/CST，Tier0 简化）
 + 声明式设备画像已实现；**未修改的 SOEM 2.0.0 与 IgH 1.6.13** 可发现从站并进入 OP
-（IgH 无应用时到 PREOP）。测试基线 **208 passed**。
+（IgH 无应用时到 PREOP）。测试基线 **230 passed**。
 
 ## 代码与测试
 
@@ -45,7 +45,7 @@ Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/
 
 ## 控制面与 WebUI
 
-- 控制面（`--serve`）：只读 API（`/state`、`/dict`、`/pdo`、`/topology`、`/metrics`，支持 `?slave=N`）+ M3 写路径（`--serve-write` 下的 `POST /sdo`/`POST /pdo`、SDO 只读浏览、`/sdo-audit`）+ 可选静态 Bearer token（`--serve-token-env`，默认关闭）；零依赖 Web 页：见 **[CONTROL-PLANE.md](CONTROL-PLANE.md)**、[web/README.md](../web/README.md)；M2 退出条件核对见 **[M2 退出清单](plan/M2-exit-checklist.md)**；M3 范围见 **[M3 范围](plan/M3-scope.md)** 与 **[ADR 0002](adr/0002-m3-plugin-host-and-write-paths.md)**。
+- 控制面（`--serve`）：只读 API（`/state`、`/dict`、`/pdo`、`/topology`、`/metrics`，支持 `?slave=N`）+ M3 写路径（`--serve-write` 下的 `POST /sdo`/`POST /pdo`、SDO 只读浏览、`/sdo-audit`）+ 可选静态 Bearer token（`--serve-token-env`，默认关闭）；零依赖 Web 页含 **SDO 面板**（`GET /sdo` 浏览 + 勾选/`confirm` 二次确认的受控写；⚠️ 无 DOM 自动化，静态回归 + 人工验收）：见 **[CONTROL-PLANE.md](CONTROL-PLANE.md)**、[web/README.md](../web/README.md)；M2 退出条件核对见 **[M2 退出清单](plan/M2-exit-checklist.md)**；M3 范围见 **[M3 范围](plan/M3-scope.md)** 与 **[ADR 0002](adr/0002-m3-plugin-host-and-write-paths.md)**。
 
 ## 验证证据（详见 [docs/VERIFICATION.md](VERIFICATION.md)）
 

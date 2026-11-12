@@ -52,6 +52,7 @@ slave-select|linux|slave-select-probe.sh|no
 metrics|linux|metrics-probe.sh|no
 metrics-filter|linux|metrics-filter-probe.sh|no
 serve-web|linux|serve-web-probe.sh|no
+web-sdo-panel|any|web-sdo-panel-check.py|yes
 events|linux|events-probe.sh|no
 write-pdo|linux|write-pdo-probe.sh|no
 sdo-read|linux|sdo-read-probe.sh|no

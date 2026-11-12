@@ -52,6 +52,7 @@ EXPECTED_PROBES = [
     "sdo-read-probe.sh",
     "sdo-write-probe.sh",
     "serve-token-probe.sh",
+    "web-sdo-panel-check.py",
 ]
 
 
@@ -115,7 +116,8 @@ m2_text = m2_path.read_text(encoding="utf-8")
 m2_probes = [
     probe
     for probe in EXPECTED_PROBES
-    if probe not in ("sdo-read-probe.sh", "sdo-write-probe.sh", "serve-token-probe.sh")
+    if probe
+    not in ("sdo-read-probe.sh", "sdo-write-probe.sh", "serve-token-probe.sh", "web-sdo-panel-check.py")
 ]
 for probe in m2_probes:
     if probe not in m2_text:
@@ -130,7 +132,7 @@ for required in (m3_path, adr2_path):
     if not required.is_file():
         fail(f"M3 文档不存在：{required}")
 m3_text = (ROOT / "docs" / "plan" / "M3-scope.md").read_text(encoding="utf-8")
-for probe in ("sdo-read-probe.sh", "sdo-write-probe.sh", "serve-token-probe.sh"):
+for probe in ("sdo-read-probe.sh", "sdo-write-probe.sh", "serve-token-probe.sh", "web-sdo-panel-check.py"):
     if probe not in m3_text:
         fail(f"M3 范围未引用 {probe}")
 for doc_path in (ROOT / "docs" / "STATUS.md", ROOT / "README.md", m2_path):
