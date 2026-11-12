@@ -179,8 +179,9 @@ pub use al_status::NO_ERROR as AL_STATUS_NO_ERROR;
 /// 都在请求对应状态**之前**配置好这些 SM，因此这两个条件仅在配置缺失时失败。
 ///
 /// `declares_*` 为假时对应检查不生效（SII 未声明该能力，无需满足）。
-/// 默认值（全 `false`）等于"不做前置条件检查"，与 [`EscAl::handle_control`] 一致。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// 默认值：除 `sync_managers_valid`/映射有效性外全 `false`（等于"不做前置条件检查"，
+/// 与 [`EscAl::handle_control`] 一致）；未配置任何 SM 时布局天然合法。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EsmPreconditions {
     /// SII 是否声明邮箱协议（固定区 word 0x001C 非 0）。
     pub mailbox_declared: bool,
@@ -200,10 +201,31 @@ pub struct EsmPreconditions {
     pub inputs_declared: bool,
     /// SM3（输入过程数据）是否已配置：activate bit0 且 length > 0。
     pub inputs_configured: bool,
+    /// 已激活 SM 的布局是否合法（DL 内存范围、无重叠；未激活 SM 不参与）。
+    pub sync_managers_valid: bool,
     /// 输出映射是否与 SM2 长度一致（未配置/未声明时视为真）。
     pub outputs_mapping_valid: bool,
     /// 输入映射是否与 SM3 长度一致（未配置/未声明时视为真）。
     pub inputs_mapping_valid: bool,
+}
+
+impl Default for EsmPreconditions {
+    fn default() -> Self {
+        Self {
+            mailbox_declared: false,
+            mailbox_out_configured: false,
+            mailbox_in_configured: false,
+            process_data_declared: false,
+            process_data_configured: false,
+            sync_managers_valid: true,
+            outputs_declared: false,
+            outputs_configured: false,
+            inputs_declared: false,
+            inputs_configured: false,
+            outputs_mapping_valid: true,
+            inputs_mapping_valid: true,
+        }
+    }
 }
 
 impl EsmPreconditions {
@@ -218,6 +240,10 @@ impl EsmPreconditions {
                 Some(al_status::INVALID_MAILBOX_CONFIGURATION)
             }
             AlState::SafeOp if self.process_data_declared && !self.process_data_configured => {
+                Some(al_status::INVALID_SYNC_MANAGER_CONFIGURATION)
+            }
+            // 已配置 SM 布局非法（地址越界/重叠）同样按 SM 配置错误处理。
+            AlState::SafeOp if !self.sync_managers_valid => {
                 Some(al_status::INVALID_SYNC_MANAGER_CONFIGURATION)
             }
             // SAFEOP → OP：按 SII 声明的方向检查 SM2/SM3 是否可用（⚠️ 以 SM 配置近似
@@ -597,6 +623,7 @@ mod tests {
             mailbox_in_configured: true,
             process_data_declared: true,
             process_data_configured: true,
+            sync_managers_valid: true,
             outputs_declared: true,
             outputs_configured: true,
             inputs_declared: true,
@@ -718,6 +745,27 @@ mod tests {
         assert_eq!(al.state, AlState::PreOp);
         assert!(!al.error);
         assert_eq!(al.status_code, al_status::NO_ERROR);
+    }
+
+    #[test]
+    fn checked_esm_rejects_safeop_with_invalid_sm_layout() {
+        // 已配置 SM 但布局非法（地址越界/重叠）→ 0x0017，状态保持 PREOP。
+        let mut al = EscAl {
+            state: AlState::PreOp,
+            error: false,
+            status_code: 0,
+        };
+        let pre = EsmPreconditions {
+            sync_managers_valid: false,
+            ..configured_preconditions()
+        };
+        assert!(al.handle_control_checked(AlControl::from_byte(0x04), &pre));
+        assert_eq!(al.state, AlState::PreOp, "布局非法时状态保持 PREOP");
+        assert!(al.error);
+        assert_eq!(
+            al.status_code,
+            al_status::INVALID_SYNC_MANAGER_CONFIGURATION
+        );
     }
 
     #[test]

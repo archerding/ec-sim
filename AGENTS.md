@@ -296,6 +296,12 @@ user.email = deepseek-harness@users.noreply.github.com
     dtype（仅支持的类型）、access（ro/rw）、字符串 value 必填与位长上限、数值 value 可解析、
     (index,sub) 不重复；新增单测。测试 **174 passed**；既有插件无误报。
     ⚠️ 未校验数值初值与 dtype 位宽匹配（截断风险）、SM control/type 语义。
+  - 进度（2026-11-13 00:58 班）：**SM 布局合法性检查**——`EsmPreconditions.sync_managers_valid`
+    + `esc-node::active_sm_layout_valid()`：已激活 SM 必须落在 DL 内存 `0x1000–0xFFFF`、
+    区间不越界且互不重叠，否则 SAFEOP 请求报 **0x0017**（状态保持 PREOP）；`EsmPreconditions`
+    改为手写 `Default`（未配置 SM 时布局天然合法）。测试 **185 passed**；验证机回归
+    `soem-process-data.sh`（OP 1055 轮 WKC=3）/`generic-cia402-probe.sh`/
+    `igh-el2008-op-probe.sh`（IgH OP）全部 EXIT=0。⚠️ 只查 SM0–SM3 且不校验 control/type。
   - 进度（2026-11-13 00:35 班）：**数值初值位宽范围校验**——`validate()` 按 dtype 位宽/
     有无符号校验初值上限（BOOL/INT8/UINT8/INT16/UINT16/INT32/UINT32），越界报"会截断"、
     负值报"暂不支持"；扩展单测覆盖 `UINT8=0x1FF`、`INT16=65535`。测试 **174 passed**；

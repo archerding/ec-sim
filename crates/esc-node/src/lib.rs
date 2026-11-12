@@ -1092,6 +1092,7 @@ impl Responder {
             mailbox_declared: sii.mailbox_protocols() != 0,
             mailbox_out_configured: Self::sync_manager_configured(&self.regs, 0),
             mailbox_in_configured: Self::sync_manager_configured(&self.regs, 1),
+            sync_managers_valid: Self::active_sm_layout_valid(&self.regs),
             process_data_declared: sii.declares_process_data_sync_managers(),
             process_data_configured: (2..=3)
                 .any(|index| Self::sync_manager_configured(&self.regs, index)),
@@ -1104,11 +1105,30 @@ impl Responder {
         }
     }
 
-    /// 计算 `0x1C12`/`0x1C13` 分配的 PDO 映射位长总和（用于 OP 的映射一致性检查）。
+    /// 已激活的 SM 布局是否合法：地址落在 DL 内存范围（0x1000–0xFFFF）内、区间互不重叠。
     ///
-    /// 读取分配对象（0x1C12/0x1C13 子 0 条目数 + 各子 PDO 索引），再读每个 PDO 映射对象
-    /// （子 0 条目数 + 各映射字 `index<<16 | sub<<8 | bits`），累加最低字节的位长。
-    /// 从 SII 的 SM 类别读取第 index 个 SM 的声明长度（用于映射一致性检查的有效性判断）。
+    /// 只有 Activate bit0 置位且 Length > 0 的 SM 参与检查（未配置的 SM 不参与）。
+    fn active_sm_layout_valid(regs: &Registers) -> bool {
+        let mut ranges: Vec<(u32, u32)> = Vec::new();
+        for index in 0..=3u8 {
+            let Some(sm) = SyncManager::read(regs, index) else {
+                return false;
+            };
+            if sm.activate & 0x01 == 0 || sm.length == 0 {
+                continue;
+            }
+            let start = u32::from(sm.start_address);
+            let end = start + u32::from(sm.length);
+            if start < 0x1000 || end > 0x1_0000 {
+                return false;
+            }
+            ranges.push((start, end));
+        }
+        ranges.sort_unstable();
+        ranges.windows(2).all(|pair| pair[0].1 <= pair[1].0)
+    }
+
+    /// 从 SII 的 SM 类别读取第 `index` 个 SM 的声明长度（用于映射一致性检查的有效性判断）。
     fn sii_sync_manager_length(sii: &SiiImage, index: usize) -> Option<u16> {
         let bytes = sii.category_bytes(esc_core::sii::category::SYNC_MANAGER)?;
         let offset = index * 8;
@@ -2772,6 +2792,36 @@ mod tests {
         assert_eq!(status & 0x0F, 0x02);
         assert_eq!(status & 0x10, 0x00);
         assert_eq!(al_status_code(&mut responder), 0);
+    }
+
+    #[test]
+    fn esm_strict_rejects_safeop_with_overlapping_sync_managers() {
+        let mut responder = Responder::default().with_esm_preconditions(true);
+        configure_sync_managers(&mut responder, 2); // 邮箱 SM0/SM1（0x1000/0x1080 各 128B）
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x02]); // PREOP 正常
+        assert_eq!(al_status_byte(&mut responder) & 0x0F, 0x02);
+        // 把 SM2 地址改到与 SM1 重叠（0x1080，4 字节）并激活 → 布局非法。
+        let overlapping = SyncManager {
+            start_address: 0x1080,
+            length: 4,
+            control: 0,
+            status: 0,
+            activate: 1,
+            pdi_control: 0,
+        };
+        write_regs(
+            &mut responder,
+            esc_core::sm::SYNC_MANAGER_ADDRESS + 2 * esc_core::sm::SYNC_MANAGER_SIZE,
+            overlapping.to_bytes().to_vec(),
+        );
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x04]); // SAFEOP
+        let status = al_status_byte(&mut responder);
+        assert_eq!(status & 0x0F, 0x02, "布局非法时状态保持 PREOP");
+        assert_eq!(status & 0x10, 0x10, "error 位必须置位");
+        assert_eq!(
+            al_status_code(&mut responder),
+            esc_core::al_status::INVALID_SYNC_MANAGER_CONFIGURATION
+        );
     }
 
     #[test]

@@ -32,6 +32,40 @@
 
 ---
 
+## 2026-11-13 00:58 班（低峰）— B5 剩余：**SM 布局合法性检查**（0x0017 细化）
+
+**做了什么**
+- `esc-core::EsmPreconditions` 增加 `sync_managers_valid`；`failure_for(AlState::SafeOp)` 在
+  "未配置过程数据 SM"之后增加"**已配置 SM 布局非法**"分支 → 仍报
+  **0x0017** `Invalid sync manager configuration`。
+- `EsmPreconditions` 改为手写 `Default`：除 `sync_managers_valid`/映射有效性为 `true`
+  外全 `false`（等价"不做前置条件检查"；未配置任何 SM 时布局天然合法）。
+- `esc-node::Responder::active_sm_layout_valid`：遍历 SM0–SM3，只对 Activate bit0 置位且
+  Length > 0 的 SM 检查——起始地址必须在 DL 内存 `0x1000–0xFFFF`、区间不越过 0xFFFF、
+  已激活 SM 地址区间互不重叠（排序后逐对比较）。
+- 新增单测：esc-core `checked_esm_rejects_safeop_with_invalid_sm_layout`；
+  esc-node `esm_strict_rejects_safeop_with_overlapping_sync_managers`（SM2 改到与 SM1
+  重叠 → SAFEOP 拒绝 0x0017、状态保持 PREOP）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **185 passed**（esc-core 80 / esc-node 57 / plugin-host 25 + 1 集成 / wire 22）。
+- Linux 验证机回归（重建后）：`soem-process-data.sh` **EXIT=0**（SOEM OP、1055 轮
+  WKC=3、无 WKC 不符）、`generic-cia402-probe.sh` **EXIT=0**（CiA 402 扫描/OP）、
+  `igh-el2008-op-probe.sh` **EXIT=0**（IgH `al_states=0x08`、EL2008 OP）→ 真实主站配置的
+  SM 布局均合法，无回归。
+
+**卡点**
+- 只检查 SM0–SM3（ESC 每通道 4 字节寄存器，最多 8 通道可扩展）；SM 的 control/type 语义
+  仍不校验（由 manifest/主站写入决定）。
+- 布局检查在 SAFEOP 请求时做快照，未跟踪运行中 SM 被改写后的重新校验。
+
+**下次开工第一件事**
+- B11：换公开镜像/HTML 手册核对 SV660N 默认 PDO（PDF 与 GitHub raw 受阻已记录）；
+  或 B3 Spike 4（SOEM oshw UDS shim）。
+
+---
+
 ## 2026-11-13 00:56 班（低峰）— B4 边界测试补充 + **B11 手册访问受阻记录**
 
 **做了什么**
