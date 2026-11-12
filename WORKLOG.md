@@ -6,6 +6,32 @@
 
 ---
 
+## 2026-11-13 00:35 班（低峰）— B9 强化：**数值初值位宽范围校验**（防静默截断）
+
+**做了什么**
+- `plugin-host::PluginManifest::validate()` 对数值对象的初值增加**位宽范围**检查：
+  解析 `value`（十进制/`0x`/下划线）后按 dtype 位宽与有无符号校验上限
+  （BOOL=1、INT8≤127、UINT8≤255、INT16≤32767、UINT16≤65535、INT32≤2^31-1、
+  UINT32≤2^32-1）；越界报"会截断"错误，负值报"暂不支持"。
+- 扩展单测 `rejects_invalid_object_declarations`，加入 `UINT8=0x1FF`、`INT16=65535`
+  两个越界用例（断言包含"超出"）。
+- 这样 `dictionary_from_manifest`（内部先 validate）不会再静默截断超范围初值。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **174 passed**（esc-core 79 / esc-node 53 / plugin-host 25 + 1 集成 / wire 16）；
+  仓库内既有插件初值（0x1234 等）均在范围内，无误报。
+
+**卡点**
+- 仅校验数值初值；字符串/布尔之外的类型语义、SM control/type 仍未覆盖。
+- 负值初值仍不支持（dict_gen 只按 u64 解析，manifest 校验明确报错）。
+
+**下次开工第一件事**
+- 继续 B9 强化（SM control/type、对象子索引范围）或回到 B11（SV660N 公开手册
+  PDO/扩展对象核对）；B6 FMMU/DC 原文核实仍待条件。
+
+---
+
 ## 2026-11-13 00:33 班（低峰）— B9 强化：**对象声明合法性校验**（dtype/access/初值/重复）
 
 **做了什么**

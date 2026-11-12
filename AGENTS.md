@@ -261,6 +261,10 @@ user.email = deepseek-harness@users.noreply.github.com
     dtype（仅支持的类型）、access（ro/rw）、字符串 value 必填与位长上限、数值 value 可解析、
     (index,sub) 不重复；新增单测。测试 **174 passed**；既有插件无误报。
     ⚠️ 未校验数值初值与 dtype 位宽匹配（截断风险）、SM control/type 语义。
+  - 进度（2026-11-13 00:35 班）：**数值初值位宽范围校验**——`validate()` 按 dtype 位宽/
+    有无符号校验初值上限（BOOL/INT8/UINT8/INT16/UINT16/INT32/UINT32），越界报"会截断"、
+    负值报"暂不支持"；扩展单测覆盖 `UINT8=0x1FF`、`INT16=65535`。测试 **174 passed**；
+    既有插件无误报。⚠️ 仍未覆盖 SM control/type 与对象子索引范围。
 - [x] ~~**B10 首个 P0 设备插件**~~ ✅ **2026-11-12 21:33 班完成**：`plugins/beckhoff-el2008/`
   声明式画像（自有 VID/PID `0x00000EC5`/`0x0000E5D2`，名称带 SIMULATED；8 通道输出、
   0 输入、SM2 输出 1 字节、默认 RxPDO `0x1600`..`0x1607` 各映射 1 bit 输出对象

@@ -802,11 +802,42 @@ impl PluginManifest {
                     .or_else(|| text.strip_prefix("0X"))
                     .map(|hex| u64::from_str_radix(hex, 16))
                     .unwrap_or_else(|| text.parse::<u64>());
-                if parsed.is_err() {
-                    problems.push(format!(
-                        "对象 {:#06x}:{:02X} 数值初值无法解析：value={value}（应为十进制或 0x 十六进制）",
+                match parsed {
+                    Err(_) => problems.push(format!(
+                        "对象 {:#06x}:{:02X} 数值初值无法解析：value={value}（应为十进制或 0x 十六进制；负值暂不支持）",
                         object.index, object.sub
-                    ));
+                    )),
+                    Ok(parsed) => {
+                        // 数值必须落在 dtype 位宽范围内，避免 dict_gen 静默截断。
+                        let dtype = object.data_type.trim().to_ascii_uppercase();
+                        let (bits, signed) = match dtype.as_str() {
+                            "BOOL" | "BOOLEAN" => (1u32, false),
+                            "INT8" | "INTEGER8" => (8, true),
+                            "INT16" | "INTEGER16" => (16, true),
+                            "INT32" | "INTEGER32" => (32, true),
+                            "UINT8" | "UNSIGNED8" => (8, false),
+                            "UINT16" | "UNSIGNED16" => (16, false),
+                            "UINT32" | "UNSIGNED32" => (32, false),
+                            _ => (0, false),
+                        };
+                        if bits > 0 {
+                            let max: u64 = if signed {
+                                (1u64 << (bits - 1)) - 1
+                            } else {
+                                (1u64 << bits) - 1
+                            };
+                            if parsed > max {
+                                problems.push(format!(
+                                    "对象 {:#06x}:{:02X} 初值 {value} 超出 {} 位{}上限 {}（会截断）",
+                                    object.index,
+                                    object.sub,
+                                    bits,
+                                    if signed { "有符号" } else { "无符号" },
+                                    max
+                                ));
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1125,6 +1156,8 @@ objects:
   - {index: 0x2003, sub: 0, name: D, dtype: VISIBLE_STRING, access: ro}
   - {index: 0x2004, sub: 0, name: E, dtype: UINT8, access: ro, value: 0}
   - {index: 0x2004, sub: 0, name: E2, dtype: UINT8, access: ro, value: 0}
+  - {index: 0x2005, sub: 0, name: F, dtype: UINT8, access: ro, value: 0x1FF}
+  - {index: 0x2006, sub: 0, name: G, dtype: INT16, access: ro, value: 65535}
 sources:
   - {title: "t", url: "https://example.invalid", accessed: "2026-11-13"}
 "#;
@@ -1136,6 +1169,7 @@ sources:
             "无法解析",
             "缺少 value",
             "重复声明",
+            "超出",
         ] {
             assert!(
                 problems.iter().any(|p| p.contains(needle)),
