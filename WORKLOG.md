@@ -32,6 +32,34 @@
 
 ---
 
+## 2026-11-13 02:17 班（低峰）— B11：**IgH ecrt CST 进 OP 验证**
+
+**做了什么**
+- 新增 `scripts/spikes/igh-cia402-cst-op-probe.sh`：用**未修改 IgH** 的 ecrt 应用（验证机
+  本地夹具，源码不入库）配置 CST 画像的 5 字节 PDO（`0x1600`=控制字/模式/目标转矩，
+  `0x1A00`=状态字/模式显示/实际转矩），驱动状态机并读回行为输出。
+- 夹具源码 `/opt/ecsim/work/igh-op/ecrt-cia402-cst-op.c` 由 CSV 夹具派生（验证机本地，
+  **不入库**；仅作为独立进程夹具，符合 §3 许可红线）。
+- 更新 `docs/plugins/generic-cia402-cst-verification.md`（新增 IgH ecrt 验证节）、
+  `docs/VERIFICATION.md` 索引与 AGENTS B11 进度。
+
+**验证结果**
+- Linux 验证机：`igh-cia402-cst-op-probe.sh` → **EXIT=0**：
+  - 应用运行期间 `ethercat slaves`：`0  0:0  OP  +  0x00000ec5:0x0000e5e2`；
+  - 应用输出：`RESULT al_states=0x08 slaves_responding=1`、
+    `STATUS sw=0x0237 modes_display=10 torque_actual=300`；
+  - 应答器侧 `al=0x08`。
+- 本机无代码改动：`cargo test --workspace` **199 passed** 基线不变。
+
+**卡点**
+- IgH ecrt 夹具不进仓库（验证机本地文件），CI 无法直接复现该验证；文档已注明。
+- CST 仍是 Tier0 简化行为（实际转矩镜像目标转矩，无转矩环）。
+
+**下次开工第一件事**
+- B11：SV660N 默认 PDO 条目（公开镜像/HTML 搜索），或厂商扩展对象核对。
+
+---
+
 ## 2026-11-13 02:13 班（低峰）— B11：**CST 画像双主站验证（SOEM/IgH）**
 
 **做了什么**

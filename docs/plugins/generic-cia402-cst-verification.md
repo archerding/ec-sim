@@ -50,6 +50,21 @@ sudo bash scripts/spikes/cia402-cst-op-probe.sh
   `WKC 3` 稳定；
 - IgH `ethercat slaves`：`PREOP` + 身份 `0x00000ec5:0x0000e5e2`（无 ecrt 应用时只到 PREOP）。
 
+## IgH ecrt 应用验证（零补丁进 OP + 行为）
+
+```bash
+sudo bash scripts/spikes/igh-cia402-cst-op-probe.sh
+```
+
+结果（2026-11-13 02:17 班，Linux 验证机 **EXIT=0**）：
+
+- 应用运行期间 `ethercat slaves`：`0  0:0  OP  +  0x00000ec5:0x0000e5e2`；
+- 应用输出：`RESULT al_states=0x08 slaves_responding=1`、
+  `STATUS sw=0x0237 modes_display=10 torque_actual=300`；
+- 应答器侧 `al=0x08`。
+- ecrt 夹具源码为验证机本地文件（`/opt/ecsim/work/igh-op/ecrt-cia402-cst-op.c`，**不入库**，
+  与 CSV 夹具同模式）。
+
 ## ⚠️ 边界
 
 - Tier0 简化：转矩只镜像、无转矩环/负载/限幅/单位换算；状态机时序（Ti）与故障码
