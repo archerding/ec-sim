@@ -165,6 +165,8 @@ struct Cia402Behavior {
     modes_display: i8,
     /// 速度实际值 `0x606C`（CSV 模式且 enabled 时镜像目标速度，否则 0）。
     velocity_actual: i32,
+    /// 转矩实际值 `0x6077`（CST 模式且 enabled 时镜像目标转矩，否则 0）。
+    torque_actual: i16,
 }
 
 /// 单从站最小 ESC 应答器。
@@ -292,6 +294,7 @@ impl Responder {
             position_actual: 0,
             modes_display: 0,
             velocity_actual: 0,
+            torque_actual: 0,
         });
         self
     }
@@ -335,7 +338,12 @@ impl Responder {
         let mut modes = behavior.modes_display;
         let mut target = behavior.position_actual;
         let mut target_velocity = behavior.velocity_actual;
-        if out_bytes.len() >= 7 {
+        let mut target_torque = behavior.torque_actual;
+        if out_bytes.len() == 5 {
+            // 5 字节布局（CST）：控制字(2) + 模式(1) + 目标转矩 i16(2)。
+            modes = out_bytes[2] as i8;
+            target_torque = i16::from_le_bytes([out_bytes[3], out_bytes[4]]);
+        } else if out_bytes.len() >= 7 {
             modes = out_bytes[2] as i8;
             target = i32::from_le_bytes([out_bytes[3], out_bytes[4], out_bytes[5], out_bytes[6]]);
         }
@@ -352,6 +360,7 @@ impl Responder {
         // - 其它模式：位置冻结。
         let csp = modes == 8;
         let csv = modes == 9 && out_bytes.len() >= 11;
+        let cst = modes == 10 && out_bytes.len() == 5;
         if enabled && csp {
             behavior.position_actual = target;
         } else if enabled && csv {
@@ -359,6 +368,9 @@ impl Responder {
         }
         let velocity_actual = if enabled && csv { target_velocity } else { 0 };
         behavior.velocity_actual = velocity_actual;
+        // CST（模式 10，5 字节 PDO）：Tier0 只镜像目标转矩为实际转矩（不模拟运动）。
+        let torque_actual = if enabled && cst { target_torque } else { 0 };
+        behavior.torque_actual = torque_actual;
         if out_bytes.len() >= 7
             && usize::from(behavior.in_len) >= 7
             && enabled
@@ -368,7 +380,13 @@ impl Responder {
             statusword |= TARGET_REACHED;
         }
         behavior.modes_display = modes;
-        if usize::from(behavior.in_len) >= 11 {
+        if usize::from(behavior.in_len) == 5 {
+            let mut tx = [0u8; 5];
+            tx[0..2].copy_from_slice(&statusword.to_le_bytes());
+            tx[2] = modes as u8;
+            tx[3..5].copy_from_slice(&torque_actual.to_le_bytes());
+            memory.write(behavior.in_offset, &tx);
+        } else if usize::from(behavior.in_len) >= 11 {
             let mut tx = [0u8; 11];
             tx[0..2].copy_from_slice(&statusword.to_le_bytes());
             tx[2] = modes as u8;
@@ -3434,6 +3452,66 @@ mod tests {
             al_status_byte(&mut responder) & 0x0F,
             0x04,
             "状态保持 SAFEOP"
+        );
+    }
+
+    #[test]
+    fn cia402_cst_mode_mirrors_target_torque() {
+        fn write_rx(responder: &mut Responder, controlword: u16, mode: i8, torque: i16) {
+            let mut data = vec![0u8; 5];
+            data[0..2].copy_from_slice(&controlword.to_le_bytes());
+            data[2] = mode as u8;
+            data[3..5].copy_from_slice(&torque.to_le_bytes());
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Apwr,
+                1,
+                0,
+                0x1100,
+                data,
+            )]);
+            responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APWR reply");
+        }
+        fn read_tx(responder: &mut Responder) -> (u16, i8, i16) {
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Aprd,
+                1,
+                0,
+                0x1110,
+                vec![0u8; 5],
+            )]);
+            let reply = responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APRD reply");
+            let start = ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10;
+            (
+                u16::from_le_bytes([reply[start], reply[start + 1]]),
+                reply[start + 2] as i8,
+                i16::from_le_bytes([reply[start + 3], reply[start + 4]]),
+            )
+        }
+
+        let mut responder = Responder::default().with_cia402_behavior(0x1100, 5, 0x1110, 5);
+        write_rx(&mut responder, 0x0006, 10, 300); // Shutdown
+        responder.tick(1);
+        assert_eq!(read_tx(&mut responder), (0x0221, 10, 0));
+        write_rx(&mut responder, 0x0007, 10, 300); // Switch on
+        responder.tick(2);
+        assert_eq!(read_tx(&mut responder), (0x0223, 10, 0));
+        write_rx(&mut responder, 0x000F, 10, 300); // Enable operation
+        responder.tick(3);
+        assert_eq!(
+            read_tx(&mut responder),
+            (0x0237, 10, 300),
+            "CST：实际转矩=目标转矩"
+        );
+        write_rx(&mut responder, 0x0000, 10, 300); // Disable voltage
+        responder.tick(4);
+        assert_eq!(
+            read_tx(&mut responder),
+            (0x0240, 10, 0),
+            "禁用后实际转矩归零"
         );
     }
 

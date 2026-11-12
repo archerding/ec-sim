@@ -319,6 +319,7 @@ def main():
     sdo_ca_download = False
     sdo_ca_download_multi = False
     cia402_fault = False
+    cia402_cst = False
     sdo_retransmit = False
     for arg in sys.argv[1:]:
         if arg.startswith("--timeout="):
@@ -339,6 +340,8 @@ def main():
             sdo_ca = True
         if arg == "--sdo-retransmit":
             sdo_retransmit = True
+        if arg == "--cia402-cst":
+            cia402_cst = True
         if arg == "--cia402-fault":
             cia402_fault = True
         if arg == "--cia402-csv":
@@ -473,6 +476,29 @@ def main():
                 f"CA 下载后回读 {data.hex()} != 01 08 00 00 70",
             )
             print("OK: Complete Access 下载（0x1600 写入全部子索引并回读一致）通过")
+
+        # 5k) 可选：CiA 402 CST（5 字节 PDO，转矩模式，Tier0 镜像）。
+        if cia402_cst:
+            sequence = [
+                (0x0006, 10, 300, 0x0221, 0),
+                (0x0007, 10, 300, 0x0223, 0),
+                (0x000F, 10, 300, 0x0237, 300),
+                (0x0000, 10, 300, 0x0240, 0),
+            ]
+            for controlword, mode, torque, expected_sw, expected_torque in sequence:
+                master.transact(
+                    [(CMD["APWR"], 0, 0x1100, struct.pack("<HbH", controlword, mode, torque))]
+                )
+                reply = master.transact([(CMD["APRD"], 0, 0x1110, bytes(5))])
+                sw, modes_display, torque_actual = struct.unpack("<HbH", reply[0][3][:5])
+                # 行为 tick 与写/读帧顺序：这里只断言最终读回值（一帧延迟见文档）。
+                check(sw == expected_sw, f"CST sw={sw:#06x} != {expected_sw:#06x}")
+                check(modes_display == mode, f"CST 模式显示 {modes_display} != {mode}")
+                check(
+                    torque_actual == expected_torque,
+                    f"CST 实际转矩 {torque_actual} != {expected_torque}",
+                )
+            print("OK: CiA 402 CST（5 字节 PDO，转矩模式镜像）通过")
 
         # 5i) 可选：CiA 402 故障注入（需从站以 `--fault <code>` 启动）：断言初始 Fault
         # bit、故障复位（控制字 bit7）清故障、0x603F 错误码可回读。

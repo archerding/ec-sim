@@ -362,6 +362,7 @@ user.email = deepseek-harness@users.noreply.github.com
   - 遗留 ⚠️：SOEM `simple_ng` expected WKC 比实际多 1（SOEM 把 SM1 状态寄存器映射为 FMMU 并在
     无输入时 `inputsWKC++`；本模拟器未做寄存器空间 FMMU，ESC 是否允许待核实）；
     SOEM `slaveinfo -sdo` 虽已可用但受工具自身缺陷影响（best-effort）；电气特性/DC 未模拟。
+  - 进度（2026-11-13 02:08 班）：**CST（转矩模式，5 字节 PDO）Tier0 行为已实现**——RxPDO `0x6040`+`0x6060`+`0x6071`、TxPDO `0x6041`+`0x6061`+`0x6077`，Operation enabled 时 `0x6077` 镜像目标转矩、禁用归零；新增画像 `plugins/generic-cia402-cst-servo/`（自有 VID/PID，CoE SDO/SDO Info/CA）、合成主站探针 `--cia402-cst`、脚本 `scripts/spikes/cia402-cst-probe.sh`、验证记录 `docs/plugins/generic-cia402-cst-verification.md`。验证机 **EXIT=0**（四步状态字/模式/转矩全部符合），测试 **199 passed**。⚠️ Tier0 无转矩环/负载/单位换算。
 - [ ] **B11 CiA402 行为插件**：以 Inovance SV660N 兼容画像为第一个目标，实现 CSP 状态机（Tier0/内置 profile 起步）。
   - 依赖 B10 已完成（声明式画像 + `--manifest` + 验证脚本可复用）；先 facts.md + 声明式画像，
     行为 WASM 只做 Tier0 状态机骨架。

@@ -32,6 +32,41 @@
 
 ---
 
+## 2026-11-13 02:08 班（低峰）— B11：**CST（转矩模式，5 字节 PDO）Tier0 行为**
+
+**做了什么**
+- 行为层：`--behavior cia402` 现在支持 **5 字节 PDO 的 CST（模式 10）布局**：
+  RxPDO = `0x6040` 控制字(16) + `0x6060` 模式(8) + `0x6071` 目标转矩(16)；
+  TxPDO = `0x6041` 状态字(16) + `0x6061` 模式显示(8) + `0x6077` 实际转矩(16)。
+  Tier0：Operation enabled 时 `0x6077` 镜像目标转矩，禁用后归零（不模拟转矩环/负载）。
+  `Cia402Behavior` 新增 `torque_actual`。
+- 新画像 `plugins/generic-cia402-cst-servo/`：自有 VID `0x0EC5`/PID `0xE5E2`，
+  `profile: cia402`、5 字节 SM2/SM3、`0x6502=0x3AD`、CoE SDO/SDO Info/CA、
+  `dc.supported=false`；`facts.md` 写公开来源与 Tier0 边界；`plugins/catalog.yaml`
+  新增 ready 条目。
+- 验证设施：`uds_master_probe.py` 新增 `--cia402-cst`（四步状态机序列 + 转矩断言）、
+  `scripts/spikes/cia402-cst-probe.sh`（UDS 模式，无 root）；`docs/VERIFICATION.md`
+  索引与 `docs/plugins/generic-cia402-cst-verification.md` 记录。
+- 单测 `cia402_cst_mode_mirrors_target_torque`（esc-node）：`0x0221/0x0223/0x0237/0x0240`
+  与转矩 `0/0/300/0` 全断言。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **199 passed**（esc-core 85 / esc-node 63 / plugin-host 27 + 1 集成 / wire 23）。
+- Linux 验证机（重建后）：`cia402-cst-probe.sh` → **EXIT=0**：
+  `BEHAVIOR cia402 sm2_out=0x1100/5B sm3_in=0x1110/5B`，四步读回的状态字/模式显示/
+  实际转矩全部符合预期（Operation enabled 时 300，禁用后 0）。
+
+**卡点**
+- Tier0 简化：无转矩环、负载、限幅、单位换算；状态机 Ti 时序与故障码表未实现。
+- 该 5 字节 CST 布局尚未在真实支持 CST 的 IgH/SOEM 应用中做 PDO 映射验证
+  （需带 CST 应用的主站），⚠️ 待验证。
+
+**下次开工第一件事**
+- B11：SV660N 默认 PDO 条目（公开镜像/HTML 搜索），或 CST 之外的厂商扩展对象核对。
+
+---
+
 ## 2026-11-13 02:06 班（低峰）— 计划簿记：**B5/B6/B7 标记完成**
 
 **做了什么**
