@@ -6,6 +6,48 @@
 
 ---
 
+## 2026-11-12 21:07 班（低峰）— B5 收尾：ESM 前置条件检查改为默认开启（新增 `--esm-lax`）
+
+**做了什么**
+- `esc-node`：`Responder::new()` 的 ESM 前置条件检查改为**默认开启**
+  （`esm_preconditions: true`）；`Responder::with_esm_preconditions(false)` 仍可关闭。
+  依据是上一班（20:44）在验证机上用严格模式跑出的 6/6 双主站回归全绿：两家未修改主站
+  都在请求状态**之前**配置好对应 SM，所以默认开启不改变正常主站行为，只拒绝配置缺失的错误场景。
+- CLI：新增 `--esm-lax` 关闭检查（兼容/负向对照用）；`--esm-strict` 保留为旧参数名
+  （等价于默认行为）；`--help` 与模块文档同步。
+- 测试：`setup_watchdog_environment` 改为按主站顺序先配置 SM0–SM3 再 INIT→PREOP→SAFEOP→OP；
+  `esm_preconditions_are_on_by_default` 断言默认拒绝（0x0015）+ `--esm-lax` 等价关闭后放行。
+- `scripts/spikes/uds_master_probe.py`：默认路径改为**断言前置条件拒绝**
+  （SM 未配置 → PREOP 0x0015 / SAFEOP 0x0017 + ACK 清错）再配置 SM 放行；`--lax` 跳过拒绝断言。
+  `uds-loopback.sh` 两轮改为「默认（开启前置条件）」与「`--esm-lax`」。
+
+**验证结果**
+- 本机 Windows：`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets
+  -- -D warnings` exit 0；`cargo test --workspace` **119 passed**（esc-core 68 /
+  esc-node 35 / wire 16）；`python -m py_compile` 与 `bash -n` 通过。
+- Linux 验证机（真实 TAP + 两家未修改主站）：
+  - `SOCK=/tmp/ecsim-uds.sock bash scripts/spikes/uds-loopback.sh` → 两轮全通过：
+    默认模式 `+ ESM 前置条件（0x0015/0x0017）均通过`；`--esm-lax` 轮跳过拒绝断言后通过。
+  - 双主站回归（三个脚本 × 默认/lax 两种模式，**6/6 EXIT=0**）：
+    `minimal-esc-responder.sh`：SOEM `1 slaves found and configured`、IgH 拓扑计算无报错；
+    `soem-process-data.sh`：`simple_ng` 进入 OP、**1055 轮 WKC=3、无 WKC 不符**；
+    `igh-op-probe.sh`：未修改 IgH ecrt 应用把从站推入 OP
+    （`RESULT al_states=0x08 slaves_responding=1 wc=3`）。
+
+**卡点**
+- 前置条件只检查"SM 是否已配置（Activate bit0 + Length > 0）"，未校验 SM 配置的合法性
+  （地址越界、区间重叠、类型/方向）；OP 级前置条件（0x0018/0x0019、映射类 0x0024/0x0025）未做。
+- 0x0015 / 0x0016 的规范区分（邮箱输入/输出方向）仍未从公开资料核实 → 统一回 0x0015。
+
+**下次开工第一件事**
+- 回到 backlog 顶部未完成项 **B6 剩余：SII FMMU 类别 0x0028**——先以 SOEM
+  `src/ec_main.c: ecx_siiFMMU()`（nFMMU = 首 word × 2，随后 FMMU0..3 字节）与 IgH
+  `master/slave.c` 的解析代码复核字段语义，不凭记忆猜；实现后在 `slaveinfo` 输出上验证。
+  若时间/证据不足，则做 **B5 OP 前置条件**（先用 ETG.1000.6 Table 11 与两家主站错误处理
+  路径核实 0x0018/0x0019/0x0024/0x0025 的触发条件）。
+
+---
+
 ## 2026-11-12 20:44 班（低峰）— B5 子项：ESM 前置条件检查（0x0015 / 0x0017）+ AL Status Code 表
 
 **做了什么**

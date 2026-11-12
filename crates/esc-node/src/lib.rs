@@ -121,7 +121,8 @@ pub struct Responder {
     now_ms: u64,
     /// 最近一次收到过程数据的时刻（毫秒）；`None` 表示尚未收到过。
     last_process_data_ms: Option<u64>,
-    /// 是否启用 ESM 状态迁移前置条件检查（默认关闭，见 [`Responder::with_esm_preconditions`]）。
+    /// 是否启用 ESM 状态迁移前置条件检查（默认**开启**，见
+    /// [`Responder::with_esm_preconditions`]）。
     esm_preconditions: bool,
     stats: Stats,
 }
@@ -149,20 +150,23 @@ impl Responder {
             object_writes: BTreeMap::new(),
             now_ms: 0,
             last_process_data_ms: None,
-            esm_preconditions: false,
+            esm_preconditions: true,
             stats: Stats::default(),
         }
     }
 
     /// 设置是否启用 ESM 状态迁移前置条件检查，返回自身以便链式构造。
     ///
-    /// 启用后（`enabled = true`），从站在进入 **PREOP** 前要求邮箱 SM（SM0/SM1）已配置、
-    /// 进入 **SAFEOP** 前要求过程数据 SM（SM2/SM3）已配置，否则置 AL Status error 位并给出
-    /// AL Status Code **0x0015 / 0x0017**（ETG.1000.6 Table 11）。"已配置" = Activate bit0
-    /// 置位且 Length > 0；是否需要检查由 SII 声明决定（未声明邮箱/过程数据 SM 的从站不检查）。
+    /// 启用后（`enabled = true`，**默认**），从站在进入 **PREOP** 前要求邮箱 SM
+    /// （SM0/SM1）已配置、进入 **SAFEOP** 前要求过程数据 SM（SM2/SM3）已配置，否则置
+    /// AL Status error 位并给出 AL Status Code **0x0015 / 0x0017**（ETG.1000.6 Table 11）。
+    /// "已配置" = Activate bit0 置位且 Length > 0；是否需要检查由 SII 声明决定
+    /// （未声明邮箱/过程数据 SM 的从站不检查）。
     ///
-    /// 默认**关闭**：保持与两家未修改主站既有双主站冒烟结果完全一致（`--esm-strict` 开启，
-    /// 供配置错误/负向路径测试使用）。是否改为默认开启待双主站全链路回归后决定。
+    /// `enabled = false`（CLI `--esm-lax`）关闭检查，供需要"来者不拒"的兼容场景
+    /// 或负向对照测试使用。默认开启的依据：两家未修改主站（IgH/SOEM）都在请求状态前
+    /// 配置好对应 SM，2026-11-12 班在 Linux 验证机上以严格模式跑过 6/6 双主站回归全绿
+    /// （见 WORKLOG 2026-11-12 20:44 班）。
     #[must_use]
     pub fn with_esm_preconditions(mut self, enabled: bool) -> Self {
         self.esm_preconditions = enabled;
@@ -1587,6 +1591,9 @@ mod tests {
 
     /// 配置 SM2（过程数据输出）与看门狗寄存器/使能位，并把 AL 推进到 OP。
     fn setup_watchdog_environment(responder: &mut Responder, watchdog_control: u8) {
+        // ESM 前置条件默认开启：按主站（IgH/SOEM）的顺序先配置邮箱 SM0/SM1 与过程数据
+        // SM2/SM3，再请求 INIT→PREOP→SAFEOP→OP。
+        configure_sync_managers(responder, 4);
         for control in [0x02u8, 0x04, 0x08] {
             write_regs(responder, reg::AL_CONTROL, vec![control]);
         }
@@ -1681,14 +1688,25 @@ mod tests {
     }
 
     #[test]
-    fn esm_preconditions_are_off_by_default() {
-        // 默认关闭：不配置 SM 也能进 PREOP（保持与历史双主站冒烟一致）。
+    fn esm_preconditions_are_on_by_default() {
+        // 默认开启：不配置 SM 时拒绝 PREOP（AL Status Code 0x0015、状态保持 INIT）。
         let mut responder = Responder::default();
-        assert!(!responder.esm_preconditions_enabled());
+        assert!(responder.esm_preconditions_enabled());
         write_regs(&mut responder, reg::AL_CONTROL, vec![0x02]);
-        assert_eq!(al_status_byte(&mut responder) & 0x0F, 0x02);
-        assert_eq!(al_status_byte(&mut responder) & 0x10, 0x00);
-        assert_eq!(al_status_code(&mut responder), 0);
+        assert_eq!(al_status_byte(&mut responder) & 0x0F, 0x01);
+        assert_eq!(al_status_byte(&mut responder) & 0x10, 0x10);
+        assert_eq!(
+            al_status_code(&mut responder),
+            esc_core::al_status::INVALID_MAILBOX_CONFIGURATION
+        );
+
+        // 显式关闭（CLI `--esm-lax`）才放行未配置 SM 的状态迁移。
+        let mut lax = Responder::default().with_esm_preconditions(false);
+        assert!(!lax.esm_preconditions_enabled());
+        write_regs(&mut lax, reg::AL_CONTROL, vec![0x02]);
+        assert_eq!(al_status_byte(&mut lax) & 0x0F, 0x02);
+        assert_eq!(al_status_byte(&mut lax) & 0x10, 0x00);
+        assert_eq!(al_status_code(&mut lax), 0);
     }
 
     #[test]
