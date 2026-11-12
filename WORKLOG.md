@@ -1,5 +1,35 @@
 ---
 
+## 2026-11-13 04:07 班（低峰）— 规划：**M1 退出标准核对 + backlog 收口（B11 完成，开 B12）**
+
+**做了什么**
+- 新增 `docs/plan/M1-exit-checklist.md`：把路线图 §8.2 的 **M1 退出标准**逐条对照现状：
+  - ✅ 已达成：两家未修改主站零补丁到 OP、CLI（含 `--dump-sii/--dump-dict`）、8DI/8DO 画像、
+    ESC 内核、UDS shim；
+  - ❌ 未达成：**8 从站 @1kHz**（当前单从站）、**p99 抖动 <100µs**（无基准脚本）、
+    **Docker 无特权跑通**（无 Dockerfile/容器 CI）；
+  - M2 已提前完成：TAP、DC Tier0、CiA 402 伺服画像、故障注入 v1；未完成：WebUI、32 从站。
+- `AGENTS.md` §6：**B11 标记完成（Tier0 范围）**，残留研究项（固定映射位长逐项核对、
+  厂商扩展对象、`0x603F` 故障码表、真实 DC SYNC0）显式列为不阻塞项；新增顶部 backlog
+  **B12 多从站帧链**（含设计约束、验收、TAP 风险与 ADR 记录要求）。
+- `README.md` "What works today" 表格从 spike 阶段更新为当前能力（OP、UDS shim、CoE/CiA 402、
+  声明式插件），并链接 M1 退出清单/模式矩阵/VERIFICATION。
+
+**验证结果**
+- 纯文档/规划改动；核对项均来自现有探针与测试（未新增未经验证的声明）。
+- 本机 `cargo fmt --check` 通过；`cargo test --workspace` **209 passed** 不变。
+
+**卡点**
+- 8 从站/抖动/Docker 是真实缺口，已拆成 B12（多从站）、B13（shim 延迟基准）、B14（Docker）；
+  本轮只做规划，不虚报 M1 完成。
+
+**下次开工第一件事**
+- **B12：多从站帧链**——`esc-node` 支持 `--slaves N`，按链序处理同一帧并累积 WKC，
+  先做合成主站（`--slaves 8` 的 BRD/APRD 链）验证，再试 SOEM UDS shim。
+
+---
+---
+
 ## 2026-11-13 04:03 班（低峰）— B11：**SV660N 全部 9 个固定映射落地**
 
 **做了什么**

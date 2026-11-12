@@ -22,8 +22,13 @@ This project is **a virtual bus + a plugin host + an AI-operable test infrastruc
 |---|---|---|
 | L2 TAP carries EtherType `0x88A4` both directions | ✅ | [spike-1](docs/spikes/spike-1-tap-bidirectional.md) |
 | **Unmodified SOEM** binds the TAP and sends real frames | ✅ | [spike-2](docs/spikes/spike-2-masters-on-tap.md) |
-| **Unmodified IgH** (`ec_generic`) binds the TAP, `/dev/EtherCAT0` appears, ~496 frames/s | ✅ | [spike-2](docs/spikes/spike-2-masters-on-tap.md) |
-| Virtual slave becomes visible to a master (`ethercat slaves` ≥ 1) | 🚧 in progress | — |
+| **Unmodified IgH** (`ec_generic`) binds the TAP, `/dev/EtherCAT0` appears | ✅ | [spike-2](docs/spikes/spike-2-masters-on-tap.md) |
+| **Unmodified SOEM/IgH reach OP** (single slave, zero patches) | ✅ | `scripts/spikes/soem-process-data-probe.sh`、`igh-op-probe.sh`、[VERIFICATION](docs/VERIFICATION.md) |
+| ESC-over-UDS shim (all platforms / CI, no root) | ✅ | `scripts/spikes/uds-loopback.sh`、`soem-uds-probe.sh`、[spike-5](docs/spikes/spike-5-esc-over-uds.md) |
+| CoE SDO / CA / SDO Info, CiA 402 Tier0 (PP/VL/PV/TQ/HM/IP/CSP/CSV/CST) | ✅ | [cia402 模式矩阵](docs/plugins/cia402-modes-matrix.md)、[VERIFICATION](docs/VERIFICATION.md) |
+| Declarative device plugins (SII/OD/ESI, own VID/PID + SIMULATED) | ✅ | [DEVICE-PLUGINS](docs/DEVICE-PLUGINS.md)、`plugins/` |
+| Multi-slave chain (8 slaves @ 1 kHz) | 🚧 B12 | [M1 退出清单](docs/plan/M1-exit-checklist.md) |
+| WebUI (topology / PDO / SDO / ESI import) | 🚧 M2 | — |
 
 ## Architecture (5 layers)
 
