@@ -1,5 +1,33 @@
 ---
 
+## 2026-11-13 06:34 班（低峰）— **B31：控制面文档 `docs/CONTROL-PLANE.md` + 文档/代码一致性检查**
+
+**做了什么**
+- 新增 `docs/CONTROL-PLANE.md`：启动模式（静态快照 / UDS 实时 / TAP 实时）、路由总表、
+  curl 示例、5 个 schema 摘要（state/dict/pdo/pdo-history/topology 与 `/metrics` 指标表）、
+  **只读/无鉴权安全边界**、与 WebUI 的关系、验证清单。
+- 新增 `scripts/spikes/control-plane-doc-check.py`：核对文档路由表与代码逐条一致
+  （11 条路径、10 个探针、源码引用），跨平台无依赖。
+- README 增加“Control plane & Web UI”段并更新 WebUI 行链接；`docs/STATUS.md` 增加控制面段；
+  `docs/VERIFICATION.md` 增文档检查行。
+- AGENTS：B31 完成、新增 B32（Web 拓扑链式 SVG 图）。
+
+**验证结果**
+- 本机：`python scripts/spikes/control-plane-doc-check.py` **EXIT=0**
+  （`OK: docs/CONTROL-PLANE.md 与代码路由一致（11 条路径、10 个探针）`）；
+  `cargo fmt --check`、clippy 通过；`cargo test --workspace` **223 passed** 不变。
+- 验证机：本班无后端改动，未跑 VM（前几班实时探针均已通过）。
+
+**卡点**
+- 无。文档为当前只读 API 的权威说明；写操作（SDO/PDO/ESM）尚未设计（后续里程碑）。
+
+**下次开工第一件事**
+- **B32**：`web/` 把 `/topology` 渲染为链式 SVG 节点图（AL 状态色、点击切站）；`node --check` +
+  人工浏览器验收（无自动化 DOM 测试，标 ⚠️）。
+
+---
+---
+
 ## 2026-11-13 06:30 班（低峰）— **B30：`/metrics?slave=N` 筛选 + Web 指标卡片**
 
 **做了什么**

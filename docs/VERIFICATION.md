@@ -52,6 +52,7 @@
 | `igh-cia402-op-probe.sh` | IgH ecrt 7B CiA402：OP + 状态字/模式/位置 | **EXIT=0** |
 | `igh-cia402-csv-op-probe.sh` | IgH ecrt 11B CSV：OP + 速度模式位置累加/速度显示 | **EXIT=0** |
 | `uds-multi-slave-probe.sh` | `--slaves 8` 多从站链：广播 WKC=8、逐站地址分配、配置地址寻址 | **EXIT=0** |
+| `control-plane-doc-check.py` | 文档 `docs/CONTROL-PLANE.md` 路由表/探针/源码引用与代码逐条一致（11 条路径、10 个探针） | **EXIT=0** |
 | `metrics-filter-probe.sh` | `/metrics?slave=1` 仅导出 1 站（全量 3 站），越界/非法 slave → 404 | **EXIT=0** |
 | `metrics-probe.sh` | `/metrics` Prometheus 文本：Content-Type、`# TYPE ecsim_frames_in_total counter`、两站 label 行、发帧后计数单调递增 | **EXIT=0** |
 | `slave-select-probe.sh` | 逐站 `/state?slave=N`、`/pdo?slave=N`：N=1（站地址 0x0002/SM2=beef）、N=0（SM2=0000，默认同旧行为）、越界/非法 slave → 404 | **EXIT=0** |

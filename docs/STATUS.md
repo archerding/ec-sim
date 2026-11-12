@@ -43,6 +43,10 @@ Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/
   `generic-cia402-csv-servo`、`generic-cia402-cst-servo`（均自有 VID/PID + SIMULATED），
   `inovance-sv660n` 兼容画像（默认可变 PDO 已按公开手册核对：RPDO 8B / TPDO 22B + DC）。
 
+## 控制面与 WebUI
+
+- 只读 HTTP API（`--serve`：`/state`、`/dict`、`/pdo`、`/topology`、`/metrics`，支持 `?slave=N`）与零依赖 Web 页：见 **[CONTROL-PLANE.md](CONTROL-PLANE.md)**、[web/README.md](../web/README.md)。
+
 ## 验证证据（详见 [docs/VERIFICATION.md](VERIFICATION.md)）
 
 - **SOEM**：`slaveinfo` 扫描身份/PDO 位宽、`simple_ng` 进 OP（WKC 3 稳定）、
