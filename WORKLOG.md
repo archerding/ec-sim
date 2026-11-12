@@ -32,6 +32,36 @@
 
 ---
 
+## 2026-11-13 03:09 班（低峰）— B11：**PP（轮廓位置，模式 1）Tier0 行为**
+
+**做了什么**
+- `esc-node::cia402` 增加状态字 `SET_POINT_ACK`（bit12，PP 模式；与 Homing attained
+  同一位、按模式区分）。
+- `--behavior cia402` 行为：**PP（模式 1，7 字节 PDO）**——`Operation enabled` 且控制字
+  bit4（new set-point）=1 时，位置直接跳到目标并置 `Target reached`（bit10）与
+  `Set-point acknowledge`（bit12）；bit4 清除后 ack 清除，位置与 Target reached 保持。
+  ⚠️ Tier0：瞬时到位，无轨迹/加速度/限幅。
+- 新增单测 `cia402_pp_mode_applies_new_setpoint`（未置 bit4 不动 → new set-point 跳变并
+  置位 → 清 bit4 后 ack 清除）、`uds_master_probe.py --cia402-pp`、脚本
+  `scripts/spikes/cia402-pp-probe.sh`。
+- 文档：`docs/plugins/cia402-state-machine.md` 增补 PP 小节、`docs/VERIFICATION.md` 索引、
+  AGENTS B11。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **205 passed**
+  （esc-core 86 / esc-node 68 / plugin-host 27 + 1 集成 / wire 23）。
+- Linux 验证机（重建后）：`cia402-pp-probe.sh` → **EXIT=0**：`BEHAVIOR cia402
+  sm2_out=0x1100/7B sm3_in=0x1110/7B`；未置 bit4 位置 0 → new set-point 到 777 并置
+  Target reached/Set-point acknowledge → 清 bit4 ack 清除、位置保持。
+
+**卡点**
+- PP 仅 Tier0：无轨迹规划/加速度/限幅/跟随误差。
+
+**下次开工第一件事**
+- B11：继续找 SV660N 默认 PDO 条目；或评估真实 DC 同步（SYNC0 脉冲）。
+
+---
+
 ## 2026-11-13 03:05 班（低峰）— B11：**HM（回零，模式 6）Tier0 行为**
 
 **做了什么**

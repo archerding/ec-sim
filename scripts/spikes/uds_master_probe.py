@@ -322,6 +322,7 @@ def main():
     cia402_cst = False
     dc_clock = False
     cia402_homing = False
+    cia402_pp = False
     sdo_retransmit = False
     for arg in sys.argv[1:]:
         if arg.startswith("--timeout="):
@@ -342,6 +343,8 @@ def main():
             sdo_ca = True
         if arg == "--sdo-retransmit":
             sdo_retransmit = True
+        if arg == "--cia402-pp":
+            cia402_pp = True
         if arg == "--cia402-homing":
             cia402_homing = True
         if arg == "--dc-clock":
@@ -493,6 +496,35 @@ def main():
             t2 = read_dc_time()
             check(t2 > t1, f"DC 系统时间未前进：{t1} -> {t2}")
             print(f"OK: DC 模拟时钟前进（0x0910：{t1} -> {t2}）")
+
+        # 5m) 可选：CiA 402 PP（模式 1，7 字节 PDO，Tier0 简化）。
+        if cia402_pp:
+            def write_rx(controlword, mode, target):
+                master.transact(
+                    [(CMD["APWR"], 0, 0x1100, struct.pack("<HbI", controlword, mode, target))]
+                )
+
+            def read_tx():
+                reply = master.transact([(CMD["APRD"], 0, 0x1110, bytes(7))])
+                return struct.unpack("<HbI", reply[0][3][:7])
+
+            write_rx(0x0006, 1, 777)
+            write_rx(0x0007, 1, 777)
+            write_rx(0x000F, 1, 777)
+            sw, mode_display, pos = read_tx()
+            check(mode_display == 1 and pos == 0, "PP 未置 bit4 时位置不应变化")
+
+            write_rx(0x001F, 1, 777)  # new set-point
+            sw, mode_display, pos = read_tx()
+            check(pos == 777, f"PP 新设定点未生效（pos={pos}）")
+            check(sw & 0x0400, f"PP 未置 Target reached（sw={sw:#06x}）")
+            check(sw & 0x1000, f"PP 未置 Set-point acknowledge（sw={sw:#06x}）")
+
+            write_rx(0x000F, 1, 777)  # 清 bit4
+            sw, mode_display, pos = read_tx()
+            check(pos == 777 and (sw & 0x0400), "清 bit4 后应保持位置与 Target reached")
+            check(not (sw & 0x1000), "清 bit4 后不应再置 Set-point acknowledge")
+            print("OK: CiA 402 PP（模式 1，new set-point + Set-point acknowledge）通过")
 
         # 5l) 可选：CiA 402 HM（模式 6，7 字节 PDO，Tier0 简化）。
         if cia402_homing:

@@ -335,7 +335,7 @@ impl Responder {
     fn step_cia402_behavior(&mut self) {
         use crate::cia402::{
             controlword::BIT4,
-            statusword::{HOMING_ATTAINED, TARGET_REACHED},
+            statusword::{HOMING_ATTAINED, SET_POINT_ACK, TARGET_REACHED},
             Cia402State,
         };
 
@@ -386,6 +386,13 @@ impl Responder {
         if homing_attained {
             behavior.position_actual = 0;
         }
+        // PP（模式 1，7 字节 PDO）Tier0：enabled 且控制字 bit4=1（new set-point）时位置直接
+        // 跳到目标，并置 Set-point acknowledge；位置等于目标时另置 Target reached。
+        let pp = modes == 1 && out_bytes.len() >= 7;
+        let pp_new_setpoint = enabled && pp && (controlword & BIT4) != 0;
+        if pp_new_setpoint {
+            behavior.position_actual = target;
+        }
         let velocity_actual = if enabled && csv { target_velocity } else { 0 };
         behavior.velocity_actual = velocity_actual;
         // CST（模式 10，5 字节 PDO）：Tier0 只镜像目标转矩为实际转矩（不模拟运动）。
@@ -401,6 +408,12 @@ impl Responder {
         }
         if homing_attained {
             statusword |= HOMING_ATTAINED;
+        }
+        if pp_new_setpoint {
+            statusword |= SET_POINT_ACK;
+        }
+        if pp && enabled && behavior.position_actual == target {
+            statusword |= TARGET_REACHED;
         }
         behavior.modes_display = modes;
         if usize::from(behavior.in_len) == 5 {
@@ -1577,6 +1590,69 @@ mod tests {
             (0x0237, 9, 1000),
             "非 CSP 模式位置冻结、无 Target reached"
         );
+    }
+
+    #[test]
+    fn cia402_pp_mode_applies_new_setpoint() {
+        fn write_rx(responder: &mut Responder, controlword: u16, mode: i8, target: i32) {
+            let mut data = vec![0u8; 7];
+            data[0..2].copy_from_slice(&controlword.to_le_bytes());
+            data[2] = mode as u8;
+            data[3..7].copy_from_slice(&target.to_le_bytes());
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Apwr,
+                1,
+                0,
+                0x1100,
+                data,
+            )]);
+            responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APWR reply");
+        }
+        fn read_tx(responder: &mut Responder) -> (u16, i8, i32) {
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Aprd,
+                1,
+                0,
+                0x1110,
+                vec![0u8; 7],
+            )]);
+            let reply = responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APRD reply");
+            let start = ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10;
+            (
+                u16::from_le_bytes([reply[start], reply[start + 1]]),
+                reply[start + 2] as i8,
+                i32::from_le_bytes([
+                    reply[start + 3],
+                    reply[start + 4],
+                    reply[start + 5],
+                    reply[start + 6],
+                ]),
+            )
+        }
+
+        let mut responder = Responder::default().with_cia402_behavior(0x1100, 7, 0x1110, 7);
+        // PP（模式 1）下未置 bit4：位置不动、无 Set-point acknowledge。
+        write_rx(&mut responder, 0x0006, 1, 777);
+        responder.tick(1);
+        write_rx(&mut responder, 0x0007, 1, 777);
+        responder.tick(2);
+        write_rx(&mut responder, 0x000F, 1, 777);
+        responder.tick(3);
+        assert_eq!(read_tx(&mut responder), (0x0237, 1, 0));
+
+        // 置 bit4（new set-point）：位置跳到目标，置 Target reached + Set-point acknowledge。
+        write_rx(&mut responder, 0x001F, 1, 777);
+        responder.tick(4);
+        assert_eq!(read_tx(&mut responder), (0x0237 | 0x0400 | 0x1000, 1, 777));
+
+        // 清 bit4：位置保持目标，Set-point acknowledge 清除，Target reached 保留。
+        write_rx(&mut responder, 0x000F, 1, 777);
+        responder.tick(5);
+        assert_eq!(read_tx(&mut responder), (0x0237 | 0x0400, 1, 777));
     }
 
     #[test]

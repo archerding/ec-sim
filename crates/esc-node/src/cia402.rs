@@ -42,6 +42,8 @@ pub mod statusword {
     pub const VOLTAGE_ENABLED: u16 = 0x0010;
     /// Homing attained（bit12，HM 模式）。
     pub const HOMING_ATTAINED: u16 = 0x1000;
+    /// Set-point acknowledge（bit12，PP 模式；与 Homing attained 同一位、按模式区分）。
+    pub const SET_POINT_ACK: u16 = 0x1000;
     /// Quick stop（低有效，bit5）。
     pub const QUICK_STOP: u16 = 0x0020;
     /// Switch on disabled（bit6）。
