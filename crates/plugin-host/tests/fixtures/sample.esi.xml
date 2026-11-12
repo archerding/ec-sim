@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- EC-Sim 自写的 ESI 样例（**不是厂商 ESI**，仅用于测试 ESI→SII 解析子集；R1）。
+     结构与 ETG.2000 ESI 的常用子集一致：EtherCATInfo/Vendor、Descriptions/Devices/Device。 -->
+<EtherCATInfo>
+  <Vendor>
+    <Id>#x00000ec5</Id>
+    <Name>EC-Sim</Name>
+  </Vendor>
+  <Descriptions>
+    <Devices>
+      <Device>
+        <Type ProductCode="#x0000e5d3" RevisionNo="#x00010000">Sample 8DO (SIMULATED)</Type>
+        <Name>Sample 8DO (SIMULATED)</Name>
+        <Sm StartAddress="#x1000" ControlByte="#x26" Enable="1">MBoxOut</Sm>
+        <Sm StartAddress="#x1080" ControlByte="#x22" Enable="1">MBoxIn</Sm>
+        <Sm StartAddress="#x1100" ControlByte="#x44" Enable="1">Outputs</Sm>
+        <Sm StartAddress="#x1110" ControlByte="#x00" Enable="1">Inputs</Sm>
+        <Mailbox>
+          <CoE SdoInfo="1" PdoAssign="1" PdoConfig="1" CompleteAccess="0"/>
+        </Mailbox>
+        <RxPdo Fixed="1" Mandatory="1" Sm="2">
+          <Index>#x1600</Index>
+          <Name>Output channel 1</Name>
+          <Entry>
+            <Index>#x7000</Index>
+            <SubIndex>1</SubIndex>
+            <BitLen>8</BitLen>
+            <Name>Output</Name>
+          </Entry>
+        </RxPdo>
+        <TxPdo Fixed="1" Mandatory="1" Sm="3">
+          <Index>#x1a00</Index>
+          <Name>Input channel 1</Name>
+          <Entry>
+            <Index>#x6000</Index>
+            <SubIndex>1</SubIndex>
+            <BitLen>8</BitLen>
+            <Name>Input</Name>
+          </Entry>
+        </TxPdo>
+      </Device>
+    </Devices>
+  </Descriptions>
+</EtherCATInfo>

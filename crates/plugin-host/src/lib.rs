@@ -8,9 +8,11 @@
 //! 本班次落地 B9 子项 1（2026-11-12）：[`manifest`] 解析 `plugin.yaml`（零第三方依赖的
 //! YAML 子集解析器 + R2/R5 校验），[`sii_gen`] 把 manifest 的身份/邮箱/SM/PDO 声明转成
 //! [`esc_core::sii::SiiSpec`]，再用 `SiiImage::from_spec()` 生成可被 IgH/SOEM 解析的 SII 镜像。
-//! 后续：对象字典运行时生成、FMMU 布局与 `esc-node::Responder` 的按 manifest 装配。
+//! [`dict_gen`] 由 manifest 生成运行时对象字典（身份/SM 类型/PDO 分配与映射/用户对象）。
+//! [`esi`] 提供 **ESI XML → SII** 的解析子集（B6 子项，零第三方依赖的最小 XML 解析器）。
 
 pub mod dict_gen;
+pub mod esi;
 pub mod manifest;
 pub mod sii_gen;
 

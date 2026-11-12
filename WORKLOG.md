@@ -6,6 +6,49 @@
 
 ---
 
+## 2026-11-12 22:38 班（低峰）— B6 子项：**ESI XML → SII** 生成器（子集，零依赖）
+
+**做了什么**
+- `plugin-host` 新增 `esi` 模块（B6 子项）：
+  - 零第三方依赖的**最小 XML 解析器**（元素/属性/文本/注释/处理指令/DOCTYPE 跳过，
+    UTF-8 安全，非法结构报错）；
+  - **ESI 子集解析**：`EtherCATInfo/Vendor/Id`、`Device/Type`（ProductCode/RevisionNo、
+    文本作描述）、`Device/Name`、`Sm`（StartAddress/ControlByte/Enable/可选 Length +
+    方向文本 MBoxOut/MBoxIn/Outputs/Inputs）、`RxPdo`/`TxPdo`（Index/Sm + `Entry`
+    的 Index/SubIndex/BitLen）、`Mailbox/CoE`（SdoInfo/PdoAssign/PdoConfig/CompleteAccess）；
+  - `sii_spec_from_esi()` → [`esc_core::sii::SiiSpec`]（复用既有 `SiiImage::from_spec()`
+    编码：CRC/EEPROM 大小自动）：邮箱长度缺省 128 字节，过程数据 SM 长度 = 绑定 PDO
+    位长之和向上取整，CoE 能力位按 ESI 推导。
+- 测试夹具为本仓库**自写**的 `crates/plugin-host/tests/fixtures/sample.esi.xml`
+  （**不是厂商 ESI**，符合 R1）；单测覆盖解析字段、SII 生成（身份/CRC/4 个 SM/邮箱
+  128B/SM2/SM3 各 1B/RxPDO 0x1600→SM2/TxPDO 0x1A00→SM3/CoE mailbox 协议位 0x0004）、
+  错误路径（未闭合/根元素不符/缺字段）与 ESI 数值格式（`#x`/八进制/十进制）。
+- R2 说明：ESI 的 Vendor/ProductCode 只作为**兼容性事实**读取；生成 SII 时名称用
+  ESI 设备名 + 我方厂商名 `EC-Sim`（调用方必须保证设备名带 `SIMULATED`）。
+
+**验证结果**
+- 本机 Windows：`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets
+  -- -D warnings` exit 0；`cargo test --workspace` **150 passed**
+  （esc-core 76 / esc-node 38 / plugin-host 20 / wire 16）。
+- 生成的 SII 经 `SiiImage::from_spec` 断言：CRC 校验通过、SM 数量 4、邮箱协议 0x0004、
+  SM0/SM1 各 128 字节、SM2/SM3 各 1 字节、PDO 类别索引与 SM 绑定正确。
+- ⚠️ 尚未在验证机上用 IgH/SOEM 扫描 **ESI 生成的画像**：本班只做解析/生成层，
+  `ec-sim-esc` 还没有 `--esi` 入口（下一班接入）。
+
+**卡点**
+- ESI 子集有限：不支持 `ObjectDictionary`、DC 参数、多设备文件选择、字符串 PDO 映射
+  （BitLen>255 会报错）；邮箱长度缺省 128（ESI 的 `Sm` 通常不声明长度，真实语义
+  ⚠️ 待 ETG.2000 核实）。
+- B6 其余待做：FMMU 类别 0x0028、DC 类别（都需 ESC Sec.2 / ETG 原文核实）、
+  ESI 生成器的 CLI/双主站扫描闭环。
+
+**下次开工第一件事**
+- 把 `esi` 接入 CLI（`ec-sim-esc --esi <file.esi.xml>` 或用 `plugin-host` 生成 SII 后
+  走 `--manifest` 同路径），在 Linux 验证机上用未修改 SOEM/IgH 扫描 ESI 生成的画像；
+  然后读 ESC Sec.2 原文核实 FMMU 类别 0x0028 与 DC 类别，再进 B11 CiA402。
+
+---
+
 ## 2026-11-12 22:20 班（低峰）— B7 缺口：UDS 合成主站的 **segmented SDO 上传**断言（IgH 侧受环境阻塞）
 
 **做了什么**

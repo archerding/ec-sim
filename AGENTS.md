@@ -142,7 +142,13 @@ user.email = deepseek-harness@users.noreply.github.com
     对象 0x6000:00/0x7000:00）。字节布局按 IgH `slave.c` 与 SOEM `ec_main.c` 的解析代码逐字节复核；
     EEPROM 大小 word 0x003E 改为 2（384 字节）。证据：`crates/esc-core/src/sii.rs`，测试 90 passed；
     SOEM `slaveinfo` 显示 `Output size: 8bits / Input size: 8bits`、`MBX protocols : 04`。
-  - 待做：DC 类别、ESI XML → SII 生成器。**FMMU 类别 0x0028 暂缓**（2026-11-12 21:11 班：
+  - 进度（2026-11-12 22:38 班）：**ESI XML → SII 生成器（子集）已实现**——`plugin-host::esi`
+    零依赖最小 XML 解析器 + ESI 子集解析（Vendor/Id、Device/Type 的 ProductCode/RevisionNo、
+    Device/Name、Sm、RxPdo/TxPdo+Entry、Mailbox/CoE），`sii_spec_from_esi()` 复用
+    `SiiSpec`/`SiiImage::from_spec()` 编码（邮箱长度缺省 128、过程数据 SM 长度按 PDO 位长求和）。
+    测试夹具为仓库**自写** `sample.esi.xml`（非厂商 ESI，R1）；测试 **150 passed**。
+    ⚠️ 尚未接入 CLI、未在 IgH/SOEM 扫描 ESI 生成画像。
+  - 待做：DC 类别、ESI 生成器接入 `ec-sim-esc --esi` 并在双主站扫描验证。**FMMU 类别 0x0028 暂缓**（2026-11-12 21:11 班：
     IgH `fsm_slave_scan.c` 直接跳过该类别、SOEM 仅显示 `FMMUfunc`；公开资料无字段权威语义，
     按"不凭记忆写规范细节"红线暂停，等 ESC Sec.II / IEC 61158 原文）。
   ⚠️ 旧文档把 CRC 写成 word 0x003F，经 SOEM `eepromtool`/IgH `tool/sii_crc.cpp` 复核已更正（0x003F 是 SII 版本 = 1）。
