@@ -6,6 +6,44 @@
 
 ---
 
+## 2026-11-12 20:03 班（低峰）— B3 完成：SOEM oshw UDS shim 经 Unix socket 跑通 `ec_config_init` + `ec_config_map`
+
+**做了什么**
+- 验证机本地复制 SOEM 2.0.0 到 `/opt/ecsim/work/soem-uds`（**GPL 夹具，源码/补丁不入库**），
+  用本地补丁把 `oshw/linux/nicdrv.c` 的 `ecx_setupnic()` 中
+  「`PF_PACKET` 原始套接字 + ioctl 网卡配置 + bind」替换为 **AF_UNIX SOCK_DGRAM 客户端**
+  （客户端 bind 自己的路径、`connect(ifname)` —— `ifname` 即 `--uds` socket 路径）；
+  `send/recv/poll/索引缓冲区` 逻辑保持 SOEM 原样。cmake 构建出 `slaveinfo`/`simple_ng`。
+- 新增 `scripts/spikes/soem-uds-probe.sh`：启动 `ec-sim-esc --uds`，断言 UDS-shim SOEM
+  `slaveinfo` 扫描到 1 从站/8bit I/O、`simple_ng` 映射 1O+1I → OP、每轮 WKC 3、0 次 wrong，
+  且模拟器日志出现 `RX uds` 收帧记录。
+
+**验证结果**
+- Linux 验证机（**未修改的 SOEM 协议逻辑 + 仅 oshw 收发层换 UDS**，无 root、无 TAP）：
+  - `slaveinfo /tmp/ecsim-uds.sock`：`1 slaves found and configured`、`Output size: 8bits`、
+    `Input size: 8bits`、`State: 4`，SM/FMMU/MBX 行齐全；
+  - `simple_ng /tmp/ecsim-uds.sock`：`mapped 1O+1I bytes` → **all slaves are now operational**，
+    1358 轮 **WKC 3**、0 次 wrong；
+  - 脚本 `soem-uds-probe.sh` → `OK: SOEM UDS shim 经 /tmp/ecsim-uds.sock 跑通 ec_config_init +
+    ec_config_map（1 从站 / 1O+1I / OP / 1358 轮 WKC=3 / 0 次 wrong）`；
+  - 模拟器 `--verbose` 日志：`READY uds=...`、`RX uds N bytes from "<client path>"`。
+- 本班未改 Rust 代码；收尾前重跑 `cargo fmt/clippy/test` 仍 **100 passed**。
+- 许可说明：shim 是独立进程夹具（SOEM GPLv3），仓库只保留调用脚本与文档，不复制/不链接。
+
+**卡点**
+- SOEM UDS shim 的补丁脚本与构建产物只在验证机本地（`/opt/ecsim/work/soem-uds`），不入库；
+  `soem-uds-probe.sh` 在二进制缺失时以 exit 2 提示重建。
+- 仍单从站、单客户端；无 DC/watchdog、无链路状态/MAC 语义；过程数据内容静态（无 PDI 回环）。
+- ⚠️ 待验证：多客户端并发、非 root CI 环境下全链路（TAP 对照已由 B8 脚本覆盖）。
+
+**下次开工第一件事**
+- 继续 backlog：**B5 剩余（watchdog / AL SAFEOP/OP 前置条件）或 B6 剩余（SII FMMU 类别 0x0028、
+  DC 类别）**，两者都需 VM 验证；B6 的 FMMU 类别 ⚠️ 需先核实 SOEM/IgH 解析语义，不凭记忆猜。
+  若时间不足，优先做 **B9 声明式插件加载器**（`plugin.yaml` → SII + 对象字典 + PDO/SM/FMMU 布局）
+  的骨架与单测，并在双主站上扫描验证。
+
+---
+
 ## 2026-11-12 19:59 班（低峰）— B3 子项 1：ESC-over-UDS 线缆层（`ec-sim-esc --uds`）+ 合成主站断言
 
 **做了什么**

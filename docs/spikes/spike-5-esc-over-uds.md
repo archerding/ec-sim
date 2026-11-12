@@ -51,22 +51,47 @@ SCRIPT_RC=0
 - TAP 路径无回归：同一构建下 `minimal-esc-responder.sh`（SOEM/IgH 扫描）与
   `igh-op-probe.sh`（IgH OP）重跑通过；`cargo fmt/clippy/test` **100 passed**。
 
-## 4. 与 B3 的关系 / 下一步
+## 4. SOEM oshw UDS shim 联调（B3 主体，2026-11-12 20:03 班完成）
 
-- 本 spike 只完成**模拟器侧**（UDS 服务端 + 合成主站 probe）。B3 的验收项「SOEM `ec_config_init`
-  + `ec_config_map` 经 UDS」需要在验证机上：
-  1. 复制 SOEM 到验证机工作目录（**不进仓库**）；
-  2. 替换 `oshw/linux/nicdrv.c`（及 `oshw.h` 的收发声明）为 UDS 客户端：`setupnic` 连接
-     `--uds` 路径（客户端 bind 自己的路径），`send`/`recv` 直接 `send`/`recv` 帧；
-  3. 用 `slaveinfo` 或最小程序跑 `ecx_config_init` + `ecx_config_map`，与 TAP 路径输出对照。
-- UDS 路径的意义：CI/非特权环境（不需要 root/TAP）也能回归 ESC 内核与主站协议；未来也可
-  作为跨进程插件测试的线缆层。
+在验证机本地把 SOEM 2.0.0 复制到 `/opt/ecsim/work/soem-uds`（**GPL 夹具，源码/补丁不入库**），
+只替换 `oshw/linux/nicdrv.c` 中 `ecx_setupnic()` 的套接字初始化部分：
+
+- 原实现：`socket(PF_PACKET, SOCK_RAW, ETH_P_ECAT)` + ioctl 配置网卡 + `bind` 到接口；
+- 替换为：`socket(AF_UNIX, SOCK_DGRAM, 0)`，客户端 bind 自己的路径
+  （`/tmp/soem-uds-client-<pid>.sock`）并 `connect(ifname)` —— 此时 `ifname` 参数就是
+  `ec-sim-esc --uds` 的 socket 路径；
+- `send`/`recv`/`poll`/索引缓冲区逻辑保持 SOEM 原样（UDS datagram 同样保留帧边界）。
+
+```bash
+# 验证机本地（一次性）
+cp -a /opt/ecsim/fixtures/soem /opt/ecsim/work/soem-uds
+python3 patch_soem_uds.py /opt/ecsim/work/soem-uds/oshw/linux/nicdrv.c   # 补丁脚本在验证机上
+cd /opt/ecsim/work/soem-uds
+cmake -S . -B build-uds -DCMAKE_BUILD_TYPE=Release && cmake --build build-uds -j4
+
+# 回归（本仓库脚本）
+cargo build --release -p esc-node
+SOCK=/tmp/ecsim-uds.sock bash scripts/spikes/soem-uds-probe.sh
+# OK: SOEM UDS shim 经 /tmp/ecsim-uds.sock 跑通 ec_config_init + ec_config_map
+#     （1 从站 / 1O+1I / OP / 1358 轮 WKC=3 / 0 次 wrong）
+```
+
+实测（未修改 SOEM 的协议逻辑，仅换收发包层；**无需 root/TAP**）：
+
+- `slaveinfo /tmp/ecsim-uds.sock`：`1 slaves found and configured`、
+  `Output size: 8bits`、`Input size: 8bits`、`State: 4`、SM/FMMU/MBX 行齐全；
+- `simple_ng /tmp/ecsim-uds.sock`：`mapped 1O+1I bytes` → **all slaves are now operational**，
+  每轮 `WKC 3`、0 次 `wrong`；
+- 模拟器 `--verbose` 日志：`READY uds=...`、`RX uds N bytes from "<client path>"`；
+- 结论：SOEM 的 `ec_config_init` + `ec_config_map` 与过程数据在 UDS 线缆层上全部跑通。
+
+仍属于**独立进程夹具**（SOEM 为 GPLv3，不进仓库、不链接核心）；本仓库只保留调用脚本与文档。
 
 ## 5. 已知限制
 
 - 仅 Linux（`std::os::unix`）；Windows/macOS 编译通过但运行时报错退出。
-- 服务端按 `peer.as_pathname()` 回包：客户端必须 bind 文件系统路径。
+- 服务端按 `peer.as_pathname()` 回包：客户端必须 bind 文件系统路径（abstract socket 不支持）。
 - 单进程内串行处理（无并发/多客户端隔离保证）；无 MAC 过滤、无链路状态语义、无 FCS。
-- 尚未接入 SOEM shim（B3 主体），不能据此声称 B3 完成。
-- ⚠️ 待验证：与 SOEM `ecx_config_init`/`ecx_config_map` 的真实联调（下一步）；UDS 下的
-  `--verbose` 统计与 TAP 完全等价性（当前仅人眼对照）。
+- SOEM UDS shim 只在验证机本地（补丁/构建产物不入库）；`soem-uds-probe.sh` 缺二进制时 exit 2。
+- 单从站、无 DC/watchdog；过程数据内容静态（无 PDI 回环）。
+- ⚠️ 待验证：多客户端并发、非 root CI 环境下的完整链路（TAP 对照已由 B8 脚本覆盖）。
