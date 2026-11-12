@@ -32,6 +32,35 @@
 
 ---
 
+## 2026-11-13 02:21 班（低峰）— B11：**SV660N 画像能力位复核（SII CoE details/DC）**
+
+**做了什么**
+- 新增 `scripts/spikes/sv660n-capability-probe.sh`：在未修改 SOEM/IgH 下复核 SV660N 兼容画像
+  的 SII 能力位是否如实反映公开事实：
+  - SOEM `slaveinfo` 断言 `Man: 00000ec5 ID: 0000e5f1`、56/56 bits、
+    `MBX protocols : 04`、**`CoE details: 0d`**（bit1=0 → 不声明 SDO Info，与设备
+    "不响应 SDO Information" 一致）、**`Has DC: 0`**（画像不声明 DC）；
+  - IgH `ethercat slaves` 断言 PREOP + 身份 `0x00000ec5:0x0000e5f1`。
+- 更新 `docs/plugins/inovance-sv660n-verification.md`（新增"能力位/PDO 复核"节）、
+  `docs/VERIFICATION.md` 索引与 AGENTS B11 进度。
+
+**验证结果**
+- Linux 验证机：`sv660n-capability-probe.sh` → **EXIT=0**：
+  `Output size: 56bits`、`Input size: 56bits`、`Has DC: 0`、`CoE details: 0d`、
+  `MBX protocols : 04`；IgH `0 0:0 PREOP + 0x00000ec5:0x0000e5f1`。
+- 本机无代码改动：`cargo test --workspace` **199 passed** 基线不变。
+
+**卡点**
+- ⚠️ 真实 SV660N 默认启用 DC（`assignActivate 0x300`），本画像 `Has DC: 0`——这是
+  模拟器 DC 同步缺失导致的能力差距；等 DC 仿真实现后再声明 DC（SII 生成已就绪）。
+- SV660N 默认 PDO 的**具体条目**仍无公开文本来源；画像继续用 Tier0 7 字节布局。
+
+**下次开工第一件事**
+- B11：SV660N 默认 PDO 条目（公开镜像/HTML 搜索），或厂商扩展对象核对；也可先实现
+  最小 DC 仿真以缩小 `Has DC` 差距。
+
+---
+
 ## 2026-11-13 02:17 班（低峰）— B11：**IgH ecrt CST 进 OP 验证**
 
 **做了什么**

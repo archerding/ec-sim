@@ -93,3 +93,19 @@ bash scripts/spikes/generic-cia402-probe.sh
   IgH PREOP + 身份 `0x00000ec5:0x0000e5f1`。
 - ⚠️ 默认 PDO 的**具体条目/顺序**仍未知（第三方文档只给出上限与分配），画像继续使用
   Tier0 通用 7 字节布局并标注待核实。
+
+## 能力位/PDO 复核（SOEM + IgH，2026-11-13 02:21 班）
+
+```bash
+sudo bash scripts/spikes/sv660n-capability-probe.sh
+```
+
+结果（Linux 验证机 **EXIT=0**）：
+
+- SOEM `slaveinfo`：`Man: 00000ec5 ID: 0000e5f1`、`Output size: 56bits` /
+  `Input size: 56bits`、`MBX protocols : 04`、`CoE details: 0d`
+  （bit0 SDO=1、**bit1 SDO Info=0**、bit2/3 PDO assign/config=1）——与公开事实
+  "设备不响应 SDO Information" 一致；
+- `Has DC: 0` —— 画像**不声明 DC**（模拟器未实现 DC 同步）。⚠️ 真实 SV660N 默认启用 DC
+  （`assignActivate 0x300`），这是**已知能力差距**，等 DC 仿真实现后再声明；
+- IgH `ethercat slaves`：`PREOP + 0x00000ec5:0x0000e5f1`。
