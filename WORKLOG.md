@@ -6,6 +6,63 @@
 
 ---
 
+## 2026-11-12 20:44 班（低峰）— B5 子项：ESM 前置条件检查（0x0015 / 0x0017）+ AL Status Code 表
+
+**做了什么**
+- `esc-core` 新增 `al_status` 模块：ETG.1000.6 Table 11 的码值子集 + `name()`（交叉核对
+  IgH `master/fsm_change.c: al_status_messages[]`、ethercrab `al_status_code.rs`（MIT OR
+  Apache-2.0 公开文档）、ABB AC500 EtherCAT 诊断手册）；`watchdog::AL_STATUS_SM_WATCHDOG`
+  改为引用该模块，避免码值散落。
+- `EscAl` 新增 `EsmPreconditions` + `handle_control_checked()`：
+  - **INIT → PREOP**：SII 声明了邮箱协议（固定区 word 0x001C ≠ 0）但 SM0/SM1 未配置
+    （Activate bit0 未置位或 Length = 0）→ error 位 + AL Status Code **0x0015**；
+  - **PREOP → SAFEOP**：SII 声明了过程数据 SM（SM 类别 ≥ 3 条）但 SM2/SM3 都未配置
+    → error 位 + AL Status Code **0x0017**；
+  - 只对**向上**迁移检查（OP/SAFEOP 回退不需要重新配置 SM）；Error ACK 语义不变；
+  - 未知状态位（如 0x0F）→ **0x0012**（"Unknown requested state"；此前误用 0x0011），
+    状态位全 0 仍沿用 0x0011（既有双主站回归验证过的行为）。
+- `esc-node`：`Responder::with_esm_preconditions(bool)`（默认**关闭**，保持与两家未修改
+  主站既有冒烟完全一致）；CLI `ec-sim-esc --esm-strict` 开启。条件由 SII
+  （`SiiImage::mailbox_protocols()` / `declares_process_data_sync_managers()`）与 SM
+  寄存器现场推导；`EepromInterface::image()` 只读暴露 SII。
+- 证据（只读参考）：IgH `fsm_slave_config.c` 的顺序是 INIT → 清 FMMU/SM → **配置邮箱
+  SM0/SM1** → PREOP → 过程数据 SM → FMMU → SAFEOP → OP；SOEM `ec_config.c` 中
+  `ecx_config_init()` 先 `FPWR ECT_REG_SM0`（SM0/SM1）再写 `ALCTL = PREOP|ACK`，
+  `ec_config_map_group()` 先配 SM2/SM3/FMMU 再请求 SAFEOP —— 两家都在请求前完成配置，
+  前置条件只在配置缺失（错误场景）时失败。
+- 测试 +14：esc-core +10（码表/名称、拒绝与放行、向下不检查、ACK、未知状态 0x0012、
+  SII 类别查找），esc-node +4（默认关闭、strict 拒绝 PREOP/SAFEOP、未知状态码）。
+- `scripts/spikes/uds_master_probe.py` 加 `--strict`（UDS 端到端负向 0x0015/0x0017 +
+  ACK + 配置后放行断言）；`uds-loopback.sh` 增第二轮 `--esm-strict` 服务实例。
+
+**验证结果**
+- 本机 Windows：`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets
+  -- -D warnings` exit 0；`cargo test --workspace` **119 passed**（esc-core 68 /
+  esc-node 35 / wire 16）。
+- `python -m py_compile scripts/spikes/uds_master_probe.py` 通过（脚本语法级验证）。
+- **⚠️ 未在 Linux 验证机执行**：VM 目录锁自 20:32 起被另一个 worker 占用
+  （`D:\tokengence.ai\.local\vm.lock`），本班遵守跨项目互斥未使用验证机。因此
+  `--esm-strict` 的 UDS 端到端（`uds-loopback.sh` 第二轮）与双主站回归**留待下一班**；
+  默认路径的代码分支未改变（`esm_preconditions = false` 走原 `handle_control`）。
+
+**卡点**
+- 严格模式缺 Linux 端到端证据；`uds-loopback.sh` 第二轮脚本本轮未实跑。
+- 前置条件默认关闭：是否改为默认开启，需双主站全链路回归确认（尤其"无应用时 IgH
+  `ethercat slaves` 显示 PREOP"这条路径是否已配置邮箱 SM）后再定。
+- 0x0015 / 0x0016 的规范区分（邮箱输入/输出方向）未从公开资料核实 → 统一回 0x0015，
+  `INVALID_MAILBOX_CONFIGURATION_OUT` 常量保留但不用。
+- 未做 OP 前置条件（0x0018/0x0019、映射类 0x0024/0x0025）。
+
+**下次开工第一件事**
+- 先抢 VM 锁（被占用则等 2 分钟重试）：`SOCK=/tmp/ecsim-uds.sock bash
+  scripts/spikes/uds-loopback.sh`（现含 `--esm-strict` 第二轮）→ 全绿后跑
+  `minimal-esc-responder.sh`、`soem-process-data.sh`、`igh-op-probe.sh` 确认默认路径无回归；
+  然后把 ESM 前置条件改为默认开启（若 IgH 无应用 PREOP 路径也在 SM 配置之后）并更新本条。
+  若 VM 仍被占用：做 **B6 剩余 SII FMMU 类别 0x0028**（先以 SOEM `ecx_siiFMMU`、IgH
+  `slave.c` 复核字段语义，不凭记忆猜）。
+
+---
+
 ## 2026-11-12 20:07 班（低峰）— B5 子项：SM 过程数据看门狗（寄存器 + 超时 → SAFEOP+ERROR / 0x001B）
 
 **做了什么**

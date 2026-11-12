@@ -2,8 +2,8 @@
 //!
 //! 用法（需 root 或 CAP_NET_ADMIN；UDS 模式不需要 root）：
 //! ```text
-//! ec-sim-esc --tap escsim0 [--verbose]      # Linux TAP（旗舰路径，真实主站）
-//! ec-sim-esc --uds /tmp/ecsim.sock [--verbose]  # ESC-over-UDS（全平台/CI 路径）
+//! ec-sim-esc --tap escsim0 [--verbose] [--esm-strict]      # Linux TAP（旗舰路径，真实主站）
+//! ec-sim-esc --uds /tmp/ecsim.sock [--verbose] [--esm-strict]  # ESC-over-UDS（全平台/CI 路径）
 //! ```
 //!
 //! TAP 模式：进程自己创建/附着 TAP 接口并持有 fd（无持有者时为 NO-CARRIER，
@@ -20,6 +20,7 @@ fn main() -> std::process::ExitCode {
     let mut tap_name: Option<String> = None;
     let mut uds_path: Option<String> = None;
     let mut verbose = false;
+    let mut esm_strict = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--tap" => match args.next() {
@@ -37,8 +38,11 @@ fn main() -> std::process::ExitCode {
                 }
             },
             "--verbose" | "-v" => verbose = true,
+            "--esm-strict" => esm_strict = true,
             "--help" | "-h" => {
-                println!("用法: ec-sim-esc [--tap <name> | --uds <path>] [--verbose]");
+                println!(
+                    "用法: ec-sim-esc [--tap <name> | --uds <path>] [--verbose] [--esm-strict]"
+                );
                 return std::process::ExitCode::SUCCESS;
             }
             other => {
@@ -58,9 +62,9 @@ fn main() -> std::process::ExitCode {
     }
 
     match (tap_name, uds_path) {
-        (_, Some(path)) => run_uds(&path, verbose),
-        (Some(name), None) => run(&name, verbose),
-        (None, None) => run("ecsim0", verbose),
+        (_, Some(path)) => run_uds(&path, verbose, esm_strict),
+        (Some(name), None) => run(&name, verbose, esm_strict),
+        (None, None) => run("ecsim0", verbose, esm_strict),
     }
 }
 
@@ -98,7 +102,7 @@ fn now_ms() -> u64 {
 }
 
 #[cfg(target_os = "linux")]
-fn run_uds(path: &str, verbose: bool) -> std::process::ExitCode {
+fn run_uds(path: &str, verbose: bool, esm_strict: bool) -> std::process::ExitCode {
     use esc_node::{Responder, DEFAULT_SIM_MAC};
     use std::io::Write;
     use std::os::unix::net::UnixDatagram;
@@ -115,7 +119,7 @@ fn run_uds(path: &str, verbose: bool) -> std::process::ExitCode {
     println!("READY uds={path}");
     let _ = std::io::stdout().flush();
 
-    let mut responder = Responder::default();
+    let mut responder = Responder::default().with_esm_preconditions(esm_strict);
     let mut buf = [0u8; 2048];
     loop {
         let (len, peer) = match socket.recv_from(&mut buf) {
@@ -152,7 +156,7 @@ fn run_uds(path: &str, verbose: bool) -> std::process::ExitCode {
 }
 
 #[cfg(target_os = "linux")]
-fn run(tap_name: &str, verbose: bool) -> std::process::ExitCode {
+fn run(tap_name: &str, verbose: bool, esm_strict: bool) -> std::process::ExitCode {
     use esc_node::{Responder, DEFAULT_SIM_MAC};
     use std::io::Write;
 
@@ -170,7 +174,7 @@ fn run(tap_name: &str, verbose: bool) -> std::process::ExitCode {
     );
     let _ = std::io::stdout().flush();
 
-    let mut responder = Responder::default();
+    let mut responder = Responder::default().with_esm_preconditions(esm_strict);
     let mut buf = [0u8; 2048];
     loop {
         let len = match tap.recv(&mut buf) {
@@ -196,13 +200,13 @@ fn run(tap_name: &str, verbose: bool) -> std::process::ExitCode {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn run(_tap_name: &str, _verbose: bool) -> std::process::ExitCode {
+fn run(_tap_name: &str, _verbose: bool, _esm_strict: bool) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)
 }
 
 #[cfg(not(target_os = "linux"))]
-fn run_uds(_path: &str, _verbose: bool) -> std::process::ExitCode {
+fn run_uds(_path: &str, _verbose: bool, _esm_strict: bool) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)
 }

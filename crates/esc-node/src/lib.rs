@@ -30,7 +30,7 @@ use esc_core::memory::DlUserMemory;
 use esc_core::obj_dict;
 use esc_core::sii::SiiImage;
 use esc_core::sm::SyncManager;
-use esc_core::{reg, watchdog, AlControl, EscAl, Registers};
+use esc_core::{reg, watchdog, AlControl, EscAl, EsmPreconditions, Registers};
 use wire::{
     auto_increment_step, matches_configured_address, Command, Frame, ECAT_HEADER_LEN,
     ETHERNET_HEADER_LEN,
@@ -121,6 +121,8 @@ pub struct Responder {
     now_ms: u64,
     /// 最近一次收到过程数据的时刻（毫秒）；`None` 表示尚未收到过。
     last_process_data_ms: Option<u64>,
+    /// 是否启用 ESM 状态迁移前置条件检查（默认关闭，见 [`Responder::with_esm_preconditions`]）。
+    esm_preconditions: bool,
     stats: Stats,
 }
 
@@ -147,8 +149,30 @@ impl Responder {
             object_writes: BTreeMap::new(),
             now_ms: 0,
             last_process_data_ms: None,
+            esm_preconditions: false,
             stats: Stats::default(),
         }
+    }
+
+    /// 设置是否启用 ESM 状态迁移前置条件检查，返回自身以便链式构造。
+    ///
+    /// 启用后（`enabled = true`），从站在进入 **PREOP** 前要求邮箱 SM（SM0/SM1）已配置、
+    /// 进入 **SAFEOP** 前要求过程数据 SM（SM2/SM3）已配置，否则置 AL Status error 位并给出
+    /// AL Status Code **0x0015 / 0x0017**（ETG.1000.6 Table 11）。"已配置" = Activate bit0
+    /// 置位且 Length > 0；是否需要检查由 SII 声明决定（未声明邮箱/过程数据 SM 的从站不检查）。
+    ///
+    /// 默认**关闭**：保持与两家未修改主站既有双主站冒烟结果完全一致（`--esm-strict` 开启，
+    /// 供配置错误/负向路径测试使用）。是否改为默认开启待双主站全链路回归后决定。
+    #[must_use]
+    pub fn with_esm_preconditions(mut self, enabled: bool) -> Self {
+        self.esm_preconditions = enabled;
+        self
+    }
+
+    /// 当前是否启用 ESM 前置条件检查。
+    #[must_use]
+    pub fn esm_preconditions_enabled(&self) -> bool {
+        self.esm_preconditions
     }
 
     /// 统计快照。
@@ -554,18 +578,42 @@ impl Responder {
             // AL Control 全 0：主站没有请求状态变化（部分主站初始化时会写 0），忽略。
             return;
         }
-        self.al.handle_control(AlControl::from_byte(control));
+        let parsed = AlControl::from_byte(control);
+        if self.esm_preconditions {
+            let preconditions = self.esm_preconditions();
+            self.al.handle_control_checked(parsed, &preconditions);
+        } else {
+            self.al.handle_control(parsed);
+        }
         self.regs
             .set_internal(reg::AL_STATUS, &[self.al.status_byte()]);
         self.regs
             .set_internal(reg::AL_STATUS_CODE, &self.al.status_code.to_le_bytes());
+    }
+
+    /// 由当前 SII 声明与 SM 寄存器推导 ESM 前置条件（见 [`Responder::with_esm_preconditions`]）。
+    fn esm_preconditions(&self) -> EsmPreconditions {
+        let sii = self.eeprom.image();
+        EsmPreconditions {
+            mailbox_declared: sii.mailbox_protocols() != 0,
+            mailbox_out_configured: Self::sync_manager_configured(&self.regs, 0),
+            mailbox_in_configured: Self::sync_manager_configured(&self.regs, 1),
+            process_data_declared: sii.declares_process_data_sync_managers(),
+            process_data_configured: (2..=3)
+                .any(|index| Self::sync_manager_configured(&self.regs, index)),
+        }
+    }
+
+    /// SM 是否已配置：Activate bit0 置位且 Length > 0（与 IgH/SOEM 写入的 SM 页一致）。
+    fn sync_manager_configured(regs: &Registers, index: u8) -> bool {
+        SyncManager::read(regs, index).is_some_and(|sm| sm.activate & 0x01 != 0 && sm.length > 0)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use esc_core::sii::{SIM_PRODUCT_CODE, SIM_VENDOR_ID};
+    use esc_core::sii::{SIM_PRODUCT_CODE, SIM_SYNC_MANAGERS, SIM_VENDOR_ID};
     use wire::{encode_frame, DatagramData};
 
     fn request(datagrams: &[DatagramData]) -> Vec<u8> {
@@ -1620,5 +1668,89 @@ mod tests {
         assert_eq!(al_status_byte(&mut responder) & 0x10, 0x00);
         responder.tick(1_019); // 11 ms → 触发
         assert_eq!(al_status_byte(&mut responder) & 0x10, 0x10);
+    }
+
+    /// 通过 APWR 写 SM0..SM(count-1) 的寄存器块（与主站配置邮箱/过程数据 SM 的方式一致）。
+    fn configure_sync_managers(responder: &mut Responder, count: usize) {
+        let bytes: Vec<u8> = SIM_SYNC_MANAGERS
+            .iter()
+            .take(count)
+            .flat_map(|sm| sm.to_bytes())
+            .collect();
+        write_regs(responder, esc_core::sm::SYNC_MANAGER_ADDRESS, bytes);
+    }
+
+    #[test]
+    fn esm_preconditions_are_off_by_default() {
+        // 默认关闭：不配置 SM 也能进 PREOP（保持与历史双主站冒烟一致）。
+        let mut responder = Responder::default();
+        assert!(!responder.esm_preconditions_enabled());
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x02]);
+        assert_eq!(al_status_byte(&mut responder) & 0x0F, 0x02);
+        assert_eq!(al_status_byte(&mut responder) & 0x10, 0x00);
+        assert_eq!(al_status_code(&mut responder), 0);
+    }
+
+    #[test]
+    fn esm_strict_rejects_preop_until_mailbox_sync_managers_configured() {
+        let mut responder = Responder::default().with_esm_preconditions(true);
+        // SM0/SM1 未配置 → 拒绝 PREOP，AL Status Code = 0x0015，状态保持 INIT。
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x02]);
+        let status = al_status_byte(&mut responder);
+        assert_eq!(status & 0x0F, 0x01, "前置条件失败时状态保持 INIT");
+        assert_eq!(status & 0x10, 0x10, "error 位必须置位");
+        assert_eq!(
+            al_status_code(&mut responder),
+            esc_core::al_status::INVALID_MAILBOX_CONFIGURATION
+        );
+        // 主站 ACK（写当前状态 + ACK 位）清错；配置邮箱 SM0/SM1 后 PREOP 被接受。
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x11]);
+        assert_eq!(al_status_byte(&mut responder) & 0x10, 0x00);
+        configure_sync_managers(&mut responder, 2);
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x02]);
+        let status = al_status_byte(&mut responder);
+        assert_eq!(status & 0x0F, 0x02);
+        assert_eq!(status & 0x10, 0x00);
+        assert_eq!(al_status_code(&mut responder), 0);
+    }
+
+    #[test]
+    fn esm_strict_rejects_safeop_until_process_data_sync_managers_configured() {
+        let mut responder = Responder::default().with_esm_preconditions(true);
+        configure_sync_managers(&mut responder, 2); // 只有邮箱 SM
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x02]);
+        assert_eq!(al_status_byte(&mut responder) & 0x0F, 0x02);
+        // SM2/SM3 未配置 → 拒绝 SAFEOP，AL Status Code = 0x0017。
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x04]);
+        let status = al_status_byte(&mut responder);
+        assert_eq!(status & 0x0F, 0x02, "状态保持 PREOP");
+        assert_eq!(status & 0x10, 0x10);
+        assert_eq!(
+            al_status_code(&mut responder),
+            esc_core::al_status::INVALID_SYNC_MANAGER_CONFIGURATION
+        );
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x14]); // PREOP|ACK
+        assert_eq!(al_status_byte(&mut responder) & 0x10, 0x00);
+        // 配置 SM2/SM3 后 SAFEOP → OP 成功。
+        configure_sync_managers(&mut responder, 4);
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x04]);
+        assert_eq!(al_status_byte(&mut responder) & 0x0F, 0x04);
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x08]);
+        let status = al_status_byte(&mut responder);
+        assert_eq!(status & 0x0F, 0x08);
+        assert_eq!(status & 0x10, 0x00);
+        assert_eq!(al_status_code(&mut responder), 0);
+    }
+
+    #[test]
+    fn esm_reports_unknown_requested_state_code() {
+        // 0x0F 不是合法状态编码 → AL Status Code 0x0012（而非 0x0011）。
+        let mut responder = Responder::default().with_esm_preconditions(true);
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x0F]);
+        assert_eq!(al_status_byte(&mut responder) & 0x10, 0x10);
+        assert_eq!(
+            al_status_code(&mut responder),
+            esc_core::al_status::UNKNOWN_REQUESTED_STATE
+        );
     }
 }

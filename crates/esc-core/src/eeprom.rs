@@ -56,6 +56,12 @@ impl EepromInterface {
         self.read_commands
     }
 
+    /// 只读访问本接口承载的 SII 镜像（如 ESM 前置条件按 SII 声明推导能力）。
+    #[must_use]
+    pub fn image(&self) -> &SiiImage {
+        &self.image
+    }
+
     /// 已执行的写命令数。
     #[must_use]
     pub fn write_commands(&self) -> u32 {

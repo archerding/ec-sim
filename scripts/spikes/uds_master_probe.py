@@ -5,9 +5,12 @@
 - 线缆：`SOCK_DGRAM` Unix domain socket，每个报文 = 一帧以太网数据（保留帧边界）。
 - 帧格式按 ETG.1000.4：Ethernet 头 14B + EtherCAT 帧头 2B + datagram（10B 头 + data + WKC 2B）。
 - 断言：广播读 ESC 类型；APRD AL 状态；APWR 站地址后 FPRD 命中；APRD DL Status
-  (0x0110 = 0x5610)；一帧两 datagram（M 位）各自 WKC +1。
+  (0x0110 = 0x5610)；一帧两 datagram（M 位）各自 WKC +1；ESM 迁移与 SM 过程数据看门狗。
+- 加 `--strict` 时额外验证 ESM 前置条件（对应 `ec-sim-esc --uds ... --esm-strict`）：
+  邮箱 SM 未配置时拒绝 PREOP（AL Status Code 0x0015）、过程数据 SM 未配置时拒绝 SAFEOP
+  （AL Status Code 0x0017），配置后迁移成功。
 
-用法：python3 uds_master_probe.py [socket_path] [--timeout 2.0]
+用法：python3 uds_master_probe.py [socket_path] [--timeout 2.0] [--strict]
 退出码 0 = 全部断言通过。
 """
 import os
@@ -101,13 +104,37 @@ def check(condition, message):
         raise SystemExit(f"FAIL: {message}")
 
 
+def al_status(master):
+    """APRD AL Status（0x0130）→ 1 字节。"""
+    reply = master.transact([(CMD["APRD"], 0, 0x0130, b"\x00\x00")])
+    check(reply[0][4] == 1, f"APRD AL Status WKC {reply[0][4]} != 1")
+    return reply[0][3][0]
+
+
+def al_status_code(master):
+    """APRD AL Status Code（0x0134）→ u16。"""
+    reply = master.transact([(CMD["APRD"], 0, 0x0134, b"\x00\x00")])
+    check(reply[0][4] == 1, f"APRD AL Status Code WKC {reply[0][4]} != 1")
+    return struct.unpack("<H", reply[0][3][:2])[0]
+
+
+def write_sync_managers(master, address, entries):
+    """APWR 写一段 SM 寄存器块；entries = [(start, length, control, status, activate, pdi), ...]。"""
+    data = b"".join(struct.pack("<HHBBBB", *entry) for entry in entries)
+    reply = master.transact([(CMD["APWR"], 0, address, data)])
+    check(reply[0][4] == 1, f"APWR SM@{address:#06x} WKC {reply[0][4]} != 1")
+
+
 def main():
     arguments = [a for a in sys.argv[1:] if not a.startswith("--")]
     socket_path = arguments[0] if arguments else DEFAULT_SOCKET
     timeout = 2.0
+    strict = False
     for arg in sys.argv[1:]:
         if arg.startswith("--timeout="):
             timeout = float(arg.split("=", 1)[1])
+        if arg == "--strict":
+            strict = True
 
     master = SyntheticMaster(socket_path, timeout)
     try:
@@ -143,11 +170,62 @@ def main():
         check(len(reply) == 2, f"M 位应答 datagram 数 {len(reply)} != 2")
         check(reply[0][4] == 1 and reply[1][4] == 1, "多 datagram 帧 WKC 不是各 +1")
 
-        # 6) SM 过程数据看门狗（B5 子项）：使能后 10 ms 内无过程数据 → SAFEOP+ERROR /
-        #    AL Status Code 0x001B；过程数据写会重置计时；Error ACK 清错。
-        for control in (0x02, 0x04, 0x08):
+        # 6) ESM 迁移 + SM 过程数据看门狗（B5 子项）。
+        #    默认模式：直接 INIT→PREOP→SAFEOP→OP；
+        #    --strict：先验证前置条件拒绝路径（SM 未配置 → 0x0015 / 0x0017），再配置 SM 放行。
+        mailbox_sms = [(0x1000, 128, 0x26, 0, 1, 0), (0x1080, 128, 0x22, 0, 1, 0)]
+        # 过程数据 SM 先以 control 0x04（写方向、无看门狗）配置，看门狗位留给后面的 SM2 重写。
+        process_data_sms = [(0x1100, 8, 0x04, 0, 1, 0), (0x1110, 8, 0x00, 0, 1, 0)]
+        if strict:
+            # a) 邮箱 SM 未配置 → 拒绝 PREOP：error 位 + AL Status Code 0x0015，状态保持 INIT。
+            master.transact([(CMD["APWR"], 0, 0x0120, bytes([0x02]))])
+            status = al_status(master)
+            check(status & 0x10, f"邮箱 SM 缺失时 AL Status {status:#04x} 未置 error 位")
+            check(
+                status & 0x0F == 0x01,
+                f"前置条件失败后状态 {status & 0x0F:#04x} 不是 INIT",
+            )
+            check(
+                al_status_code(master) == 0x0015,
+                "AL Status Code 不是 0x0015（邮箱配置无效）",
+            )
+            # 主站按 IgH fsm_change.c 的做法 ACK（写当前状态 + ACK 位）清错。
+            master.transact([(CMD["APWR"], 0, 0x0120, bytes([0x11]))])
+            check(al_status(master) & 0x10 == 0, "ACK 后 error 位未清除")
+            # b) 配置邮箱 SM0/SM1 → PREOP 被接受。
+            write_sync_managers(master, 0x0800, mailbox_sms)
+            master.transact([(CMD["APWR"], 0, 0x0120, bytes([0x02]))])
+            status = al_status(master)
+            check(status & 0x0F == 0x02, f"配置邮箱 SM 后状态 {status:#04x} 不是 PREOP")
+            check(status & 0x10 == 0, f"配置正确时不应置 error 位（{status:#04x}）")
+            # c) 过程数据 SM 未配置 → 拒绝 SAFEOP：error 位 + AL Status Code 0x0017。
+            master.transact([(CMD["APWR"], 0, 0x0120, bytes([0x04]))])
+            status = al_status(master)
+            check(status & 0x10, f"过程数据 SM 缺失时 AL Status {status:#04x} 未置 error 位")
+            check(
+                status & 0x0F == 0x02,
+                f"前置条件失败后状态 {status & 0x0F:#04x} 不是 PREOP",
+            )
+            check(
+                al_status_code(master) == 0x0017,
+                "AL Status Code 不是 0x0017（SM 配置无效）",
+            )
+            master.transact([(CMD["APWR"], 0, 0x0120, bytes([0x14]))])
+            check(al_status(master) & 0x10 == 0, "ACK 后 error 位未清除")
+            # d) 配置过程数据 SM2/SM3 → SAFEOP → OP。
+            write_sync_managers(master, 0x0810, process_data_sms)
+            controls = (0x04, 0x08)
+        else:
+            controls = (0x02, 0x04, 0x08)
+        for control in controls:
             reply = master.transact([(CMD["APWR"], 0, 0x0120, bytes([control]))])
             check(reply[0][4] == 1, f"AL control {control:#04x} WKC 不是 1")
+        if strict:
+            status = al_status(master)
+            check(
+                status & 0x0F == 0x08 and status & 0x10 == 0,
+                f"严格模式下最终状态 {status:#04x} 不是 OP（无错误）",
+            )
         # divider = 2500（40 ns 单位）、intervals = 100 → 10 ms。
         master.transact([(CMD["APWR"], 0, 0x0400, struct.pack("<H", 2500))])
         master.transact([(CMD["APWR"], 0, 0x0420, struct.pack("<H", 100))])
@@ -177,9 +255,10 @@ def main():
     finally:
         master.close()
 
+    mode = " + ESM 前置条件（0x0015/0x0017）" if strict else ""
     print(
         f"OK: ESC-over-UDS 线缆层可用（{socket_path}）：BRD/APRD/APWR/FPRD/M 位 + "
-        "SM watchdog（10 ms → SAFEOP+ERROR 0x001B → ACK 清错）均通过"
+        f"SM watchdog（10 ms → SAFEOP+ERROR 0x001B → ACK 清错）{mode}均通过"
     )
 
 

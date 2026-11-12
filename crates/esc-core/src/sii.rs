@@ -390,6 +390,57 @@ impl SiiImage {
         self.words.len()
     }
 
+    /// 查找类别并返回其数据字节（不含类别头，也不含末尾补齐字节）。
+    ///
+    /// 遍历方式与 IgH `ec_slave_fetch_sii_*()` / SOEM `ecx_siifind()` 一致：
+    /// 类别头 = `type` + `size`（word 数），数据紧随其后；遇到 `0xFFFF` 终止字返回 `None`。
+    #[must_use]
+    pub fn category_bytes(&self, category_type: u16) -> Option<Vec<u8>> {
+        let mut word = usize::from(SII_FIRST_CATEGORY_WORD);
+        loop {
+            let cat_type = (*self.words.get(word)?) & 0x7FFF;
+            if cat_type == category::TERMINATOR {
+                return None;
+            }
+            let size_words = usize::from(*self.words.get(word + 1)?);
+            let start = word + 2;
+            let end = start.checked_add(size_words)?;
+            let data_words = self.words.get(start..end)?;
+            if cat_type == category_type {
+                let mut bytes = Vec::with_capacity(size_words * 2);
+                for w in data_words {
+                    bytes.extend_from_slice(&w.to_le_bytes());
+                }
+                return Some(bytes);
+            }
+            word = end;
+        }
+    }
+
+    /// 固定区声明的邮箱协议位（word 0x001C）；`0xFFFF`（未声明）归一化为 0。
+    #[must_use]
+    pub fn mailbox_protocols(&self) -> u16 {
+        match self.read_word(0x001C) {
+            SII_WORD_OUT_OF_RANGE => 0,
+            protocols => protocols,
+        }
+    }
+
+    /// SM 类别（0x0029）声明的 Sync Manager 数量；无类别时返回 0。
+    #[must_use]
+    pub fn sync_manager_count(&self) -> usize {
+        self.category_bytes(category::SYNC_MANAGER)
+            .map_or(0, |bytes| bytes.len() / SiiSyncManager::BYTES)
+    }
+
+    /// SII 是否声明过程数据 SM（SM2/SM3 至少其一，即 SM 数量 ≥ 3）。
+    ///
+    /// 用于 ESM 前置条件：声明了过程数据 SM 的从站在进入 SAFEOP 前必须先配置 SM2/SM3。
+    #[must_use]
+    pub fn declares_process_data_sync_managers(&self) -> bool {
+        self.sync_manager_count() >= 3
+    }
+
     /// word 0x0007 中当前存储的 CRC-8（低字节）。
     #[must_use]
     pub fn checksum(&self) -> u8 {
@@ -767,5 +818,36 @@ mod tests {
             "声明 {declared_bytes} 字节 < 镜像 {} 字节",
             sii.len_words() * 2
         );
+    }
+
+    #[test]
+    fn category_lookup_and_esm_helpers() {
+        let sii = SiiImage::simulated_slave();
+        assert_eq!(sii.mailbox_protocols(), SIM_MAILBOX_PROTOCOLS);
+        assert_eq!(sii.sync_manager_count(), SIM_SYNC_MANAGERS.len());
+        assert!(
+            sii.declares_process_data_sync_managers(),
+            "本镜像声明 SM2/SM3"
+        );
+        assert_eq!(
+            sii.category_bytes(category::SYNC_MANAGER)
+                .expect("SM category")
+                .len(),
+            SIM_SYNC_MANAGERS.len() * SiiSyncManager::BYTES
+        );
+        // 未在类别链中出现的类别 → None（遍历到 0xFFFF 终止字结束）。
+        assert!(sii.category_bytes(0x0040).is_none());
+    }
+
+    #[test]
+    fn empty_sii_declares_no_mailbox_or_process_data() {
+        // 没有类别链的最小镜像：不应 panic，且各项声明均为"无"。
+        let sii = SiiImage::simulated_slave();
+        let empty = SiiImage {
+            words: sii.words()[..usize::from(SII_FIRST_CATEGORY_WORD)].to_vec(),
+        };
+        assert_eq!(empty.sync_manager_count(), 0);
+        assert!(!empty.declares_process_data_sync_managers());
+        assert!(empty.category_bytes(category::SYNC_MANAGER).is_none());
     }
 }

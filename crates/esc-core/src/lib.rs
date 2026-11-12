@@ -15,6 +15,7 @@
 //! （B7 子项 2）[`obj_dict`] 最小只读对象字典（SM 通信类型/PDO assign/PDO 映射/Identity）；
 //! （B5 子项）[`watchdog`] SM 过程数据看门狗寄存器与超时语义。
 
+pub mod al_status;
 pub mod eeprom;
 pub mod fmmu;
 pub mod mailbox;
@@ -165,10 +166,52 @@ impl Default for EscAl {
     }
 }
 
-/// AL Status Code：非法状态迁移。
-pub const AL_STATUS_INVALID_STATE_CHANGE: u16 = 0x0011;
-/// AL Status Code：无错误。
-pub const AL_STATUS_NO_ERROR: u16 = 0x0000;
+/// AL Status Code：非法状态迁移（`al_status::INVALID_STATE_CHANGE` 的别名）。
+pub use al_status::INVALID_STATE_CHANGE as AL_STATUS_INVALID_STATE_CHANGE;
+/// AL Status Code：无错误（`al_status::NO_ERROR` 的别名）。
+pub use al_status::NO_ERROR as AL_STATUS_NO_ERROR;
+
+/// ESM 状态迁移前置条件（由当前寄存器/SII 配置推导）。
+///
+/// 真实从站在 INIT → PREOP 时要求邮箱 Sync Manager 已配置，PREOP → SAFEOP 时要求过程数据
+/// Sync Manager 已配置；不满足则置 AL Status error 位并给出对应的 AL Status Code。
+/// 各主站（IgH `fsm_slave_config.c`、SOEM `ecx_config_init()`/`ec_config_map_group()`）
+/// 都在请求对应状态**之前**配置好这些 SM，因此这两个条件仅在配置缺失时失败。
+///
+/// `declares_*` 为假时对应检查不生效（SII 未声明该能力，无需满足）。
+/// 默认值（全 `false`）等于"不做前置条件检查"，与 [`EscAl::handle_control`] 一致。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct EsmPreconditions {
+    /// SII 是否声明邮箱协议（固定区 word 0x001C 非 0）。
+    pub mailbox_declared: bool,
+    /// SM0（mailbox out，主站 → 从站）是否已配置：activate bit0 且 length > 0。
+    pub mailbox_out_configured: bool,
+    /// SM1（mailbox in，从站 → 主站）是否已配置。
+    pub mailbox_in_configured: bool,
+    /// SII 是否声明过程数据 Sync Manager（SM 类别中存在 SM2/SM3，即数量 ≥ 3）。
+    pub process_data_declared: bool,
+    /// SM2/SM3 中是否至少有一个已配置。
+    pub process_data_configured: bool,
+}
+
+impl EsmPreconditions {
+    /// 若目标状态的前置条件不满足，返回应写入 0x0134 的 AL Status Code。
+    #[must_use]
+    pub fn failure_for(&self, target: AlState) -> Option<u16> {
+        match target {
+            AlState::PreOp
+                if self.mailbox_declared
+                    && !(self.mailbox_out_configured && self.mailbox_in_configured) =>
+            {
+                Some(al_status::INVALID_MAILBOX_CONFIGURATION)
+            }
+            AlState::SafeOp if self.process_data_declared && !self.process_data_configured => {
+                Some(al_status::INVALID_SYNC_MANAGER_CONFIGURATION)
+            }
+            _ => None,
+        }
+    }
+}
 
 impl EscAl {
     /// 当前 AL Status 字节（写 0x0130 用）。
@@ -182,39 +225,65 @@ impl EscAl {
         .to_byte()
     }
 
-    /// 处理一次 AL Control 写入。
+    /// 处理一次 AL Control 写入（不做前置条件检查）。
     ///
     /// 语义（ETG.1000.5）：
     /// 1. 若 Error ACK 置位且当前有错误 → 清除错误位与状态码，状态保持不变；
     /// 2. 请求目标 == 当前状态 → 无操作；
     /// 3. 目标状态合法 → 迁移；
-    /// 4. 否则置错误位并写 `0x0011`（非法状态迁移）。
+    /// 4. 否则置错误位并写 `0x0011`（非法状态迁移）或 `0x0012`（未知请求状态）。
     ///
     /// 返回是否发生了状态迁移或错误状态变化。
     pub fn handle_control(&mut self, control: AlControl) -> bool {
+        self.handle_control_checked(control, &EsmPreconditions::default())
+    }
+
+    /// 处理一次 AL Control 写入，并按 [`EsmPreconditions`] 检查迁移前置条件。
+    ///
+    /// 前置条件只对**向上**迁移生效（INIT → PREOP、PREOP → SAFEOP），向下回退不需要
+    /// 重新配置 SM。失败时状态保持不变，只置 error 位与对应 AL Status Code；主站按
+    /// IgH `fsm_change.c` 的做法先读 0x0134，再写 AL Control = 当前状态（含 ACK 位）清错。
+    pub fn handle_control_checked(
+        &mut self,
+        control: AlControl,
+        preconditions: &EsmPreconditions,
+    ) -> bool {
         if control.error_ack && self.error {
             self.error = false;
-            self.status_code = AL_STATUS_NO_ERROR;
+            self.status_code = al_status::NO_ERROR;
             return true;
         }
         let Some(target) = control.target() else {
             self.error = true;
-            self.status_code = AL_STATUS_INVALID_STATE_CHANGE;
+            // AL Control 状态位全 0 = 无状态请求（保留编码）；非 0 但不是合法状态编码
+            // 才属于"未知请求状态"，见 ETG.1000.6 Table 11（0x0011 / 0x0012）。
+            self.status_code = if control.state_bits == 0 {
+                al_status::INVALID_STATE_CHANGE
+            } else {
+                al_status::UNKNOWN_REQUESTED_STATE
+            };
             return true;
         };
         if target == self.state {
             return false;
         }
-        if self.state.can_transition_to(target) {
-            self.state = target;
-            self.error = false;
-            self.status_code = AL_STATUS_NO_ERROR;
-            true
-        } else {
+        if !self.state.can_transition_to(target) {
             self.error = true;
-            self.status_code = AL_STATUS_INVALID_STATE_CHANGE;
-            true
+            self.status_code = al_status::INVALID_STATE_CHANGE;
+            return true;
         }
+        let moving_up = target.bits() > self.state.bits();
+        if moving_up {
+            if let Some(code) = preconditions.failure_for(target) {
+                self.error = true;
+                self.status_code = code;
+                return true;
+            }
+        }
+        self.state = target;
+        self.error = false;
+        self.status_code = al_status::NO_ERROR;
+        true
     }
 }
 
@@ -462,5 +531,118 @@ mod tests {
         assert!(!AlState::Op.can_transition_to(AlState::PreOp));
         assert!(!AlState::Init.can_transition_to(AlState::Op));
         assert!(!AlState::Init.can_transition_to(AlState::SafeOp));
+    }
+
+    #[test]
+    fn unknown_requested_state_uses_code_0x0012() {
+        let mut al = EscAl::default();
+        // 0x0F = 状态位全 1：不是任何合法状态编码。
+        assert!(al.handle_control(AlControl::from_byte(0x0F)));
+        assert!(al.error);
+        assert_eq!(al.status_code, al_status::UNKNOWN_REQUESTED_STATE);
+        assert_eq!(al.state, AlState::Init);
+        // 状态位全 0：按"无状态请求"处理，沿用 0x0011（既有双主站回归验证过的行为）。
+        let mut al = EscAl::default();
+        assert!(al.handle_control(AlControl::from_byte(0x00)));
+        assert_eq!(al.status_code, al_status::INVALID_STATE_CHANGE);
+    }
+
+    /// SII 声明了邮箱与过程数据 SM 且都已配置：完整向上迁移应成功。
+    fn configured_preconditions() -> EsmPreconditions {
+        EsmPreconditions {
+            mailbox_declared: true,
+            mailbox_out_configured: true,
+            mailbox_in_configured: true,
+            process_data_declared: true,
+            process_data_configured: true,
+        }
+    }
+
+    #[test]
+    fn checked_esm_rejects_preop_without_mailbox_sync_managers() {
+        let mut al = EscAl::default();
+        let pre = EsmPreconditions {
+            mailbox_declared: true,
+            ..EsmPreconditions::default()
+        };
+        assert!(al.handle_control_checked(AlControl::from_byte(0x02), &pre));
+        assert_eq!(al.state, AlState::Init, "前置条件失败时状态保持不变");
+        assert!(al.error);
+        assert_eq!(al.status_code, al_status::INVALID_MAILBOX_CONFIGURATION);
+        assert_eq!(al.status_byte(), 0x11, "INIT + error 位");
+        // 主站按 IgH fsm_change.c 的做法 ACK（写当前状态，含 ACK 位）清错。
+        assert!(al.handle_control_checked(AlControl::from_byte(0x11), &pre));
+        assert!(!al.error);
+        assert_eq!(al.status_code, al_status::NO_ERROR);
+        assert_eq!(al.state, AlState::Init);
+    }
+
+    #[test]
+    fn checked_esm_accepts_preop_once_mailbox_configured() {
+        let mut al = EscAl::default();
+        let pre = EsmPreconditions {
+            mailbox_out_configured: true,
+            mailbox_in_configured: true,
+            ..configured_preconditions()
+        };
+        assert!(al.handle_control_checked(AlControl::from_byte(0x02), &pre));
+        assert_eq!(al.state, AlState::PreOp);
+        assert!(!al.error);
+        assert_eq!(al.status_code, al_status::NO_ERROR);
+    }
+
+    #[test]
+    fn checked_esm_rejects_safeop_without_process_data_sync_managers() {
+        let mut al = EscAl {
+            state: AlState::PreOp,
+            error: false,
+            status_code: 0,
+        };
+        let pre = EsmPreconditions {
+            process_data_declared: true,
+            process_data_configured: false,
+            ..configured_preconditions()
+        };
+        assert!(al.handle_control_checked(AlControl::from_byte(0x04), &pre));
+        assert_eq!(al.state, AlState::PreOp);
+        assert_eq!(
+            al.status_code,
+            al_status::INVALID_SYNC_MANAGER_CONFIGURATION
+        );
+        // 配好过程数据 SM 后重试 → SAFEOP，并清掉错误。
+        let mut al = EscAl {
+            state: AlState::PreOp,
+            error: true,
+            status_code: al_status::INVALID_SYNC_MANAGER_CONFIGURATION,
+        };
+        assert!(al.handle_control_checked(AlControl::from_byte(0x04), &configured_preconditions()));
+        assert_eq!(al.state, AlState::SafeOp);
+        assert!(!al.error);
+        assert_eq!(al.status_code, al_status::NO_ERROR);
+    }
+
+    #[test]
+    fn checked_esm_does_not_check_downward_transitions() {
+        // 从 SAFEOP/OP 回退时不需要重新配置 SM，即使前置条件全为 false。
+        let mut al = EscAl {
+            state: AlState::Op,
+            error: false,
+            status_code: 0,
+        };
+        assert!(al.handle_control_checked(AlControl::from_byte(0x04), &EsmPreconditions::default()));
+        assert_eq!(al.state, AlState::SafeOp);
+        assert!(!al.error);
+        assert!(al.handle_control_checked(AlControl::from_byte(0x02), &EsmPreconditions::default()));
+        assert_eq!(al.state, AlState::PreOp);
+        assert!(!al.error);
+    }
+
+    #[test]
+    fn unchecked_handle_control_ignores_preconditions() {
+        // 默认（全 false = 未声明）不做前置条件检查：SII 未声明邮箱的从站可直接进 PREOP。
+        let mut al = EscAl::default();
+        assert!(al.handle_control(AlControl::from_byte(0x02)));
+        assert_eq!(al.state, AlState::PreOp);
+        assert!(!al.error);
     }
 }

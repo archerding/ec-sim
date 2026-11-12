@@ -119,8 +119,15 @@ user.email = deepseek-harness@users.noreply.github.com
     OP → SAFEOP，Error ACK 清错。证据：`crates/esc-core/src/watchdog.rs`、UDS 合成主站
     `uds_master_probe.py`（10 ms → SAFEOP+ERROR → ACK 清错）；测试 **105 passed**；
     双主站回归无影响（IgH `EC_WD_DISABLE`、SOEM SII control 无 bit6）。
-  - 待做：AL SAFEOP/OP 的 **ESM 前置条件检查**（需先以 ETG.1000.6 + 两家主站行为核实条件）；
-    无独立硬件定时器（帧驱动时钟）；0x0410 PDI watchdog 仅保留读写语义。
+  - 进度（2026-11-12 20:44 班）：**ESM 前置条件检查已实现**——`esc-core::al_status` 码表
+    （ETG.1000.6 Table 11 子集）+ `EsmPreconditions` / `EscAl::handle_control_checked()`：
+    INIT→PREOP 缺邮箱 SM（SII 声明了 CoE）→ error + **0x0015**；PREOP→SAFEOP 缺过程数据
+    SM → error + **0x0017**；未知状态位 → **0x0012**；只检查向上迁移。`esc-node
+    --esm-strict` 开启（`Responder::with_esm_preconditions`，**默认关闭**以保持与既有双主站
+    冒烟一致）；UDS probe 加 `--strict` 负向/正向断言。测试 **119 passed**。
+    ⚠️ 严格模式端到端与双主站回归因 VM 锁被占用未执行，下一班补。
+  - 待做：OP 前置条件（0x0018/0x0019、映射类 0x0024/0x0025）；前置条件是否默认开启待双主站
+    全链路回归确认；无独立硬件定时器（帧驱动时钟）；0x0410 PDI watchdog 仅保留读写语义。
 - [ ] **B6 SII 生成器**：ESI XML → SII 镜像（含固定区 CRC-8（**word 0x0007**，覆盖 0x0000–0x0006，已实现）、category 链 0x0029/0x0032/0x0033、0xFFFF 终止）。
   - 进度（2026-11-12 19:26 班）：**SM 类别 0x0029 + TxPDO 0x0032 + RxPDO 0x0033 已实现**
     （SM0/SM1 = mailbox、SM2 输出 0x1100、SM3 输入 0x1110；PDO 0x1A00/0x1600，

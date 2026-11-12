@@ -26,7 +26,7 @@ pub const WATCHDOG_TIME_PROCESS_DATA: u16 = 0x0420;
 pub const WATCHDOG_UNIT_NS: u64 = 40;
 
 /// AL Status Code：同步管理器看门狗触发。
-pub const AL_STATUS_SM_WATCHDOG: u16 = 0x001B;
+pub const AL_STATUS_SM_WATCHDOG: u16 = crate::al_status::SYNC_MANAGER_WATCHDOG;
 
 /// SM control 字节中的看门狗使能位（bit6）。
 pub const SM_CONTROL_WATCHDOG: u8 = 0x40;
