@@ -6,6 +6,48 @@
 
 ---
 
+## 2026-11-12 23:12 班（低峰）— B11 第一步：**通用 CiA 402 伺服声明式画像** + 双主站扫描/OP 验证
+
+**做了什么**
+- 新增插件 `plugins/generic-cia402-servo/`（B11 第一步：先做通用 CiA 402 画像，再派生
+  Inovance SV660N 等具体兼容画像）：
+  - `plugin.yaml`：自有 VID `0x00000EC5` / PID `0x0000E5E0`（R2）、名称带 SIMULATED；
+    SM0/SM1 = CoE 邮箱（各 128B），SM2 = RxPDO 56 bit（`0x6040` controlword 16 +
+    `0x6060` modes 8 + `0x607A` target position 32），SM3 = TxPDO 56 bit
+    （`0x6041` statusword 16 + `0x6061` modes display 8 + `0x6064` position actual 32）；
+    对象字典含 `0x603F` 错误码、`0x6077` 实际转矩、`0x1008` 设备名字符串；`dc.supported=false`。
+  - `facts.md`：只记录**公开来源**（CiA 402 profile、ETG 设备 profile、公开伺服手册）与
+    "明确不模拟"清单（状态机/运动控制/编码器/Homing/DC/厂商专有对象），R1 未入库任何
+    厂商 ESI/PDF/固件。
+  - `README.md` + `plugins/catalog.yaml` 更新（generic-cia402-servo → ready，含 deliverable）。
+- 新增验证脚本 `scripts/spikes/generic-cia402-probe.sh`；新增验证记录
+  `docs/plugins/generic-cia402-verification.md`。
+- 仓库级 plugin manifest 守卫测试自动覆盖新插件（解析/校验/SII CRC/字典/PDO 映射）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`cargo clippy -D warnings` exit 0；`cargo test --workspace`
+  **152 passed**（插件守卫测试通过新画像）。
+- Linux 验证机 `bash scripts/spikes/generic-cia402-probe.sh` → **EXIT=0**：
+  - SOEM `slaveinfo`：`Output size: 56bits / Input size: 56bits`、
+    `Man: 00000ec5 ID: 0000e5e0 Rev: 00010000`、`MBX 128/128 protocols 04`；
+  - SOEM `slaveinfo -map`：`0x6040:0x00 Controlword` / `0x6041:0x00 Statusword` /
+    `0x6064:0x00 Position actual value` 可见；
+  - SOEM `simple_ng`（零补丁）：`mapped 7O+7I`、`all slaves are now operational`、`WKC 3`；
+  - IgH `ethercat slaves`：`0  0:0  PREOP  +  0x00000ec5:0x0000e5e0`。
+
+**卡点**
+- 本画像**不含 CiA 402 行为**：状态机/运动控制/编码器反馈/Homing/DC 均未模拟，PDO 数据
+  为静态初值；IgH 进 OP 需匹配本画像的 ecrt 夹具。
+- `slaveinfo -map` 摘录只显示部分映射项（`0x6060`/`0x607A` 未在该工具的打印里出现），
+  但 `simple_ng` 的 7O+7I 映射证明完整 PDO 结构被识别；⚠️ 如需逐项证据可补 `-sdo`。
+
+**下次开工第一件事**
+- 做 **CiA 402 状态机骨架（Tier0 行为插件）**：控制字 `0x6040` → 状态字 `0x6041`
+  的最小状态转换（Switch on disabled → Ready → Switched on → Operation enabled），
+  并让 PDO 数据随输入变化；同时补匹配本画像的 IgH ecrt OP 夹具。
+
+---
+
 ## 2026-11-12 23:05 班（低峰）— B6/B8 子项：**ESI + manifest 组合画像**（ESI 出 SII、manifest 出身份/字典）→ SOEM 进 OP
 
 **做了什么**

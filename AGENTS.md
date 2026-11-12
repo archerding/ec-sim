@@ -237,6 +237,14 @@ user.email = deepseek-harness@users.noreply.github.com
 - [ ] **B11 CiA402 行为插件**：以 Inovance SV660N 兼容画像为第一个目标，实现 CSP 状态机（Tier0/内置 profile 起步）。
   - 依赖 B10 已完成（声明式画像 + `--manifest` + 验证脚本可复用）；先 facts.md + 声明式画像，
     行为 WASM 只做 Tier0 状态机骨架。
+  - 进度（2026-11-12 23:12 班）：**通用 CiA 402 声明式画像已上架**——
+    `plugins/generic-cia402-servo/`（自有 VID 0x0EC5/PID 0xE5E0；SM2 56bit RxPDO
+    `0x6040`+`0x6060`+`0x607A`，SM3 56bit TxPDO `0x6041`+`0x6061`+`0x6064`；`facts.md`
+    只引用公开来源）。验证机 `scripts/spikes/generic-cia402-probe.sh` **EXIT=0**：SOEM
+    `56bits/56bits`、`Man 00000ec5 ID 0000e5e0`、`mapped 7O+7I` 进 OP（WKC 3），IgH
+    PREOP + 身份 `0x00000ec5:0x0000e5e0`；验证记录 `docs/plugins/generic-cia402-verification.md`。
+  - 待做：**CiA 402 状态机骨架（Tier0）**——控制字→状态字最小状态转换 + PDO 动态数据；
+    再派生 Inovance SV660N 兼容画像（公开手册默认 PDO/对象）；IgH ecrt OP 夹具。
 - [x] ~~**B8 双主站冒烟**~~ ✅ **2026-11-12 19:56 班完成（单从站 8 位 I/O 画像）**：
   **未修改的 SOEM 与 IgH 都在本模拟器上看到从站进入 OP**，输出可复现脚本见
   [spike-4](docs/spikes/spike-4-dual-master-op.md)：
