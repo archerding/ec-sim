@@ -6,6 +6,39 @@
 
 ---
 
+## 2026-11-12 18:33 班（低峰）— SII 固定区 CRC-8（word 0x0007）实现，SOEM eepromtool 交叉验证
+
+**做了什么**
+- 修正 SII 固定区语义（B6 子项"CRC-8"）：CRC 在 **word 0x0007**、覆盖 word 0x0000–0x0006（14 字节），
+  多项式 `x^8+x^2+x+1`（0x07）、初值 0xFF、MSB-first；旧文档记成 "word 0x003F" 是错位
+  （**0x003F 是 SII 版本 = 1**）。证据：SOEM `samples/eepromtool/eepromtool.c` 的 `SIIcrc()`/`-walias`/`-i`
+  与 IgH `tool/sii_crc.cpp`（pycrc `--poly=0x07 --xor-in=0xff`）。
+- `esc-core::sii` 新增 `sii_crc8()`、`SII_CHECKSUM_WORD`/`SII_CHECKSUM_BYTES`/`SII_EEPROM_SIZE_WORD`/
+  `SII_VERSION_WORD` 与 `SiiImage::checksum()/calculate_checksum()/verify_checksum()/set_alias()`
+  （改别名自动重算，等价 SOEM `eepromtool -walias`）；镜像补 word 0x003E=1（声明 256 B）、word 0x003F=1。
+- 同步文档：`AGENTS.md` B6 行 + B2b 备注、`docs/spikes/spike-3-minimal-esc-responder.md` 的 CRC 位置描述。
+
+**验证结果**
+- 本机 Windows：`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets -- -D warnings` 通过；
+  `cargo test --workspace` **51 passed**（esc-core 25 / esc-node 10 / wire 16），本项新增 6 条。
+- Linux 验证机（未修改主站样本）：SOEM `eepromtool <tap> 1 -i` → `1 slaves found`、
+  `Checksum: 0030` / `calculated: 0030`、`Size: 0001 = 256 bytes`、`Version: 0001`；
+  回归：SOEM `slaveinfo` `1 slaves found and configured`、IgH `ethercat slaves`
+  `0 0:0 PREOP + 0x00000ec5:0x0000e5c1`，均无变化（IgH 仍打印 topology 报错，属另一项）。
+  新增测试向量另由 SOEM 逐位形式与 IgH bit-feeding 形式两个实现交叉校验（如 14 个 0x00 → 0x30）。
+
+**卡点**
+- 本班前半段（18:33–18:50）会话沙箱为 workspace-write、`D:\` 仓库写探针被拒，先按 12:30 班记录报 BLOCKED；
+  用户切到 danger-full-access 后继续。VM 锁 18:38 被其他 worker 占用 → 先做本地项，19:05 锁释放后补 VM 验证。
+- IgH `Failed to calculate bus topology` 仍未修（DL Status 端口位语义，⚠️ 待验证），本项未触碰。
+- 旧条目（13:27 班）里 "SII CRC-8（word 0x3F）" 为当时的错位记录，以本条为准。
+
+**下次开工第一件事**
+- **IgH 拓扑计算**：按 ESC Sec.II 复核 DL Status（0x0110）端口 0–3 的 link/loop 位与
+  `ec_master_calc_topology_rec()` 期望（计划重点第 1 项），修好后推进 **B8 双主站进 OP**。
+
+---
+
 ## 2026-11-12 13:27 班（低峰）— B2b 最小 ESC 应答器（IgH + SOEM 各看到 1 个从站）
 
 **做了什么**

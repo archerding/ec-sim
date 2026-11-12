@@ -78,7 +78,14 @@ Master0
 - **拓扑计算仍报错**：IgH 日志有 `Failed to calculate bus topology`（从站列表本身正常、无 `E` 标志）。
   `ec_master_calc_topology_rec()` 只对端口 3/2 检查 `loop_closed`；当前 DL Status 置了这两个端口的
   闭合位但仍不满足，端口 0/1 的真实链路语义待按 ESC Sec.II 逐位复核（⚠️ 待验证）。
-- **SII CRC-8（word 0x3F）未实现**：IgH/SOEM 扫描不校验 CRC；接 TwinCAT 等会校验 CRC 的主站前必须补（B6）。
+- **SII 固定区 CRC-8 已实现（2026-11-12 晚班，B6 子项）**：CRC 在 **word 0x0007**，
+  覆盖 word 0x0000–0x0006（14 字节），多项式 `x^8 + x^2 + x + 1`（0x07）、初值 0xFF、MSB-first；
+  早期文档把位置记成 word 0x003F，经 SOEM `eepromtool`（`SIIcrc()` 写 word 0x0007、`-i` 同屏打印
+  `Checksum`/`calculated`）与 IgH `tool/sii_crc.cpp`（`pycrc --poly=0x07 --xor-in=0xff`）复核更正
+  ——**0x003F 是 SII 版本（=1）**。镜像同时补 word 0x003E=1（声明 256 字节）与 word 0x003F=1。
+  验证证据：未修改的 SOEM `eepromtool -i` 对 TAP 上的应答器输出
+  `Checksum: 0030` / `calculated: 0030`、`Size: 0001 = 256 bytes`、`Version: 0001`；
+  同时 `slaveinfo` 与 IgH `ethercat slaves` 无回归。仍属"预回归"，**不构成**一致性测试/认证结论。
 - **未进 OP**：无 mailbox/PDO/SM/FMMU，`slaveinfo` 的 `State: 4` 与 IgH `PREOP` 说明只到 PREOP；
   OP 需要 B5 的 SM/FMMU + B7 CoE，属 B8 范畴。
 - **非认证**：以上只是"用例映射/预回归"，**不构成**一致性测试或 CTT 认证结论。
