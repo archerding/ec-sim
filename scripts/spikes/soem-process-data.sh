@@ -46,7 +46,7 @@ grep -q "all slaves are now operational" /tmp/soem-simple-ng.lines \
 WRONG=$(grep -c "wrong" /tmp/soem-simple-ng.lines || true)
 if [ "$WRONG" -ne 0 ]; then
   echo "FAIL: $WRONG 轮 WKC 与主站期望不符"
-  grep "wrong" /tmp/soem-simple-ng.lines | head -n 3
+  grep "wrong" /tmp/soem-simple-ng.lines | head -n 3 || true
   exit 1
 fi
 

@@ -57,7 +57,7 @@ grep -q "MANIFEST id=com.ecsim.compat.example-8do" /tmp/ec-sim-manifest.log \
 echo "=== SOEM slaveinfo（身份 + SII PDO）==="
 timeout 60 "$SOEM_SLAVEINFO" "$TAP" >/tmp/soem-manifest.out 2>&1 || true
 tr '\r' '\n' </tmp/soem-manifest.out >/tmp/soem-manifest.lines
-grep -E "Man:|Output size|Input size" /tmp/soem-manifest.lines | head -4
+grep -E "Man:|Output size|Input size" /tmp/soem-manifest.lines | head -4 || true
 grep -q "Man: 00000ec5 ID: 0000e5d1" /tmp/soem-manifest.lines || fail "身份不是 manifest 的 VID/PID"
 grep -q "1 slaves found and configured" /tmp/soem-manifest.lines || fail "SOEM 未找到从站"
 grep -q "Output size: 8bits" /tmp/soem-manifest.lines || fail "输出不是 8 位"
@@ -77,7 +77,7 @@ for attempt in 1 2 3; do
   sleep 0.3
 done
 [ "$sdo_ok" -eq 1 ] || fail "SDO Info 未读到 manifest 对象（3 次重试均失败）"
-grep -E "0x1018|0x1c12|0x2000|Sample counter|0x1234" /tmp/soem-manifest-sdo.lines | head -8
+grep -E "0x1018|0x1c12|0x2000|Sample counter|0x1234" /tmp/soem-manifest-sdo.lines | head -8 || true
 
 echo "=== SOEM simple_ng（process data / OP）==="
 timeout 6 "$SOEM_SIMPLE_NG" "$TAP" >/tmp/soem-manifest-op.out 2>&1 || true

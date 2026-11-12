@@ -127,155 +127,157 @@ pub fn dictionary_from_manifest(manifest: &PluginManifest) -> Result<ObjectDicti
 
     let mut objects: Vec<RuntimeObject> = Vec::new();
     let mut entries: BTreeMap<(u16, u8), RuntimeEntry> = BTreeMap::new();
-    let mut push_entry = |entry: RuntimeEntry| {
-        entries.insert((entry.index, entry.subindex), entry);
-    };
+    {
+        let mut push_entry = |entry: RuntimeEntry| {
+            entries.insert((entry.index, entry.subindex), entry);
+        };
 
-    // 1) 身份对象 0x1018。
-    objects.push(object(
-        0x1018,
-        4,
-        obj_dict::object_code::RECORD,
-        obj_dict::data_type::NONE,
-        "Identity",
-    ));
-    push_entry(entry(
-        0x1018,
-        0,
-        vec![4],
-        obj_dict::data_type::UNSIGNED8,
-        8,
-        obj_dict::access::READ_ONLY,
-        "Number of entries",
-    ));
-    for (subindex, name, value) in [
-        (1u8, "Vendor ID", manifest.identity.vendor_id),
-        (2u8, "Product code", manifest.identity.product_code),
-        (3u8, "Revision number", manifest.identity.revision),
-        (4u8, "Serial number", 0u32),
-    ] {
+        // 1) 身份对象 0x1018。
+        objects.push(object(
+            0x1018,
+            4,
+            obj_dict::object_code::RECORD,
+            obj_dict::data_type::NONE,
+            "Identity",
+        ));
         push_entry(entry(
             0x1018,
-            subindex,
-            value.to_le_bytes().to_vec(),
-            obj_dict::data_type::UNSIGNED32,
-            32,
-            obj_dict::access::READ_ONLY,
-            name,
-        ));
-    }
-
-    // 2) SM 通信类型对象 0x1C00。
-    if !manifest.sm.is_empty() {
-        let mut by_index: Vec<_> = manifest.sm.iter().collect();
-        by_index.sort_by_key(|sm| sm.index);
-        objects.push(object(
-            0x1C00,
-            u8::try_from(by_index.len()).unwrap_or(u8::MAX),
-            obj_dict::object_code::ARRAY,
-            obj_dict::data_type::UNSIGNED8,
-            "Sync manager communication type",
-        ));
-        push_entry(entry(
-            0x1C00,
             0,
-            vec![u8::try_from(by_index.len()).unwrap_or(u8::MAX)],
+            vec![4],
             obj_dict::data_type::UNSIGNED8,
             8,
             obj_dict::access::READ_ONLY,
-            "Number of sync managers",
+            "Number of entries",
         ));
-        for sm in by_index {
-            let sm_type = sm_type_for_dir(&sm.dir)
-                .ok_or_else(|| format!("sm[{}].dir 非法：{}", sm.index, sm.dir))?;
+        for (subindex, name, value) in [
+            (1u8, "Vendor ID", manifest.identity.vendor_id),
+            (2u8, "Product code", manifest.identity.product_code),
+            (3u8, "Revision number", manifest.identity.revision),
+            (4u8, "Serial number", 0u32),
+        ] {
+            push_entry(entry(
+                0x1018,
+                subindex,
+                value.to_le_bytes().to_vec(),
+                obj_dict::data_type::UNSIGNED32,
+                32,
+                obj_dict::access::READ_ONLY,
+                name,
+            ));
+        }
+
+        // 2) SM 通信类型对象 0x1C00。
+        if !manifest.sm.is_empty() {
+            let mut by_index: Vec<_> = manifest.sm.iter().collect();
+            by_index.sort_by_key(|sm| sm.index);
+            objects.push(object(
+                0x1C00,
+                u8::try_from(by_index.len()).unwrap_or(u8::MAX),
+                obj_dict::object_code::ARRAY,
+                obj_dict::data_type::UNSIGNED8,
+                "Sync manager communication type",
+            ));
             push_entry(entry(
                 0x1C00,
-                sm.index.saturating_add(1),
-                vec![sm_type],
+                0,
+                vec![u8::try_from(by_index.len()).unwrap_or(u8::MAX)],
                 obj_dict::data_type::UNSIGNED8,
                 8,
                 obj_dict::access::READ_ONLY,
-                &format!("SM{} type", sm.index),
+                "Number of sync managers",
             ));
+            for sm in by_index {
+                let sm_type = sm_type_for_dir(&sm.dir)
+                    .ok_or_else(|| format!("sm[{}].dir 非法：{}", sm.index, sm.dir))?;
+                push_entry(entry(
+                    0x1C00,
+                    sm.index.saturating_add(1),
+                    vec![sm_type],
+                    obj_dict::data_type::UNSIGNED8,
+                    8,
+                    obj_dict::access::READ_ONLY,
+                    &format!("SM{} type", sm.index),
+                ));
+            }
         }
-    }
 
-    // 3) PDO 分配对象（0x1C12 = RxPDO、0x1C13 = TxPDO）。
-    for (assign_index, pdos, name) in [
-        (0x1C12u16, &manifest.rx_pdos, "RxPDO assign"),
-        (0x1C13u16, &manifest.tx_pdos, "TxPDO assign"),
-    ] {
-        if pdos.is_empty() {
-            continue;
-        }
-        objects.push(object(
-            assign_index,
-            u8::try_from(pdos.len()).unwrap_or(u8::MAX),
-            obj_dict::object_code::ARRAY,
-            obj_dict::data_type::UNSIGNED16,
-            name,
-        ));
-        push_entry(entry(
-            assign_index,
-            0,
-            vec![u8::try_from(pdos.len()).unwrap_or(u8::MAX)],
-            obj_dict::data_type::UNSIGNED8,
-            8,
-            obj_dict::access::READ_WRITE_PREOP,
-            "Number of assigned PDOs",
-        ));
-        for (offset, pdo) in pdos.iter().enumerate() {
-            push_entry(entry(
-                assign_index,
-                u8::try_from(offset + 1).unwrap_or(u8::MAX),
-                pdo.index.to_le_bytes().to_vec(),
-                obj_dict::data_type::UNSIGNED16,
-                16,
-                obj_dict::access::READ_WRITE_PREOP,
-                name,
-            ));
-        }
-    }
-
-    // 4) PDO 映射对象（每个 PDO 一个数组对象）。
-    for (pdos, name) in [
-        (&manifest.rx_pdos, "RxPDO mapping"),
-        (&manifest.tx_pdos, "TxPDO mapping"),
-    ] {
-        for pdo in pdos {
-            let max_subindex = u8::try_from(pdo.entries.len()).unwrap_or(u8::MAX);
-            if objects.iter().any(|object| object.index == pdo.index) {
+        // 3) PDO 分配对象（0x1C12 = RxPDO、0x1C13 = TxPDO）。
+        for (assign_index, pdos, name) in [
+            (0x1C12u16, &manifest.rx_pdos, "RxPDO assign"),
+            (0x1C13u16, &manifest.tx_pdos, "TxPDO assign"),
+        ] {
+            if pdos.is_empty() {
                 continue;
             }
             objects.push(object(
-                pdo.index,
-                max_subindex,
+                assign_index,
+                u8::try_from(pdos.len()).unwrap_or(u8::MAX),
                 obj_dict::object_code::ARRAY,
-                obj_dict::data_type::UNSIGNED32,
+                obj_dict::data_type::UNSIGNED16,
                 name,
             ));
             push_entry(entry(
-                pdo.index,
+                assign_index,
                 0,
-                vec![max_subindex],
+                vec![u8::try_from(pdos.len()).unwrap_or(u8::MAX)],
                 obj_dict::data_type::UNSIGNED8,
                 8,
                 obj_dict::access::READ_WRITE_PREOP,
-                "Number of mapped objects",
+                "Number of assigned PDOs",
             ));
-            for (offset, mapping) in pdo.entries.iter().enumerate() {
-                let packed = (u32::from(mapping.index) << 16)
-                    | (u32::from(mapping.sub) << 8)
-                    | u32::from(mapping.bits);
+            for (offset, pdo) in pdos.iter().enumerate() {
                 push_entry(entry(
-                    pdo.index,
+                    assign_index,
                     u8::try_from(offset + 1).unwrap_or(u8::MAX),
-                    packed.to_le_bytes().to_vec(),
-                    obj_dict::data_type::UNSIGNED32,
-                    32,
+                    pdo.index.to_le_bytes().to_vec(),
+                    obj_dict::data_type::UNSIGNED16,
+                    16,
                     obj_dict::access::READ_WRITE_PREOP,
                     name,
                 ));
+            }
+        }
+
+        // 4) PDO 映射对象（每个 PDO 一个数组对象）。
+        for (pdos, name) in [
+            (&manifest.rx_pdos, "RxPDO mapping"),
+            (&manifest.tx_pdos, "TxPDO mapping"),
+        ] {
+            for pdo in pdos {
+                let max_subindex = u8::try_from(pdo.entries.len()).unwrap_or(u8::MAX);
+                if objects.iter().any(|object| object.index == pdo.index) {
+                    continue;
+                }
+                objects.push(object(
+                    pdo.index,
+                    max_subindex,
+                    obj_dict::object_code::ARRAY,
+                    obj_dict::data_type::UNSIGNED32,
+                    name,
+                ));
+                push_entry(entry(
+                    pdo.index,
+                    0,
+                    vec![max_subindex],
+                    obj_dict::data_type::UNSIGNED8,
+                    8,
+                    obj_dict::access::READ_WRITE_PREOP,
+                    "Number of mapped objects",
+                ));
+                for (offset, mapping) in pdo.entries.iter().enumerate() {
+                    let packed = (u32::from(mapping.index) << 16)
+                        | (u32::from(mapping.sub) << 8)
+                        | u32::from(mapping.bits);
+                    push_entry(entry(
+                        pdo.index,
+                        u8::try_from(offset + 1).unwrap_or(u8::MAX),
+                        packed.to_le_bytes().to_vec(),
+                        obj_dict::data_type::UNSIGNED32,
+                        32,
+                        obj_dict::access::READ_WRITE_PREOP,
+                        name,
+                    ));
+                }
             }
         }
     }
@@ -303,18 +305,49 @@ pub fn dictionary_from_manifest(manifest: &PluginManifest) -> Result<ObjectDicti
         } else {
             entries.insert((spec.index, spec.sub), description);
         }
-        if !objects.iter().any(|object| object.index == spec.index) {
+        if let Some(existing) = objects.iter_mut().find(|object| object.index == spec.index) {
+            existing.max_subindex = existing.max_subindex.max(spec.sub);
+        } else {
+            // 子索引 > 0 的用户对象按 ARRAY 处理（子索引 0 = 条目数，与 EL2008 等
+            // 多通道端子一致）；只有子索引 0 的对象按 VAR 处理。
+            let (object_code, max_subindex) = if spec.sub > 0 {
+                (obj_dict::object_code::ARRAY, spec.sub)
+            } else {
+                (obj_dict::object_code::VAR, 0)
+            };
             objects.push(object(
                 spec.index,
-                spec.sub,
-                obj_dict::object_code::VAR,
+                max_subindex,
+                object_code,
                 type_code,
                 &spec.name,
             ));
-        } else if let Some(existing) = objects.iter_mut().find(|object| object.index == spec.index)
-        {
-            existing.max_subindex = existing.max_subindex.max(spec.sub);
         }
+    }
+
+    // 6) 数组对象补一条子索引 0（UINT8 条目数，CiA 301 约定）。主站读对象字典时会读
+    //    0xNNNN:00；缺失会产生无谓的 SDO Abort 日志（IgH 会 WARN "SDO information error"）。
+    let array_objects: Vec<(u16, u8)> = objects
+        .iter()
+        .filter(|object| object.object_code == obj_dict::object_code::ARRAY)
+        .map(|object| (object.index, object.max_subindex))
+        .collect();
+    for (index, max_subindex) in array_objects {
+        if entries.contains_key(&(index, 0)) {
+            continue;
+        }
+        entries.insert(
+            (index, 0),
+            entry(
+                index,
+                0,
+                vec![max_subindex],
+                obj_dict::data_type::UNSIGNED8,
+                8,
+                obj_dict::access::READ_ONLY,
+                "Number of entries",
+            ),
+        );
     }
 
     // 修正每个对象的 max_subindex（取条目表最大值，保证 SDO Info 与实际条目一致）。
@@ -412,6 +445,28 @@ mod tests {
         let manifest = PluginManifest::parse(template).expect("模板可解析");
         let error = dictionary_from_manifest(&manifest).expect_err("占位 VID/PID 应被拒绝");
         assert!(error.contains("vendor_id"), "{error}");
+    }
+
+    #[test]
+    fn array_channel_objects_get_number_of_entries_subindex() {
+        let mut manifest = fixture_manifest();
+        manifest.objects.push(crate::manifest::ObjectConfig {
+            index: 0x7100,
+            sub: 1,
+            name: "Output channel".to_string(),
+            data_type: "BOOL".to_string(),
+            access: "ro".to_string(),
+            pdo: None,
+            value: None,
+        });
+        let dict = dictionary_from_manifest(&manifest).expect("generate");
+        let object = dict.object(0x7100).expect("array object");
+        assert_eq!(object.object_code, obj_dict::object_code::ARRAY);
+        assert_eq!(object.max_subindex, 1);
+        // 数组对象的子索引 0 = 条目数（UINT8，CiA 301），主站字典读取依赖它。
+        let count = dict.entry(0x7100, 0).expect("count entry");
+        assert_eq!(count.data_type, obj_dict::data_type::UNSIGNED8);
+        assert_eq!(count.value, vec![1u8]);
     }
 
     #[test]

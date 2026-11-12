@@ -191,11 +191,16 @@ user.email = deepseek-harness@users.noreply.github.com
   Information System / linuxcnc-ethercat esi-data，访问日期 2026-11-12），未入库厂商文件（R1）。
   Linux 验证机：SOEM 扫描身份 `00000ec5:0000e5d2`、`Output 8bits/Input 0bits`、`-map`
   显示 `SM2 outputs` 与 8 个 BOOLEAN 输出映射、`simple_ng` 进 OP（`mapped 1O+0I`）；
-  IgH 扫描 PREOP/拓扑/身份正常。证据：[验证记录](docs/plugins/beckhoff-el2008-verification.md)、
+  IgH 扫描 PREOP/拓扑/身份正常；**IgH outputs-only ecrt 夹具已验证 OP**
+  （`scripts/spikes/igh-el2008-op-probe.sh`：`ethercat slaves` = OP，
+  `RESULT al_states=0x08 wc=1`）。证据：[验证记录](docs/plugins/beckhoff-el2008-verification.md)、
   `scripts/spikes/beckhoff-el2008-probe.sh`；`plugin-host` 增加仓库插件 manifest 守卫测试。
+  - 2026-11-12 21:41 班补齐：`dict_gen` 为数组对象自动补子索引 0（UINT8 条目数，CiA 301），
+    消除 IgH 字典读取的 SDO Abort 噪声；验证脚本的 `grep | head` 管线补 `|| true`
+    （pipefail/SIGPIPE 误判）。
   - 遗留 ⚠️：SOEM `simple_ng` expected WKC 比实际多 1（SOEM 把 SM1 状态寄存器映射为 FMMU 并在
     无输入时 `inputsWKC++`；本模拟器未做寄存器空间 FMMU，ESC 是否允许待核实）；
-    IgH 侧只验扫描（OP 需 outputs-only ecrt 夹具）；电气特性/DC 未模拟。
+    SOEM `slaveinfo -sdo` 虽已可用但受工具自身缺陷影响（best-effort）；电气特性/DC 未模拟。
 - [ ] **B11 CiA402 行为插件**：以 Inovance SV660N 兼容画像为第一个目标，实现 CSP 状态机（Tier0/内置 profile 起步）。
   - 依赖 B10 已完成（声明式画像 + `--manifest` + 验证脚本可复用）；先 facts.md + 声明式画像，
     行为 WASM 只做 Tier0 状态机骨架。

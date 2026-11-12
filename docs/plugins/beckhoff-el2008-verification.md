@@ -73,6 +73,15 @@ IgH `ethercat slaves`（扫描/拓扑）：
 0  0:0  PREOP  +  0x00000ec5:0x0000e5d2
 ```
 
+IgH **OP**（outputs-only ecrt 夹具，源码在验证机本地、不入库；脚本
+`scripts/spikes/igh-el2008-op-probe.sh`）：
+
+```
+0  0:0  OP  +  0x00000ec5:0x0000e5d2
+RESULT al_states=0x08 slaves_responding=1 wc=1 out=00
+OK: 未修改 IgH 经 outputs-only ecrt 应用把 EL2008 兼容 8DO 画像推入 OP
+```
+
 脚本最终输出：
 
 ```
@@ -93,11 +102,12 @@ SM2 PDO 0x1600..0x1607 / OP WKC=2 / SDO Info 含 0x7000..0x7070；IgH：拓扑�
    ⚠️ 待核实：ESC Sec.II / ETG.1000.4 是否允许 FMMU 物理映射寄存器空间（0x080D），
    以及真实从站在该场景下的 WKC；核实后再决定是否实现寄存器空间 FMMU（并复核内置画像
    的 expected WKC 是否随之变化）。
-2. **IgH 侧只验证扫描（PREOP/拓扑/身份）**，未验证 OP：现有 ecrt 夹具按 1O+1I 配置，
-   outputs-only 的 EL2008 画像需要单独的 ecrt 夹具（后续 B8 扩展）。
-3. SOEM `slaveinfo -sdo` 偶发段错误属 SOEM 工具夹具自身缺陷（UINT8 子索引 0 用 2 字节
-   读取，高位未初始化），脚本用最多 3 次重试规避；与本插件无关。
-4. 电气特性（0.5 A 驱动、短路保护、开关时间）与 DC 均未模拟；见 `README.md` 的
+2. **SOEM `slaveinfo -sdo` 工具缺陷**：它对非 VAR 对象的 subindex 0 用 2 字节缓冲区读取
+   （`slaveinfo.c` 把 UINT8 响应的 1 字节拷进 `uint16`，高字节未初始化），对含多个数组
+   对象的字典会间歇或必然段错误；脚本对 -sdo 做 best-effort（最多 3 次），失败时打印
+   说明并继续（SDO 路径已由 `slaveinfo -map` 的 CoE 读取覆盖：0x1C00/0x1C12/0x1600）。
+   本画像已为数组对象补齐子索引 0（UINT8 条目数，CiA 301），以匹配真实设备的字典形状。
+3. 电气特性（0.5 A 驱动、短路保护、开关时间）与 DC 均未模拟；见 `README.md` 的
    「已模拟/未模拟」清单。
 
 ## 结论

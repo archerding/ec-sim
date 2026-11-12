@@ -6,6 +6,50 @@
 
 ---
 
+## 2026-11-12 21:41 班（低峰）— B10 缺口补齐：数组对象子索引 0 + IgH outputs-only **OP** 验证
+
+**做了什么**
+- `plugin-host::dict_gen`：manifest 用户对象 `sub > 0` 时按 **ARRAY** 处理，并自动补
+  **子索引 0 = UINT8 条目数**（CiA 301）——修掉 IgH 读字典时对 `0x7xxx:00` 的
+  SDO Abort 噪声，并让 SOEM 的 `maxsub` 显示与真实设备一致（新增单测）。
+- 新增验证脚本 `scripts/spikes/igh-el2008-op-probe.sh` + 验证机本地 **outputs-only**
+  ecrt 夹具（`ecrt-el2008-op.c`：8 个 1-bit 输出对象、只配 SM2；源码/构建命令在脚本头，
+  **不入库**，与既有 1O+1I 夹具同一方式）——把 EL2008 画像推入 IgH **OP**。
+- `scripts/spikes/{beckhoff-el2008,manifest-slave,soem-process-data}.sh`：给 `grep | head`
+  显示管线补 `|| true`，避免 `pipefail` 下 head 提前退出导致 SIGPIPE(141) 把成功误判为失败；
+  EL2008 probe 的 SOEM `-sdo` 改为 **best-effort**（工具缺陷说明保留）。
+- 更新 `docs/plugins/beckhoff-el2008-verification.md`：补 IgH OP 证据、数组子索引 0 说明、
+  SOEM `-sdo` 工具缺陷说明。
+
+**验证结果**
+- 本机 Windows：`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets
+  -- -D warnings` exit 0；`cargo test --workspace` **143 passed**
+  （esc-core 75 / esc-node 37 / plugin-host 15 / wire 16）。
+- Linux 验证机：
+  - `bash scripts/spikes/beckhoff-el2008-probe.sh` → **EXIT=0**：SOEM 身份
+    `00000ec5:0000e5d2`、`Output 8bits/Input 0bits`、`-map` 8 个 BOOLEAN 输出映射、
+    `simple_ng` 进 OP（`mapped 1O+0I`，WKC 2 的差异仍见卡点）、该次 `-sdo` best-effort
+    读到 `0x7000 "Output 1" [ARRAY maxsub(0x01 / 1)]` 等；IgH 扫描 PREOP + 身份。
+  - `bash scripts/spikes/igh-el2008-op-probe.sh` → **EXIT=0**：
+    `ethercat slaves` 显示 `0  0:0  OP  +  0x00000ec5:0x0000e5d2`，
+    `RESULT al_states=0x08 slaves_responding=1 wc=1`。
+- 说明：本班未改默认画像路径；上一班默认/strict 双主站回归 6/6 仍有效。
+
+**卡点**
+- SOEM `simple_ng` 的 expected WKC 比实际多 1（SOEM 把 SM1 状态寄存器映射为 FMMU 且对无
+  输入从站 `inputsWKC++`）；**ESC 是否允许 FMMU 物理映射寄存器空间仍待核实**（不猜）。
+- SOEM `slaveinfo -sdo` 工具缺陷（UINT8 子索引 0 用 2 字节读、高位未初始化）→ 对含多个
+  数组对象的字典会段错误；已降级为 best-effort，SDO 路径由 `slaveinfo -map` 覆盖。
+- IgH `ethercat sdos` 在"无应用上下文"时仍无输出（已知工具行为），IgH 侧字典显示 ⚠️ 待验证。
+
+**下次开工第一件事**
+- 核实 **ESC FMMU 是否可物理映射寄存器空间**（ESC Sec.II / ETG.1000.4）；若允许，实现
+  寄存器空间 FMMU 读并让 no-input 从站的 expected WKC 一致（同时回归内置画像）。
+  之后进入 **B11 CiA402 行为插件**（Inovance SV660N 兼容画像）：先 facts.md + 声明式画像
+  + 双主站扫描，行为 WASM 只做 Tier0 状态机骨架。
+
+---
+
 ## 2026-11-12 21:33 班（低峰）— B10 完成：首个 P0 设备插件「Beckhoff EL2008 兼容 8DO（SIMULATED）」
 
 **做了什么**
