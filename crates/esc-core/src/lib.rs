@@ -528,6 +528,25 @@ mod tests {
     }
 
     #[test]
+    fn register_access_never_panics_on_any_address() {
+        // 任意地址/长度的读写不得 panic（越界应返回 None/false）。
+        let mut regs = Registers::default();
+        let mut state = 0x0BAD_F00Du32;
+        for _ in 0..5000 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let address = (state >> 8) as u16;
+            let value = state as u8;
+            let _ = regs.read_u8(address);
+            let _ = regs.read_u16(address);
+            let _ = regs.read_u32(address);
+            let _ = regs.write_u8(address, value);
+            let _ = regs.write_u16(address, state as u16);
+            let _ = regs.set_internal(address, &[value, value.wrapping_add(1)]);
+            let _ = Registers::access(address);
+        }
+    }
+
+    #[test]
     fn al_control_parsing() {
         let c = AlControl::from_byte(0x12); // 0x02 + ACK
         assert_eq!(c.state_bits, 0x02);

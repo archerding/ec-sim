@@ -799,6 +799,29 @@ mod tests {
     }
 
     #[test]
+    fn parsers_never_panic_on_arbitrary_bytes() {
+        // 邮箱服务数据来自网络：任意字节输入到各解析入口都不得 panic。
+        let mut state = 0xC0FF_EE11u32;
+        for len in 0..48usize {
+            for _ in 0..48 {
+                let mut service = vec![0u8; len];
+                for byte in &mut service {
+                    state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    *byte = (state >> 24) as u8;
+                }
+                let _ = parse_sdo_request(&service);
+                let _ = parse_initiate_download(&service);
+                let _ = parse_segment_download(&service);
+                let _ = parse_upload_segment_request(&service);
+                let _ = parse_complete_access_upload(&service);
+                let _ = parse_complete_access_download_initiate(&service);
+                let _ = parse_sdo_info_request(&service);
+                let _ = MailboxHeader::parse(&service);
+            }
+        }
+    }
+
+    #[test]
     fn sdo_abort_payload_encodes_index_and_code() {
         let response = sdo_abort_payload(0x2000, 0x00, SDO_ABORT_OBJECT_NOT_EXIST);
         assert_eq!(&response[..2], &[0x00, 0x30]);

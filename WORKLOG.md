@@ -32,6 +32,32 @@
 
 ---
 
+## 2026-11-13 01:29 班（低峰）— 健壮性：**解析/寄存器访问模糊测试**（防 panic）
+
+**做了什么**
+- `wire`：新增 `parser_never_panics_on_arbitrary_bytes`——确定性伪随机字节序列（长度
+  0–95，每种长度 32 例）输入 `Frame::parse` / `Frame::parse_ethernet`，断言不 panic。
+- `esc-core::mailbox`：新增 `parsers_never_panic_on_arbitrary_bytes`——随机服务数据输入
+  SDO/分段/CA/SDO Info 各解析入口与 `MailboxHeader::parse`，断言不 panic。
+- `esc-core::Registers`：新增 `register_access_never_panics_on_any_address`——5000 组随机
+  地址/长度调用读写与 `access()`，越界只允许返回 None/false，不得 panic。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **190 passed**（esc-core 82 / esc-node 59 / plugin-host 25 + 1 集成 / **wire 23**）。
+- 全部模糊测试一次通过（未发现 panic），说明现有解析入口的边界检查充分。
+
+**卡点**
+- 这是"不 panic"级健壮性验证，不是完整 fuzz（无覆盖率引导、无 libFuzzer/AFL 集成）；
+  模糊测试未覆盖语义正确性/状态机（仅各入口单次调用）。
+- 随机源为确定性 LCG，样本规模有限（约万级），未做长时间 fuzz 运行。
+
+**下次开工第一件事**
+- 继续 B11 SV660N 手册核对（HTML 在线文档）或 B6 FMMU/DC 类别；如需更强健壮性可引入
+  独立 fuzz 工具（本地/CI 非核心依赖）。
+
+---
+
 ## 2026-11-13 01:26 班（低峰）— B7 验证：**分段上传重发容错端到端**（合成主站）
 
 **做了什么**

@@ -815,6 +815,23 @@ mod tests {
     }
 
     #[test]
+    fn parser_never_panics_on_arbitrary_bytes() {
+        // 确定性伪随机输入：解析任意字节序列（长度 0..96）不得 panic（可返回任意错误）。
+        let mut state = 0x1234_5678u32;
+        for len in 0..96usize {
+            for _ in 0..32 {
+                let mut payload = vec![0u8; len];
+                for byte in &mut payload {
+                    state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    *byte = (state >> 24) as u8;
+                }
+                let _ = Frame::parse(&payload);
+                let _ = Frame::parse_ethernet(&payload);
+            }
+        }
+    }
+
+    #[test]
     fn frame_too_long_is_rejected() {
         // 两条各 2047 字节的 datagram 会超过 11 bit 帧长度上限。
         let a =

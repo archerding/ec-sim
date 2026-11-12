@@ -101,6 +101,8 @@ user.email = deepseek-harness@users.noreply.github.com
   `scripts/spikes/uds-loopback.sh`/`uds_master_probe.py`（合成主站）。
   限制：单从站/单客户端、无 DC/watchdog；shim 只在验证机本地，脚本缺二进制时 exit 2。
 - [x] ~~**B4 `wire` crate**~~ ✅ **2026-11-12 完成**：帧/datagram 编解码、M 位串联、13 命令 WKC 规则、自增/配置/广播/逻辑寻址、FMMU 区间判定；16 个单元测试；fmt/clippy(-D warnings) 通过。证据：commit `9d32597`。
+  - 进度（2026-11-13 01:29 班）：**解析健壮性模糊测试**——`Frame::parse`/`parse_ethernet`、
+    mailbox 各 SDO 解析入口、`Registers` 随机地址读写各加"任意输入不得 panic"测试；测试 **190 passed**。
   - 进度（2026-11-13 00:56 班）：**补 6 个边界单测**——13 命令的 WKC 规则（读/写/读写）、
     自增 ADP 前进与 u16 回绕、More 位后无后续 datagram 拒绝、非法帧类型（frame_type=2）
     拒绝、frame_type=1 才是 EtherCAT command、命令码 0x00–0x0E 往返 + 未知码拒绝；测试 **22 个**。
