@@ -6,6 +6,49 @@
 
 ---
 
+## 2026-11-12 19:49 班（低峰）— B7 子项 3：SDO Download（写配置对象）→ 未修改 IgH 可写对象字典
+
+**做了什么**
+- `esc-core/mailbox`：新增 SDO 请求**解析**与响应构造：
+  - `parse_sdo_request()`：`0x40` = initiate upload；`0x2F/0x2B/0x27/0x23` = expedited download
+    （1/2/3/4 字节）；其他（含 master 发起的 Abort、分段传输）= `Other`（不应答）；
+  - `sdo_upload_service()`、`sdo_download_ok_service()`（命令 `0x60`）、`sdo_abort_payload()`；
+  - 新增 Abort 码 `0x06010002`（写只读对象）；移除只回 Abort 的旧 `sdo_response()`。
+- `esc-core/obj_dict`：新增 `is_writable()`——只开放主站配置 PDO 域会写的对象：
+  `0x1C12/0x1C13`（PDO assign）、`0x1600/0x1A00`（PDO 映射）、`0x1C32/0x1C33`（SM 同步参数）。
+- `esc-node`：`Responder` 增加 `object_writes: BTreeMap<(index, sub), Vec<u8>>`（Download 覆盖值），
+  Upload 优先返回覆盖值；Download 对可写对象保存值并回成功响应，只读对象回 Abort
+  `0x06010002`，未知对象回 `0x06020000`。
+- 扩展 `scripts/spikes/sdo-upload-probe.sh`：加入 IgH `ethercat download` 断言
+  （写 `0x1C13:01 = 0x1A01` 可回读；只读/未知对象被拒绝）。
+- 测试 +2（`mailbox` 解析/响应测试重写、`esc-node` 下载集成 2 条），共 **100 passed**。
+
+**验证结果**
+- 本机 Windows（rustc 1.97.1）：fmt/clippy(-D warnings) exit 0；`cargo test --workspace`
+  **100 passed**（esc-core 56 / esc-node 28 / wire 16）。
+- Linux 验证机（两家**未修改**主站，零补丁）：
+  - IgH：`ethercat download -p 0 -t uint16 0x1c13 0x01 0x1a01` 成功（rc 0），随后
+    `ethercat upload` 回读 **`0x1a01`**；对只读 `0x1018:01` 与未知 `0x2000:00` 下载均返回
+    `Failed to download SDO: Input/output error`（Abort 生效）。
+  - `sdo-upload-probe.sh` 全套通过（SOEM CoE 映射 + IgH upload + IgH download）。
+  - 回归：过程数据仍 **OP / 1055 轮 WKC 3**；`soem-mailbox-probe.sh` 通过；
+    `minimal-esc-responder.sh` 双主站扫描 OK（IgH 仍 PREOP）。
+- IgH 配置 PDO 域所需的 SDO Download 路径已具备；下一步用 ecrt 应用夹具验证 IgH 进 OP。
+
+**卡点**
+- SDO Info（`0x8`）、Complete Access、分段传输仍未实现：`ethercat sdos` / `slaveinfo -sdo` 会超时。
+- Download 覆盖值只保存在模拟器进程内，不回写 SII/静态字典；重启恢复默认映射。
+- ⚠️ 待验证：ecrt 应用写好映射后，IgH 的 domain 配置是否全部通过（`0x1C32/0x1C33`、
+  `0x1C12:00` 等写入）以及 OP 状态。
+
+**下次开工第一件事**
+- **B8 IgH 应用夹具**：写一个最小 ecrt 应用（独立进程夹具，不入库）在 TAP 上：
+  `ecrt_request_master` → `ec_slave_config_pdos`（按本字典 `0x1C12/0x1A00` 映射）→ domain →
+  周期 process data，观察 `ethercat slaves` 显示 **OP**、WKC 3/周期；并补
+  `scripts/spikes/igh-op-probe.sh`。
+
+---
+
 ## 2026-11-12 19:44 班（低峰）— B7 子项 2：最小对象字典 + SDO expedited upload（两家未修改主站都读到对象）
 
 **做了什么**

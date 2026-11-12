@@ -65,6 +65,109 @@ pub const SDO_ABORT_OBJECT_NOT_EXIST: u32 = 0x0602_0000;
 /// SDO Abort 码：不支持的访问（本实现只读，因此 Download 等请求回该码）。
 pub const SDO_ABORT_UNSUPPORTED_ACCESS: u32 = 0x0601_0000;
 
+/// SDO Abort 码：尝试写只读对象（CiA 301）。
+pub const SDO_ABORT_READ_ONLY: u32 = 0x0601_0002;
+
+/// SDO 命令字节：expedited download（1 字节数据）。
+const SDO_COMMAND_DOWNLOAD_1: u8 = 0x2F;
+/// SDO 命令字节：expedited download（2 字节数据）。
+const SDO_COMMAND_DOWNLOAD_2: u8 = 0x2B;
+/// SDO 命令字节：expedited download（3 字节数据）。
+const SDO_COMMAND_DOWNLOAD_3: u8 = 0x27;
+/// SDO 命令字节：expedited download（4 字节数据）。
+const SDO_COMMAND_DOWNLOAD_4: u8 = 0x23;
+/// SDO 命令字节：download initiate response（成功）。
+pub const SDO_COMMAND_DOWNLOAD_RESPONSE: u8 = 0x60;
+
+/// 解析后的 CoE SDO 请求（[`parse_sdo_request`] 的返回值）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SdoRequest<'a> {
+    /// initiate upload（读对象）。
+    Upload {
+        /// 对象索引。
+        index: u16,
+        /// 子索引。
+        subindex: u8,
+    },
+    /// expedited download（写对象，1..=4 字节）。
+    Download {
+        /// 对象索引。
+        index: u16,
+        /// 子索引。
+        subindex: u8,
+        /// 写入的数据（小端原样）。
+        data: &'a [u8],
+    },
+    /// 其他 CoE SDO 命令（如 master 发起的 Abort、分段传输）——不应答。
+    Other,
+}
+
+/// 解析 CoE SDO 请求服务数据；非 CoE SDO 请求返回 [`None`]（SDO Info 等暂不实现）。
+#[must_use]
+pub fn parse_sdo_request(service: &[u8]) -> Option<SdoRequest<'_>> {
+    // CoE 头 2 字节 + SDO 命令/索引/子索引 4 字节。
+    if service.len() < 6 {
+        return None;
+    }
+    let coe = u16::from_le_bytes([service[0], service[1]]);
+    if coe >> 12 != COE_COMMAND_SDO_REQUEST {
+        return None;
+    }
+    let command = service[2];
+    // SDO 请求布局：CoE 头(2) + Command(1) + Index(2) + SubIndex(1) + data…
+    let index = u16::from_le_bytes([service[3], service[4]]);
+    let subindex = service[5];
+    if command == SDO_COMMAND_INITIATE_UPLOAD_REQUEST {
+        return Some(SdoRequest::Upload { index, subindex });
+    }
+    let size = match command {
+        SDO_COMMAND_DOWNLOAD_1 => 1,
+        SDO_COMMAND_DOWNLOAD_2 => 2,
+        SDO_COMMAND_DOWNLOAD_3 => 3,
+        SDO_COMMAND_DOWNLOAD_4 => 4,
+        _ => return Some(SdoRequest::Other),
+    };
+    if service.len() < 6 + size {
+        return Some(SdoRequest::Other);
+    }
+    Some(SdoRequest::Download {
+        index,
+        subindex,
+        data: &service[6..6 + size],
+    })
+}
+
+/// 构造 SDO **expedited upload 响应**服务数据（CoE 头 + 命令 + 索引/子索引 + 4 字节值）。
+#[must_use]
+pub fn sdo_upload_service(index: u16, subindex: u8, value: &[u8]) -> Vec<u8> {
+    let size = value.len().min(4);
+    // CiA 301 expedited upload: 0x40 | exp(0x02) | (4-size)<<2 | size_indicated(0x01)。
+    let command = 0x40u8 | 0x02 | (((4 - size) as u8) << 2) | 0x01;
+    let mut service = Vec::with_capacity(10);
+    service.extend_from_slice(&(COE_COMMAND_SDO_RESPONSE << 12).to_le_bytes());
+    service.push(command);
+    service.extend_from_slice(&index.to_le_bytes());
+    service.push(subindex);
+    let mut padded = [0u8; 4];
+    padded[..size].copy_from_slice(&value[..size]);
+    service.extend_from_slice(&padded);
+    service
+}
+
+/// 构造 SDO **download 成功响应**服务数据（命令 0x60 + 索引/子索引，共 6 字节）。
+///
+/// 两家主站都只校验 CoE 响应类型、命令高 3 位（0x60 >> 5 = 3）与索引/子索引：
+/// IgH `master/fsm_coe.c: ec_fsm_coe_down_response()`、SOEM `src/ec_coe.c: ecx_SDOwrite()`。
+#[must_use]
+pub fn sdo_download_ok_service(index: u16, subindex: u8) -> Vec<u8> {
+    let mut service = Vec::with_capacity(6);
+    service.extend_from_slice(&(COE_COMMAND_SDO_RESPONSE << 12).to_le_bytes());
+    service.push(SDO_COMMAND_DOWNLOAD_RESPONSE);
+    service.extend_from_slice(&index.to_le_bytes());
+    service.push(subindex);
+    service
+}
+
 /// 邮箱头（6 字节）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MailboxHeader {
@@ -124,56 +227,6 @@ pub fn sdo_abort_payload(index: u16, subindex: u8, abort_code: u32) -> Vec<u8> {
     service.push(subindex);
     service.extend_from_slice(&abort_code.to_le_bytes());
     service
-}
-
-/// 对 CoE SDO 请求构造响应服务数据（expedited upload 或 Abort）。
-///
-/// - `0x40`（initiate upload）且对象在 [`crate::obj_dict`] 中 → SDO upload response
-///   （命令 0x43/0x47/0x4B/0x4F 视数据长度，值 4 字节补齐）；
-/// - `0x40` 但对象不存在 → Abort `0x06020000`；
-/// - 其他 SDO 命令（Download / Abort 等）→ Abort `0x06010000`（本实现只读）；
-/// - 非 CoE SDO 请求（如 SDO Info `0x8`）→ [`None`]（暂不应答）。
-#[must_use]
-pub fn sdo_response(service: &[u8]) -> Option<Vec<u8>> {
-    // CoE 头 2 字节 + SDO 命令/索引/子索引 4 字节。
-    if service.len() < 6 {
-        return None;
-    }
-    let coe = u16::from_le_bytes([service[0], service[1]]);
-    if coe >> 12 != COE_COMMAND_SDO_REQUEST {
-        return None;
-    }
-    let sdo_command = service[2];
-    // SDO 请求布局：CoE 头(2) + Command(1) + Index(2) + SubIndex(1) + data…
-    let index = u16::from_le_bytes([service[3], service[4]]);
-    let subindex = service[5];
-    if sdo_command != SDO_COMMAND_INITIATE_UPLOAD_REQUEST {
-        return Some(sdo_abort_payload(
-            index,
-            subindex,
-            SDO_ABORT_UNSUPPORTED_ACCESS,
-        ));
-    }
-    match crate::obj_dict::read_object(index, subindex) {
-        Some(entry) => match entry.sdo_upload_payload() {
-            Some((_, sdo_payload)) => {
-                let mut response = Vec::with_capacity(10);
-                response.extend_from_slice(&(COE_COMMAND_SDO_RESPONSE << 12).to_le_bytes());
-                response.extend_from_slice(&sdo_payload);
-                Some(response)
-            }
-            None => Some(sdo_abort_payload(
-                index,
-                subindex,
-                SDO_ABORT_OBJECT_NOT_EXIST,
-            )),
-        },
-        None => Some(sdo_abort_payload(
-            index,
-            subindex,
-            SDO_ABORT_OBJECT_NOT_EXIST,
-        )),
-    }
 }
 
 /// 把服务数据封装成完整邮箱报文（头 + 数据）；超过 [`MAILBOX_SIZE`] 返回 [`None`]。
@@ -245,14 +298,22 @@ mod tests {
     }
 
     #[test]
-    fn sdo_upload_response_for_known_object() {
+    fn parse_sdo_upload_request_and_build_response() {
         // SOEM `ecx_SDOread()` 读 0x1C12:01（RxPDO assign，2 字节）：
         // 邮箱头 10、CoE `0x2 << 12`、Command 0x40、Index 0x1C12、SubIndex 01。
         let mut service = vec![0x00, 0x20, 0x40]; // CoE 0x2000 + initiate upload request
         service.extend_from_slice(&0x1C12u16.to_le_bytes());
         service.push(0x01);
         service.extend_from_slice(&[0u8; 4]);
-        let response = sdo_response(&service).expect("SDO request is answerable");
+        assert_eq!(
+            parse_sdo_request(&service),
+            Some(SdoRequest::Upload {
+                index: 0x1C12,
+                subindex: 0x01
+            })
+        );
+
+        let response = sdo_upload_service(0x1C12, 0x01, &[0x00, 0x16]);
         // CoE 响应命令 0x3 << 12 = 0x3000（小端 [0x00, 0x30]）。
         assert_eq!(&response[..2], &[0x00, 0x30]);
         // expedited upload，2 字节 → 命令 0x4B。
@@ -265,12 +326,46 @@ mod tests {
     }
 
     #[test]
-    fn sdo_abort_for_unknown_object() {
-        let mut service = vec![0x00, 0x20, 0x40];
-        service.extend_from_slice(&0x2000u16.to_le_bytes());
-        service.push(0x00);
-        service.extend_from_slice(&[0u8; 4]);
-        let response = sdo_response(&service).expect("answerable");
+    fn parse_sdo_download_request_and_build_ok_response() {
+        // SOEM `ecx_SDOwrite()` 写 0x1C12:01：命令 0x2B（expedited，2 字节）。
+        let mut service = vec![0x00, 0x20, 0x2B];
+        service.extend_from_slice(&0x1C12u16.to_le_bytes());
+        service.push(0x01);
+        service.extend_from_slice(&[0x00, 0x16]);
+        assert_eq!(
+            parse_sdo_request(&service),
+            Some(SdoRequest::Download {
+                index: 0x1C12,
+                subindex: 0x01,
+                data: &[0x00, 0x16]
+            })
+        );
+
+        // 1/3/4 字节命令宽度。
+        for (command, size) in [(0x2F, 1), (0x27, 3), (0x23, 4)] {
+            let mut service = vec![0x00, 0x20, command];
+            service.extend_from_slice(&0x1600u16.to_le_bytes());
+            service.push(0x01);
+            service.extend_from_slice(&[0xAA; 4]);
+            match parse_sdo_request(&service) {
+                Some(SdoRequest::Download { data, .. }) => assert_eq!(data.len(), size),
+                other => panic!("expected download, got {other:?}"),
+            }
+        }
+
+        // 成功响应：6 字节，命令 0x60 + 索引/子索引。
+        let response = sdo_download_ok_service(0x1C12, 0x01);
+        assert_eq!(&response[..2], &[0x00, 0x30]);
+        assert_eq!(response[2], SDO_COMMAND_DOWNLOAD_RESPONSE);
+        assert_eq!(u16::from_le_bytes([response[3], response[4]]), 0x1C12);
+        assert_eq!(response[5], 0x01);
+        assert_eq!(response.len(), 6);
+    }
+
+    #[test]
+    fn sdo_abort_payload_encodes_index_and_code() {
+        let response = sdo_abort_payload(0x2000, 0x00, SDO_ABORT_OBJECT_NOT_EXIST);
+        assert_eq!(&response[..2], &[0x00, 0x30]);
         assert_eq!(response[2], SDO_COMMAND_ABORT);
         assert_eq!(u16::from_le_bytes([response[3], response[4]]), 0x2000);
         assert_eq!(
@@ -280,27 +375,15 @@ mod tests {
     }
 
     #[test]
-    fn sdo_download_request_gets_read_only_abort() {
-        // Download initiate request（SDO 命令 0x20）：本实现只读 → Abort 0x06010000。
-        let mut service = vec![0x00, 0x20, 0x20];
-        service.extend_from_slice(&0x1C12u16.to_le_bytes());
-        service.push(0x01);
-        service.extend_from_slice(&[0u8; 4]);
-        let response = sdo_response(&service).expect("answerable");
-        assert_eq!(response[2], SDO_COMMAND_ABORT);
-        assert_eq!(
-            u32::from_le_bytes([response[6], response[7], response[8], response[9]]),
-            SDO_ABORT_UNSUPPORTED_ACCESS
-        );
-    }
-
-    #[test]
-    fn non_sdo_requests_are_not_answered() {
-        // SDO Info（CoE 命令 0x8）暂不实现 → 不应答，主站超时后回退 SII。
+    fn non_sdo_requests_are_not_parsed() {
+        // SDO Info（CoE 命令 0x8）暂不实现 → None（不应答）。
         let sdo_info = [0x00, 0x80, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00];
-        assert_eq!(sdo_response(&sdo_info), None);
+        assert_eq!(parse_sdo_request(&sdo_info), None);
         // 过短服务数据。
-        assert_eq!(sdo_response(&[0x00, 0x20, 0x40]), None);
+        assert_eq!(parse_sdo_request(&[0x00, 0x20, 0x40]), None);
+        // master 发起的 Abort（SDO 命令 0x80）→ Other（不应答）。
+        let master_abort = [0x00, 0x20, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00];
+        assert_eq!(parse_sdo_request(&master_abort), Some(SdoRequest::Other));
     }
 
     #[test]

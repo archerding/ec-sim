@@ -141,11 +141,13 @@ PDO mapping according to CoE :
 ```
 
 - 复现脚本：[sdo-upload-probe.sh](../../scripts/spikes/sdo-upload-probe.sh)
-  （SOEM CoE 映射 + IgH `ethercat upload` 三对象断言）。
+  （SOEM CoE 映射 + IgH `ethercat upload`/`download` 断言）。
+- **SDO Download（19:49 班）**：可写配置对象（0x1C12/0x1C13/0x1600/0x1A00/0x1C32/0x1C33）
+  接受写入并回成功响应（命令 0x60），写入值可被 Upload 回读；只读对象回 Abort `0x06010002`。
+  未修改 IgH：`ethercat download -p 0 -t uint16 0x1c13 0x01 0x1a01` 成功，随后
+  `ethercat upload` 回读 `0x1a01`；写 0x1018:01 / 0x2000:00 返回 `Input/output error`（Abort）。
 - IgH 仍显示 PREOP：`ethercat slaves` 不包含应用程序，IgH 需要 ecrt 应用配置 domain
-  才会把从站推进 OP（B8 的应用夹具）。
-- 仍在 `slaveinfo` 旧的 Abort 路径上：字典外对象（如 0x1C33 等）回 Abort `0x06020000`；
-  SDO Info（0x8）不应答，`ethercat sdos`/`slaveinfo -sdo` 会超时（⚠️ 后续）。
+  才会把从站推进 OP（B8 的应用夹具；SDO 上传/下载现已具备）。
 
 ## 4. 过程中发现并修正的四个真问题
 
@@ -192,8 +194,9 @@ PDO mapping according to CoE :
   逻辑寻址 + LRW WKC 修正后，未修改 SOEM `simple_ng` 进入 OP 并做 8 位 PDO 交换（§3.1）。
   **IgH 仍停在 PREOP**：19:36 班已通邮箱、19:44 班已能经 CoE 读对象字典（§3.2/§3.3），
   但 IgH 需要 ecrt 应用配置 domain 才会推从站进 OP（B8 下一步）。
-- **SDO 只读且不完整**：只支持 expedited upload（≤4 字节对象）；SDO Info、Complete Access、
-  分段传输与 Download 未实现；字典外对象回 Abort。
+- **SDO 仍不完整**：Upload 支持 expedited（≤4 字节）；Download 只对配置对象
+  （PDO assign/映射、0x1C32/0x1C33）开放且值只存进程内；SDO Info、Complete Access、
+  分段传输未实现，`ethercat sdos`/`slaveinfo -sdo` 会超时。
 - **输入/输出数据是静态的**：模拟器没有 PDI/应用层，输入恒 0；SM2/SM3 的 buffered/SM 握手语义、
   邮箱、watchdog 均未实现。
 - **SII 暂无 FMMU 类别 0x0028 与 DC 类别**：SOEM `FMMUfunc` 仍显示 `0:0`；
@@ -205,7 +208,8 @@ PDO mapping according to CoE :
 
 - **B8 IgH 应用夹具**：用 IgH 自带示例或最小 ecrt 应用（独立进程夹具，不入库）在 TAP 上
   发起 domain（按本字典 0x1C12/0x1A00 映射），观察 IgH 把从站推进 **OP** 并得到 WKC 3/周期；
-  邮箱与 SDO 上传已通（§3.2/§3.3，断言脚本 `soem-mailbox-probe.sh`、`sdo-upload-probe.sh`）；
+  邮箱、SDO 上传与配置对象下载均已通（§3.2/§3.3，断言脚本 `soem-mailbox-probe.sh`、
+  `sdo-upload-probe.sh`）；
 - 之后可补 SDO Info（0x8）与对象字典扩展（0x1C32/0x1C33 等），以及 SII FMMU/DC 类别；
 - **B8 双主站冒烟**：SOEM 已零补丁进 OP（§3.1，断言脚本 `soem-process-data.sh`）；待 IgH 进 OP 后
   把两主站证据合并为最终冒烟记录；

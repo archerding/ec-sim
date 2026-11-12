@@ -12,8 +12,9 @@
 //! - IgH `master/fsm_coe.c` 的 SDO 上传路径与 `ethercat upload` 工具都使用标准
 //!   expedited upload 编码（见 [`crate::mailbox`]）。
 //!
-//! ⚠️ 未实现：SDO Download（写对象）、SDO Info 服务、Complete Access、分段（segmented）传输、
-//! 以及 PDO 数据对象 `0x6000`/`0x7000` 的动态读写（PDO 走 FMMU 逻辑寻址，不走 SDO）。
+//! ⚠️ 未实现：SDO Info 服务、Complete Access、分段（segmented）传输；
+//! PDO 数据对象 `0x6000`/`0x7000` 的动态读写（PDO 走 FMMU 逻辑寻址，不走 SDO）。
+//! Download 只对 [`is_writable`] 列出的配置对象开放（值保存在模拟器内，不回写 SII）。
 
 /// 对象字典条目：索引 + 子索引 + 小端编码的值（长度 1..=4，适合 expedited upload）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -194,6 +195,16 @@ pub fn read_object(index: u16, subindex: u8) -> Option<ObjectEntry> {
         .iter()
         .find(|entry| entry.index == index && entry.subindex == subindex)
         .copied()
+}
+
+/// 是否允许 SDO **Download**（写对象）。
+///
+/// 只开放主站配置 PDO 域时会写的对象：PDO assign（`0x1C12/0x1C13`）、PDO 映射
+/// （`0x1600/0x1A00`）与 SM 同步参数（`0x1C32/0x1C33`）。其余对象只读：主站写时
+/// 回 Abort `0x06010002`。写入值由模拟器保存，供后续 Upload 读回（不回写 SII 类别）。
+#[must_use]
+pub fn is_writable(index: u16) -> bool {
+    matches!(index, 0x1C12 | 0x1C13 | 0x1600 | 0x1A00 | 0x1C32 | 0x1C33)
 }
 
 #[cfg(test)]

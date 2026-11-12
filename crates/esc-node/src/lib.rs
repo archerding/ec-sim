@@ -21,10 +21,13 @@
 //!
 //! 命中后按命令的读/写属性回填数据并累加 WKC；未命中的 datagram 原样保留（WKC 不变）。
 
+use std::collections::BTreeMap;
+
 use esc_core::eeprom::EepromInterface;
 use esc_core::fmmu::{Fmmu, FMMU_MAX};
-use esc_core::mailbox::{self, MailboxHeader};
+use esc_core::mailbox::{self, MailboxHeader, SdoRequest};
 use esc_core::memory::DlUserMemory;
+use esc_core::obj_dict;
 use esc_core::sii::SiiImage;
 use esc_core::{reg, AlControl, EscAl, Registers};
 use wire::{
@@ -111,6 +114,8 @@ pub struct Responder {
     al: EscAl,
     eeprom: EepromInterface,
     memory: DlUserMemory,
+    /// SDO Download 写入的配置对象覆盖值（键 = (index, subindex)），Upload 时优先返回。
+    object_writes: BTreeMap<(u16, u8), Vec<u8>>,
     stats: Stats,
 }
 
@@ -134,6 +139,7 @@ impl Responder {
             al,
             eeprom: EepromInterface::new(sii),
             memory: DlUserMemory::new(),
+            object_writes: BTreeMap::new(),
             stats: Stats::default(),
         }
     }
@@ -380,9 +386,10 @@ impl Responder {
 
     /// 处理主站写入 SM0 缓冲的一条邮箱报文（[`esc_core::mailbox`]）。
     ///
-    /// **CoE SDO**：`initiate upload` 请求从 [`esc_core::obj_dict`] 查表回 expedited upload
-    /// 响应；对象不存在回 Abort（0x06020000）；写请求回 Abort（0x06010000，只读）。
-    /// SDO Info 与分段传输留到 B7 后续。
+    /// **CoE SDO**：initiate upload 从对象字典（含 Download 覆盖值）回 expedited upload；
+    /// initiate download 只接受 [`esc_core::obj_dict::is_writable`] 列出的配置对象
+    /// （PDO assign/映射、SM 同步参数），保存后回成功响应；其余下载回 Abort
+    /// （只读 0x06010002 / 对象不存在 0x06020000）。SDO Info 与分段传输留到后续。
     fn handle_mailbox_request(&mut self, message: &[u8]) {
         let Some(header) = MailboxHeader::parse(message) else {
             return;
@@ -395,8 +402,36 @@ impl Responder {
         let service_len = usize::from(header.length).min(available);
         let service =
             &message[mailbox::MAILBOX_HEADER_LEN..mailbox::MAILBOX_HEADER_LEN + service_len];
-        let Some(response_service) = mailbox::sdo_response(service) else {
-            return;
+        let response_service = match mailbox::parse_sdo_request(service) {
+            Some(SdoRequest::Upload { index, subindex }) => {
+                match self.object_value(index, subindex) {
+                    Some(value) => mailbox::sdo_upload_service(index, subindex, value),
+                    None => mailbox::sdo_abort_payload(
+                        index,
+                        subindex,
+                        mailbox::SDO_ABORT_OBJECT_NOT_EXIST,
+                    ),
+                }
+            }
+            Some(SdoRequest::Download {
+                index,
+                subindex,
+                data,
+            }) => {
+                if obj_dict::is_writable(index) {
+                    self.object_writes.insert((index, subindex), data.to_vec());
+                    mailbox::sdo_download_ok_service(index, subindex)
+                } else {
+                    let abort_code = if obj_dict::read_object(index, subindex).is_some() {
+                        mailbox::SDO_ABORT_READ_ONLY
+                    } else {
+                        mailbox::SDO_ABORT_OBJECT_NOT_EXIST
+                    };
+                    mailbox::sdo_abort_payload(index, subindex, abort_code)
+                }
+            }
+            // master 发起的 Abort / 分段传输 / SDO Info：暂不应答。
+            Some(SdoRequest::Other) | None => return,
         };
         let response_header = MailboxHeader {
             length: 0,
@@ -411,6 +446,14 @@ impl Responder {
         let _ = self.memory.write(mailbox::MAILBOX_TX_OFFSET, &response);
         mailbox::set_mailbox_full(&mut self.regs);
         self.stats.mailbox_responses = self.stats.mailbox_responses.saturating_add(1);
+    }
+
+    /// 查对象当前值：优先 Download 覆盖值，其次静态对象字典。
+    fn object_value(&self, index: u16, subindex: u8) -> Option<&[u8]> {
+        if let Some(value) = self.object_writes.get(&(index, subindex)) {
+            return Some(value.as_slice());
+        }
+        obj_dict::read_object(index, subindex).map(|entry| entry.value)
     }
 
     fn sync_al_state(&mut self) {
@@ -1265,5 +1308,100 @@ mod tests {
             .expect("reply");
         assert_eq!(responder.stats().mailbox_requests, 0);
         assert_eq!(responder.stats().mailbox_responses, 0);
+    }
+
+    /// 构造主站执行 expedited SDO Download 的 128 字节邮箱报文（CI 配置时 IgH 会写映射对象）。
+    fn mailbox_download_payload(index: u16, subindex: u8, data: &[u8]) -> Vec<u8> {
+        let sdo_command = match data.len() {
+            1 => 0x2F,
+            2 => 0x2B,
+            3 => 0x27,
+            4 => 0x23,
+            other => panic!("expedited download 只支持 1..=4 字节，得到 {other}"),
+        };
+        let service_len = 6 + data.len();
+        let mut payload = vec![0u8; mailbox::MAILBOX_SIZE];
+        payload[0..2].copy_from_slice(&(service_len as u16).to_le_bytes());
+        payload[2..4].copy_from_slice(&0x1001u16.to_le_bytes());
+        payload[5] = mailbox::MAILBOX_TYPE_COE;
+        payload[6..8].copy_from_slice(&(mailbox::COE_COMMAND_SDO_REQUEST << 12).to_le_bytes());
+        payload[8] = sdo_command;
+        payload[9..11].copy_from_slice(&index.to_le_bytes());
+        payload[11] = subindex;
+        payload[12..12 + data.len()].copy_from_slice(data);
+        payload
+    }
+
+    fn write_mailbox(responder: &mut Responder, payload: Vec<u8>) {
+        let write = request(&[DatagramData::auto_increment(
+            Command::Apwr,
+            1,
+            0,
+            mailbox::MAILBOX_RX_OFFSET,
+            payload,
+        )]);
+        responder
+            .handle_frame(&write, DEFAULT_SIM_MAC)
+            .expect("reply");
+    }
+
+    #[test]
+    fn mailbox_sdo_download_accepts_writable_object_and_upload_reads_it_back() {
+        let mut responder = Responder::default();
+        // 下载 0x1C12:01 = 0x1600（2 字节，命令 0x2B）→ 成功响应 0x60。
+        write_mailbox(
+            &mut responder,
+            mailbox_download_payload(0x1C12, 0x01, &[0x00, 0x16]),
+        );
+        let response = read_tx_mailbox(&mut responder);
+        let header = MailboxHeader::parse(&response).expect("mailbox header");
+        assert_eq!(header.length, 6, "download 成功响应 = CoE 2 + 4 字节");
+        assert_eq!(response[8], 0x60, "SDO download initiate response");
+        assert_eq!(u16::from_le_bytes([response[9], response[10]]), 0x1C12);
+        assert_eq!(response[11], 0x01);
+        assert!(!mailbox::mailbox_full(read_sm1_status(&mut responder)));
+
+        // 再上传同一对象：读到刚写入的值。
+        write_mailbox(
+            &mut responder,
+            mailbox_request_payload(
+                mailbox::MAILBOX_TYPE_COE,
+                mailbox::COE_COMMAND_SDO_REQUEST,
+                0x40,
+                0x1C12,
+                0x01,
+            ),
+        );
+        let response = read_tx_mailbox(&mut responder);
+        assert_eq!(response[8], 0x4B, "2 字节 expedited upload");
+        assert_eq!(u16::from_le_bytes([response[12], response[13]]), 0x1600);
+    }
+
+    #[test]
+    fn mailbox_sdo_download_to_read_only_or_unknown_object_aborts() {
+        let mut responder = Responder::default();
+        // 0x1018:01 只读 → Abort 0x06010002。
+        write_mailbox(
+            &mut responder,
+            mailbox_download_payload(0x1018, 0x01, &[0xC5, 0x0E, 0x00, 0x00]),
+        );
+        let response = read_tx_mailbox(&mut responder);
+        assert_eq!(response[8], mailbox::SDO_COMMAND_ABORT);
+        assert_eq!(
+            u32::from_le_bytes([response[12], response[13], response[14], response[15]]),
+            mailbox::SDO_ABORT_READ_ONLY
+        );
+
+        // 0x2000:00 不存在 → Abort 0x06020000。
+        write_mailbox(
+            &mut responder,
+            mailbox_download_payload(0x2000, 0x00, &[0x00, 0x00]),
+        );
+        let response = read_tx_mailbox(&mut responder);
+        assert_eq!(response[8], mailbox::SDO_COMMAND_ABORT);
+        assert_eq!(
+            u32::from_le_bytes([response[12], response[13], response[14], response[15]]),
+            mailbox::SDO_ABORT_OBJECT_NOT_EXIST
+        );
     }
 }

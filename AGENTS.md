@@ -126,8 +126,13 @@ user.email = deepseek-harness@users.noreply.github.com
     证据：`crates/esc-core/src/obj_dict.rs`、`scripts/spikes/sdo-upload-probe.sh`；
     未修改 SOEM `slaveinfo -map` 打印 `0x7000:0x00 0x08 / 0x6000:0x00 0x08`，
     未修改 IgH `ethercat upload` 读到 `0x1C12:01=0x1600`、`0x1600:01=0x70000008`，测试 98 passed。
-  - 待做：SDO Info（0x8，`ethercat sdos`/`slaveinfo -sdo` 需要）、Complete Access、分段传输、
-    Download（本实现只读）；IgH 进 OP 需 B8 的 ecrt 应用夹具。
+  - 进度（2026-11-12 19:49 班）：**SDO Download 已实现（配置对象可写）**——`parse_sdo_request()`
+    支持 expedited download（0x2F/0x2B/0x27/0x23），`is_writable()` 开放 0x1C12/0x1C13/0x1600/
+    0x1A00/0x1C32/0x1C33，写入值保存在 `Responder.object_writes` 并可被 Upload 回读；只读对象回
+    Abort `0x06010002`。证据：扩展后的 `scripts/spikes/sdo-upload-probe.sh`；未修改 IgH
+    `ethercat download 0x1C13:01=0x1a01` 成功后 `upload` 回读 `0x1a01`，只读/未知对象被拒绝；测试 100 passed。
+  - 待做：SDO Info（0x8，`ethercat sdos`/`slaveinfo -sdo` 需要）、Complete Access、分段传输；
+    IgH 进 OP 需 B8 的 ecrt 应用夹具（Download 已具备）。
 - [ ] **B9 声明式插件加载器**：读取 `plugins/<id>/plugin.yaml` → 生成 SII + 对象字典 + 默认 PDO 分配 + SM/FMMU 布局（不依赖行为代码），并在 IgH/SOEM 上扫描到该从站。
 - [ ] **B10 首个 P0 设备插件**：Beckhoff EL2008 兼容 8DO（声明式），完成 `facts.md`（含来源 URL）、manifest、双主站扫描验证记录（`docs/plugins/`）。
 - [ ] **B11 CiA402 行为插件**：以 Inovance SV660N 兼容画像为第一个目标，实现 CSP 状态机（Tier0/内置 profile 起步）。
