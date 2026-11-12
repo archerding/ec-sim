@@ -233,7 +233,15 @@ user.email = deepseek-harness@users.noreply.github.com
     `--sdo-segmented-download`（initiate `0x21` + 7B/5B 分段 + 分段上传回读比对），
     验证机 `scripts/spikes/cia402-sdo-download-probe.sh` **EXIT=0**。IgH 侧 SDO
     （上传/下载）在该验证机上仍**阻塞**（ecrt ioctl，已复现两次）→ ⚠️ 待验证。
-  - 待做：IgH 侧分段上传/下载验证（环境恢复后）、Complete Access（CA）。
+  - 待做：IgH 侧分段上传/下载验证（环境恢复后）、Complete Access（CA）下载（上传已实现）。
+  - 进度（2026-11-13 00:36 班）：**Complete Access（CA）上传已实现**——`mailbox::parse_complete_access_upload`
+    解析命令 `0x50`（initiate upload + CA 位 bit4），应答器按对象子索引 0..max 的值
+    **按各自长度拼接**（不填充）一次返回（超过首段容量走既有分段上传路径）；未知对象回
+    Abort 0x06020000。证据：`scripts/spikes/sdo-ca-probe.sh`（合成主站）验证机
+    **EXIT=0**（0x1C12 CA = `01 00 16`、0x1600 CA = `01 08 00 00 70`）；单测
+    `mailbox_complete_access_upload_returns_all_subindices`；测试 **175 passed**。
+    ⚠️ IgH 1.6.13 公共 API 不下发 CA 位（`prepare_up` 只写 0x40），故 IgH 侧无法直接验证
+    CA 上传；CA **下载**与 Abort 语义仍未实现。
 - [x] ~~**B9 声明式插件加载器**~~ ✅ **2026-11-12 21:25 班完成**：`plugin-host` 零依赖解析  `plugin.yaml`（YAML 子集 + R2/R5 校验）→ `sii_gen` 生成 SII 镜像、`dict_gen` 生成运行时
   对象字典（0x1018 身份 / 0x1C00 SM 类型 / 0x1C12+0x1C13 分配 / PDO 映射 / 用户对象）；
   `esc-node` 新增运行时 `ObjectDictionary` 与 **`ec-sim-esc --manifest`**，SDO 上传/下载/

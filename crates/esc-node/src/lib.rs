@@ -741,6 +741,14 @@ impl Responder {
                         mailbox::SDO_ABORT_PROTOCOL_TIMEOUT,
                     )
                 })
+        } else if let Some(ca_index) = mailbox::parse_complete_access_upload(service) {
+            // Complete Access 上传（合成主站；IgH 1.6.13 的公共 API 不下发 CA 位）。
+            match self.build_complete_access_upload(ca_index) {
+                Some(service) => service,
+                None => {
+                    mailbox::sdo_abort_payload(ca_index, 0x00, mailbox::SDO_ABORT_OBJECT_NOT_EXIST)
+                }
+            }
         } else if let Some(info_request) = mailbox::parse_sdo_info_request(service) {
             // CoE SDO Information 服务（`ethercat sdos` / SOEM `slaveinfo -sdo`）。
             match info_request {
@@ -899,6 +907,29 @@ impl Responder {
                 index,
                 subindex,
                 data: value,
+                offset: first,
+            });
+        }
+        Some(service)
+    }
+
+    /// 构造 **Complete Access 上传**响应：把对象从子索引 0 到最大子索引的值按顺序拼接
+    /// （每个子索引按其自身长度，**不做对齐填充**）；> 首段容量时走分段上传。
+    fn build_complete_access_upload(&mut self, index: u16) -> Option<Vec<u8>> {
+        let object = self.dict.object(index)?;
+        let mut data = Vec::new();
+        for sub in 0..=object.max_subindex {
+            data.extend_from_slice(&self.dict.entry(index, sub)?.value);
+        }
+        self.upload = None;
+        let first_capacity = mailbox::MAILBOX_SIZE - mailbox::MAILBOX_HEADER_LEN - 10;
+        let first = data.len().min(first_capacity);
+        let service = mailbox::sdo_upload_initiate_service(index, 0, data.len(), &data[..first]);
+        if first < data.len() {
+            self.upload = Some(SegmentedUpload {
+                index,
+                subindex: 0,
+                data,
                 offset: first,
             });
         }
@@ -2078,6 +2109,69 @@ mod tests {
         assert!(!mailbox::mailbox_full(read_sm1_status(&mut responder)));
         assert_eq!(responder.stats().mailbox_requests, 1);
         assert_eq!(responder.stats().mailbox_responses, 1);
+    }
+
+    #[test]
+    fn mailbox_complete_access_upload_returns_all_subindices() {
+        // Complete Access 上传（命令 0x50）：一次返回 0x1C12 全部子索引（子 0 计数 + 子 1
+        // 分配值），按各子索引自身长度拼接、不做填充。
+        let mut responder = Responder::default();
+        let payload = mailbox_request_payload(
+            mailbox::MAILBOX_TYPE_COE,
+            mailbox::COE_COMMAND_SDO_REQUEST,
+            0x50,
+            0x1C12,
+            0x00,
+        );
+        let write = request(&[DatagramData::auto_increment(
+            Command::Apwr,
+            1,
+            0,
+            mailbox::MAILBOX_RX_OFFSET,
+            payload,
+        )]);
+        let reply = responder
+            .handle_frame(&write, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let (wkc, _) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 128);
+        assert_eq!(wkc, 1);
+        assert!(
+            mailbox::mailbox_full(read_sm1_status(&mut responder)),
+            "CA 响应就绪后 SM1 status bit3 必须置位"
+        );
+        let response = read_tx_mailbox(&mut responder);
+        let header = MailboxHeader::parse(&response).expect("mailbox header");
+        assert_eq!(header.length, 13, "10 字节头 + 3 字节 CA 数据");
+        assert_eq!(response[8], 0x41, "CA 上传用 normal response 0x41");
+        assert_eq!(u16::from_le_bytes([response[9], response[10]]), 0x1C12);
+        assert_eq!(response[11], 0x00, "CA 响应子索引固定为 0");
+        assert_eq!(
+            u32::from_le_bytes([response[12], response[13], response[14], response[15]]),
+            3,
+            "CA 数据总长度 = 1（子 0）+ 2（子 1）"
+        );
+        assert_eq!(&response[16..19], &[0x01, 0x00, 0x16]);
+
+        // 0x1600（子 0 计数 1 + 子 1 映射字 0x70000008）→ 5 字节 CA 数据。
+        let payload = mailbox_request_payload(
+            mailbox::MAILBOX_TYPE_COE,
+            mailbox::COE_COMMAND_SDO_REQUEST,
+            0x50,
+            0x1600,
+            0x00,
+        );
+        let write = request(&[DatagramData::auto_increment(
+            Command::Apwr,
+            1,
+            0,
+            mailbox::MAILBOX_RX_OFFSET,
+            payload,
+        )]);
+        responder
+            .handle_frame(&write, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let response = read_tx_mailbox(&mut responder);
+        assert_eq!(&response[16..21], &[0x01, 0x08, 0x00, 0x00, 0x70]);
     }
 
     #[test]

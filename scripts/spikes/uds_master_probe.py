@@ -16,7 +16,7 @@
   （用于验证声明式 manifest 画像的设备名）。
 
 用法：python3 uds_master_probe.py [socket_path] [--timeout 2.0] [--lax]
-        [--sdo-segmented] [--sdo-segmented-download] [--expect-string=<text>] [--cia402]
+        [--sdo-segmented] [--sdo-segmented-download] [--sdo-ca] [--expect-string=<text>] [--cia402]
 退出码 0 = 全部断言通过。
 """
 import os
@@ -217,6 +217,7 @@ def main():
     expect_string = None
     cia402 = False
     cia402_csv = False
+    sdo_ca = False
     for arg in sys.argv[1:]:
         if arg.startswith("--timeout="):
             timeout = float(arg.split("=", 1)[1])
@@ -228,6 +229,8 @@ def main():
             sdo_segmented = True
         if arg == "--sdo-segmented-download":
             sdo_segmented_download = True
+        if arg == "--sdo-ca":
+            sdo_ca = True
         if arg == "--cia402-csv":
             cia402_csv = True
         if arg == "--cia402":
@@ -315,6 +318,41 @@ def main():
             value = sdo_upload_segmented(master, 0x2100, 0x00)
             check(value == payload, f"SDO 回读 {value!r} != {payload!r}")
             print("OK: segmented SDO download 写入 0x2100 并回读一致（20 字节）")
+
+        # 5f) 可选：Complete Access 上传（命令 0x50，一次读回对象全部子索引）。
+        if sdo_ca:
+            def ca_upload(index):
+                service = struct.pack("<HBHB", 0x02 << 12, 0x50, index, 0x00)
+                response = mailbox_exchange(master, service)
+                check(
+                    len(response) >= 10,
+                    f"CA 上传 0x{index:04X} 响应过短：{len(response)}",
+                )
+                check(
+                    response[2] == 0x41,
+                    f"CA 上传 0x{index:04X} 响应命令 {response[2]:#04x} != 0x41",
+                )
+                got_index = struct.unpack("<H", response[3:5])[0]
+                check(got_index == index, f"CA 响应索引 0x{got_index:04X} != 0x{index:04X}")
+                check(response[5] == 0x00, f"CA 响应子索引 {response[5]} != 0")
+                size = struct.unpack("<I", response[6:10])[0]
+                check(
+                    size == len(response) - 10,
+                    f"CA 数据长度 {size} != 实际 {len(response) - 10}",
+                )
+                return response[10 : 10 + size]
+
+            data = ca_upload(0x1C12)
+            check(
+                data == b"\x01\x00\x16",
+                f"CA 0x1C12 数据 {data.hex()} != 01 00 16（计数 1 + 0x1600）",
+            )
+            data = ca_upload(0x1600)
+            check(
+                data == b"\x01\x08\x00\x00\x70",
+                f"CA 0x1600 数据 {data.hex()} != 01 08 00 00 70（计数 1 + 0x70000008）",
+            )
+            print("OK: Complete Access 上传（0x1C12/0x1600 全部子索引一次性读回）通过")
 
         # 5e) 可选：CiA 402 CSV（11 字节 PDO，速度模式，Tier0 累加）。
         if cia402_csv:

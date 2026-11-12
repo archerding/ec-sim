@@ -32,6 +32,40 @@
 
 ---
 
+## 2026-11-13 00:36 班（低峰）— B7：**Complete Access（CA）SDO 上传**
+
+**做了什么**
+- `esc-core::mailbox::parse_complete_access_upload`：解析 CA 上传请求（CoE 命令字节
+  `0x50` = initiate upload + CA 位 bit4，子索引忽略）。
+- `esc-node::Responder::build_complete_access_upload`：按对象子索引 0..max 逐项取字典值，
+  **按各自长度拼接（不填充）**，用 normal upload 响应（0x41 + 子索引 0 + u32 总长 + 数据）
+  返回；数据超过首段容量时复用既有分段上传路径；未知对象回 Abort `0x06020000`。
+- 合成主站 `scripts/spikes/uds_master_probe.py` 新增 `--sdo-ca`；新脚本
+  `scripts/spikes/sdo-ca-probe.sh`；新增单测
+  `mailbox_complete_access_upload_returns_all_subindices`（0x1C12、0x1600 两例）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **175 passed**（esc-core 79 / esc-node 54 / plugin-host 25 + 1 集成 / wire 16）。
+- Linux 验证机：`bash scripts/spikes/sdo-ca-probe.sh` → **EXIT=0**：
+  - `CA 0x1C12 = 01 00 16`（子 0 计数 1 + 子 1 分配 0x1600）；
+  - `CA 0x1600 = 01 08 00 00 70`（子 0 计数 1 + 子 1 映射字 0x70000008）；
+  - 同套件 UDS 基础断言（BRD/APRD/APWR/FPRD/M、SM watchdog、ESM 前置条件）继续通过。
+
+**卡点**
+- **IgH 1.6.13 公共 API 不下发 CA 位**（`ec_fsm_coe_prepare_up` 固定写 `0x40`），因此
+  IgH 侧无法直接验证 CA 上传；本班用合成主站验证（SOEM 侧同样不产生 CA 请求）。
+- CA **下载**（命令 0x51/0x53…）与 CA 的 Abort/部分写语义未实现；SII 的 CA 能力位仍
+  由 manifest `coe.complete_access` 控制（既有画像保持 false）。
+- ⚠️ 本实现为"简化 CA"：不校验长度字段/子索引顺序，也不处理 CA 下 PDO 映射对象的
+  特殊规则（0x1600/0x1A00 的 CA 读写按普通数组处理）。
+
+**下次开工第一件事**
+- 实现 CA 下载（0x51/0x53 命令 + size/子索引顺序校验），或继续 B11（SV660N 公开手册
+  PDO/扩展对象核对）；B6 FMMU/DC 原文核实仍待条件。
+
+---
+
 ## 2026-11-13 00:33 班（低峰）— B9 强化：**对象声明合法性校验**（dtype/access/初值/重复）
 
 **做了什么**

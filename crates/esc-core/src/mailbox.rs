@@ -324,6 +324,24 @@ pub fn parse_sdo_request(service: &[u8]) -> Option<SdoRequest<'_>> {
     })
 }
 
+/// 解析 **Complete Access 上传请求**（命令字节  x50：initiate upload + CA 位 bit4）。
+///
+/// ETG.1000.6：CA 上传一次返回对象从子索引 0 到最大子索引的全部内容（每个子索引按其
+/// 自身数据类型定长拼接，**不做 4 字节对齐填充**）。
+pub fn parse_complete_access_upload(service: &[u8]) -> Option<u16> {
+    if service.len() < 6 {
+        return None;
+    }
+    let coe = u16::from_le_bytes([service[0], service[1]]);
+    if coe >> 12 != COE_COMMAND_SDO_REQUEST {
+        return None;
+    }
+    if service[2] != 0x50 {
+        return None;
+    }
+    Some(u16::from_le_bytes([service[3], service[4]]))
+}
+
 /// 构造 SDO **expedited upload 响应**服务数据（CoE 头 + 命令 + 索引/子索引 + 4 字节值）。
 #[must_use]
 pub fn sdo_upload_service(index: u16, subindex: u8, value: &[u8]) -> Vec<u8> {
