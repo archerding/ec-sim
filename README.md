@@ -4,7 +4,7 @@
 > Unmodified **IgH EtherCAT Master** and **SOEM** masters discover it and reach **OP**; the built-in ESC core does the dirty work, plugins extend the device catalog.
 > 工作名 EC-Sim（最终产品名待定；**产品名与域名不含 "EtherCAT"**）。
 
-**Status:** early development (v0.0.x, pre-alpha). No release yet — see [roadmap](#roadmap).
+**Status:** early development (v0.0.x, pre-alpha). **Latest pre-release: [v0.0.1 — wiring-layer risk closed](https://github.com/archerding/ec-sim/releases/tag/v0.0.1)** (no binaries yet) — see [roadmap](#roadmap).
 
 ![status](https://img.shields.io/badge/status-pre--alpha-orange)
 

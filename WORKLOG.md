@@ -6,6 +6,24 @@
 
 ---
 
+## 2026-11-12（人工会话）— 发布 v0.0.1（pre-alpha）
+
+**做了什么**
+- 通过 GitHub API（fine-grained PAT）创建预发布 **v0.0.1**，tag 打在 `3ac44a5`：
+  `https://github.com/archerding/ec-sim/releases/tag/v0.0.1`
+- Release 说明诚实标注：**无二进制**；只记录已验证结论（TAP 双向 0x88A4、未修改 SOEM 绑定 TAP、未修改 IgH `ec_generic` 绑定 TAP），并列出未实现项（虚拟从站枚举、ESC 内核、CoE、插件、Web UI、MCP）。
+- README 的 Status 行加上预发布链接。
+
+**验证结果**
+- API 返回 `RELEASE_OK id=442354817 prerelease=True`；`git ls-remote --tags` 确认 `refs/tags/v0.0.1 → 3ac44a5`。
+
+**卡点**
+- 无。
+
+**下次开工第一件事**
+- **B1 Rust workspace 骨架**（完成后自动推送）。
+
+---
 ## 2026-11-12（人工会话）— 启用班次自动推送
 
 **做了什么**
