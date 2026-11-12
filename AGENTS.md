@@ -101,6 +101,9 @@ user.email = deepseek-harness@users.noreply.github.com
   `scripts/spikes/uds-loopback.sh`/`uds_master_probe.py`（合成主站）。
   限制：单从站/单客户端、无 DC/watchdog；shim 只在验证机本地，脚本缺二进制时 exit 2。
 - [x] ~~**B4 `wire` crate**~~ ✅ **2026-11-12 完成**：帧/datagram 编解码、M 位串联、13 命令 WKC 规则、自增/配置/广播/逻辑寻址、FMMU 区间判定；16 个单元测试；fmt/clippy(-D warnings) 通过。证据：commit `9d32597`。
+  - 进度（2026-11-13 00:56 班）：**补 6 个边界单测**——13 命令的 WKC 规则（读/写/读写）、
+    自增 ADP 前进与 u16 回绕、More 位后无后续 datagram 拒绝、非法帧类型（frame_type=2）
+    拒绝、frame_type=1 才是 EtherCAT command、命令码 0x00–0x0E 往返 + 未知码拒绝；测试 **22 个**。
 - [ ] **B5 `esc-core` 最小 ESC**：寄存器阵列 + SM/FMMU + AL 状态机 INIT/PREOP 握手 + EEPROM 接口状态机（Busy/8 字节能力位）。
   - 进度（2026-11-12 19:02 班）：寄存器阵列/AL 状态机/EEPROM 接口已完成；**SM（0x0800–0x083F）
     与 FMMU（0x0600–0x067F）寄存器块已实现**（解码/编码、Status/PDI Control/Type/保留字节只读语义、

@@ -32,6 +32,37 @@
 
 ---
 
+## 2026-11-13 00:56 班（低峰）— B4 边界测试补充 + **B11 手册访问受阻记录**
+
+**做了什么**
+- **B11 前置尝试（受阻）**：尝试核对 Inovance SV660N 公开手册的默认 PDO 映射
+  （`[linuxcnc-ethercat inovance.md](https://github.com/linuxcnc-ethercat/linuxcnc-ethercat/blob/master/documentation/inovance.md)`、
+  Inovance 通讯手册 PDF）。结果：`web_fetch` **不支持 PDF**（`application/pdf` 被拒），
+  GitHub raw **fetch failed**（网络不可达）→ 本班无法取得可引用的手册原文，**未改动 SV660N
+  manifest**（避免凭记忆写 PDO；已记录原因，符合 §4 真实性红线）。
+- 回退到 **B4 `wire` crate 边界测试补充**（6 个新单测）：
+  - 13 命令的 WKC 规则（读 +1、写 +1、读写 +2、NOP 0）；
+  - 自增寻址：ADP=0 处理且前进到 1；非 0 不处理；`u16::MAX` 回绕到 0；
+  - `More` 位置 1 但后面无 datagram → `TooShort`；
+  - 非法帧类型（frame_type=2）→ `UnsupportedFrameType(2)`；
+  - frame_type=1 才是 EtherCAT command（长度不符走 `LengthMismatch`）；
+  - 命令码 0x00–0x0E 往返、未知码（0x7F/0xFF）拒绝。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **183 passed**（esc-core 79 / esc-node 56 / plugin-host 25 + 1 集成 / **wire 22**）。
+
+**卡点**
+- B11 SV660N 手册核对仍**受阻于工具/网络**：PDF 无法经 `web_fetch` 提取、GitHub raw 不可达；
+  下一步可尝试镜像站/HTML 文档，或把手册页截图/文本放到本地后由人工确认。
+- wire 边界测试只证明编解码/寻址辅助函数的语义，不改变与真实主站的运行路径（已有 VM 回归）。
+
+**下次开工第一件事**
+- B11：尝试其他公开镜像（HTML 文档/在线手册）核对 SV660N 默认 PDO；失败则记录并转
+  B5 剩余（0x0410 PDI watchdog 语义）或 B3 Spike 4（SOEM oshw UDS shim）。
+
+---
+
 ## 2026-11-13 00:50 班（低峰）— B7：**CA 分段下载端到端验证**（合成主站多段）
 
 **做了什么**

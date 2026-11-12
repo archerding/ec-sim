@@ -736,6 +736,85 @@ mod tests {
     }
 
     #[test]
+    fn wkc_increments_follow_read_write_semantics() {
+        // ETG.1000.4：每次成功读/写访问 WKC +1（读+写命令 +2）。
+        assert_eq!(Command::Aprd.wkc_increment(), 1);
+        assert_eq!(Command::Apwr.wkc_increment(), 1);
+        assert_eq!(Command::Aprw.wkc_increment(), 2);
+        assert_eq!(Command::Fprd.wkc_increment(), 1);
+        assert_eq!(Command::Fpwr.wkc_increment(), 1);
+        assert_eq!(Command::Fprw.wkc_increment(), 2);
+        assert_eq!(Command::Brd.wkc_increment(), 1);
+        assert_eq!(Command::Bwr.wkc_increment(), 1);
+        assert_eq!(Command::Lrd.wkc_increment(), 1);
+        assert_eq!(Command::Lwr.wkc_increment(), 1);
+        assert_eq!(Command::Lrw.wkc_increment(), 2);
+        assert_eq!(Command::Nop.wkc_increment(), 0);
+        assert_eq!(Command::Nop.addressing(), Addressing::None);
+    }
+
+    #[test]
+    fn auto_increment_steps_forward_and_processes_only_zero_adp() {
+        let first = auto_increment_step(0);
+        assert!(first.process, "ADP=0 必须由本地站处理");
+        assert_eq!(first.forward_adp, 1);
+        let later = auto_increment_step(3);
+        assert!(!later.process, "ADP!=0 不由本地站处理");
+        assert_eq!(later.forward_adp, 4);
+        // u16 边界：0xFFFF 前进回绕到 0。
+        assert_eq!(auto_increment_step(u16::MAX).forward_adp, 0);
+    }
+
+    #[test]
+    fn rejects_more_bit_without_following_datagram() {
+        let d = DatagramData::auto_increment(Command::Brd, 1, 0, 0, vec![0u8; 2]);
+        let mut payload = encode_frame(&[d]).expect("encode");
+        // 手工把第一条 datagram 的 More 位置 1，但后面没有第二条。
+        let first_len_flags =
+            u16::from_le_bytes([payload[ECAT_HEADER_LEN + 6], payload[ECAT_HEADER_LEN + 7]]);
+        let more = first_len_flags | 0x8000;
+        payload[ECAT_HEADER_LEN + 6..ECAT_HEADER_LEN + 8].copy_from_slice(&more.to_le_bytes());
+        match Frame::parse(&payload) {
+            Err(WireError::TooShort { .. }) => {}
+            other => panic!("expected TooShort, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_unsupported_frame_type() {
+        // 帧类型 0x1（非 EtherCAT command）必须被拒绝。
+        // 帧头 = (frame_type << 12) | length；0x2000 → frame_type=2、length=0。
+        let payload = vec![0x00, 0x20, 0u8, 0u8, 0u8, 0u8];
+        match Frame::parse(&payload) {
+            Err(WireError::UnsupportedFrameType(2)) => {}
+            other => panic!("expected UnsupportedFrameType(2), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn frame_type_1_is_ecat_command() {
+        let payload = vec![0x00, 0x10, 0u8, 0u8];
+        // Frame type 1 是 EtherCAT command；长度不符应报 LengthMismatch 而非 UnsupportedFrameType。
+        match Frame::parse(&payload) {
+            Err(WireError::LengthMismatch { .. }) => {}
+            other => panic!("expected UnsupportedFrameType(1), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn command_byte_roundtrip() {
+        for byte in [
+            0x00u8, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
+            0x0E,
+        ] {
+            let command = Command::from_u8(byte).expect("known command");
+            assert_eq!(command.as_u8(), byte, "Command roundtrip");
+        }
+        assert!(Command::from_u8(0x7F).is_none());
+        assert!(Command::from_u8(0xFF).is_none());
+    }
+
+    #[test]
     fn frame_too_long_is_rejected() {
         // 两条各 2047 字节的 datagram 会超过 11 bit 帧长度上限。
         let a =
