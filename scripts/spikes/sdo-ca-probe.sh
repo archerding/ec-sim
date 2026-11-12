@@ -60,5 +60,6 @@ run_mode() {
 run_mode --sdo-ca
 run_mode --sdo-ca-download
 run_mode --sdo-ca-download-multi plugins/generic-cia402-csv-servo/plugin.yaml
+run_mode --sdo-retransmit plugins/generic-cia402-csv-servo/plugin.yaml
 
 echo "OK: Complete Access 上传/下载在合成主站下通过"

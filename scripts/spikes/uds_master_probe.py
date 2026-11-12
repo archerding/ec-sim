@@ -186,7 +186,7 @@ def sdo_download_ca(master, index, data):
     check(response[5] == 0x00, f"CA 下载响应子索引 {response[5]} != 0")
 
 
-def sdo_upload_ca_full(master, index):
+def sdo_upload_ca_full(master, index, retransmit_first=False):
     """CA 上传并在数据超出首帧时继续 segment 上传（返回完整数据）。"""
     service = struct.pack("<HBHB", 0x02 << 12, 0x50, index, 0x00)
     response = mailbox_exchange(master, service)
@@ -209,6 +209,14 @@ def sdo_upload_ca_full(master, index):
         )
         response = mailbox_exchange(master, segment_request)
         check(len(response) == 10, f"CA segment 响应长度 {len(response)} != 10")
+        if retransmit_first and toggle == 0 and not getattr(sdo_upload_ca_full, "_retransmitted", False):
+            # 模拟"响应丢失后的重发"：同一 toggle 再发一次，服务端应幂等返回相同数据。
+            again = mailbox_exchange(master, segment_request)
+            check(
+                again == response,
+                "重发上一段应返回相同 segment 响应（幂等）",
+            )
+            sdo_upload_ca_full._retransmitted = True
         command = response[2]
         check((command & 0xE0) == 0x00, f"CA segment 响应命令 {command:#04x} 非法")
         check(((command >> 4) & 0x01) == toggle, "CA segment 响应 toggle 未回显")
@@ -311,6 +319,7 @@ def main():
     sdo_ca_download = False
     sdo_ca_download_multi = False
     cia402_fault = False
+    sdo_retransmit = False
     for arg in sys.argv[1:]:
         if arg.startswith("--timeout="):
             timeout = float(arg.split("=", 1)[1])
@@ -328,6 +337,8 @@ def main():
             sdo_ca_download = True
         if arg == "--sdo-ca":
             sdo_ca = True
+        if arg == "--sdo-retransmit":
+            sdo_retransmit = True
         if arg == "--cia402-fault":
             cia402_fault = True
         if arg == "--cia402-csv":
@@ -431,6 +442,15 @@ def main():
                 f"CA 0x1600 数据 {data.hex()} != 01 08 00 00 70（计数 1 + 0x70000008）",
             )
             print("OK: Complete Access 上传（0x1C12/0x1600 全部子索引一次性读回）通过")
+
+        # 5j) 可选：分段上传**重发容错**（响应丢失场景）：先 CA 多段写入 140B，再 CA 分段
+        # 上传并在首段重复同一 toggle 请求，断言服务端幂等返回相同响应、最终数据一致。
+        if sdo_retransmit:
+            payload = bytes(0x61 + (i % 26) for i in range(140))
+            sdo_download_ca_multi(master, 0x2100, payload)
+            readback = sdo_upload_ca_full(master, 0x2100, retransmit_first=True)
+            check(readback == payload, f"重发容错后回读不一致（{len(readback)} 字节）")
+            print("OK: 分段上传重发容错（首段重复请求幂等，回读 140 字节一致）通过")
 
         # 5h) 可选：Complete Access **分段**下载（>首帧 112 字节；需 manifest 提供足够大的
         # 可写对象，如 generic-cia402-csv-servo 的 0x2100 = 140 字节）。
