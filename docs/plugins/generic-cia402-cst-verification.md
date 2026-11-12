@@ -35,6 +35,21 @@ EtherCAT 帧，按 `{0x0006,0x0007,0x000F,0x0000}` × 模式 10、目标转矩 3
 - 单元测试 `cia402_cst_mode_mirrors_target_torque` 覆盖同一序列（esc-node）。
 - 本机 `cargo test --workspace` **199 passed**。
 
+## 双主站验证（未修改 SOEM / IgH）
+
+```bash
+sudo bash scripts/spikes/cia402-cst-op-probe.sh
+```
+
+结果（2026-11-13 02:13 班，Linux 验证机 **EXIT=0**）：
+
+- SOEM `slaveinfo`：`Man: 00000ec5 ID: 0000e5e2`、`Output size: 40bits` /
+  `Input size: 40bits`、`MBX protocols : 04`；
+- SOEM `slaveinfo -map`：RxPDO 含 `0x6040/0x6060/0x6071`、TxPDO 含 `0x6041/0x6061/0x6077`；
+- SOEM `simple_ng`：`mapped 5O+5I bytes`、`all slaves are now operational`（OP）、
+  `WKC 3` 稳定；
+- IgH `ethercat slaves`：`PREOP` + 身份 `0x00000ec5:0x0000e5e2`（无 ecrt 应用时只到 PREOP）。
+
 ## ⚠️ 边界
 
 - Tier0 简化：转矩只镜像、无转矩环/负载/限幅/单位换算；状态机时序（Ti）与故障码

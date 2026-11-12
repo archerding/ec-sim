@@ -15,6 +15,7 @@
 | `sdo-ca-probe.sh` | Complete Access：CA 上传（0x1C12/0x1600）、CA 单帧下载、CA 分段下载（140B 对象多段）、分段上传重发容错（首段重复请求幂等） | **EXIT=0**（四模式） |
 | `cia402-behavior-probe.sh` | `--behavior cia402` 7 字节 PDO：状态机序列、模式门控、位置跟随/冻结 | **EXIT=0** |
 | `cia402-csv-probe.sh` | 11 字节 PDO CSV：速度模式位置累加、速度显示、禁用后归零 | **EXIT=0** |
+| `cia402-cst-op-probe.sh` | CST 画像双主站：SOEM 40/40 bits、`0x6071`/`0x6077` 映射、`5O+5I` 进 OP；IgH PREOP+身份 `0xe5e2` | **EXIT=0** |
 | `cia402-cst-probe.sh` | 5 字节 PDO CST：状态机序列 + 实际转矩镜像 `0x6071`→`0x6077`、禁用后归零 | **EXIT=0** |
 | `cia402-fault-probe.sh` | `--fault 0x7500`：Fault bit、控制字 bit7 复位、`0x603F` 回读 | **EXIT=0** |
 | `cia402-sdo-download-probe.sh` | 20 字节可写配置字符串 `0x2100` 的分段 SDO 下载 + 回读一致 | **EXIT=0** |

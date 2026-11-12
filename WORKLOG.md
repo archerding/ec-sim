@@ -32,6 +32,32 @@
 
 ---
 
+## 2026-11-13 02:13 班（低峰）— B11：**CST 画像双主站验证（SOEM/IgH）**
+
+**做了什么**
+- 新增 `scripts/spikes/cia402-cst-op-probe.sh`（由 `generic-cia402-probe.sh` 派生，默认指向
+  CST 画像）：SOEM `slaveinfo`/`slaveinfo -map` 验证 40/40 bits 与 `0x6071`/`0x6077`
+  映射，SOEM `simple_ng` 验证 `mapped 5O+5I` 与 OP，IgH `ethercat slaves` 验证 PREOP+身份。
+- 更新 `docs/plugins/generic-cia402-cst-verification.md`（新增"双主站验证"节）与
+  `docs/VERIFICATION.md` 索引；AGENTS B11 进度补一条。
+
+**验证结果**
+- Linux 验证机：`cia402-cst-op-probe.sh` → **EXIT=0**：
+  - SOEM：`Man: 00000ec5 ID: 0000e5e2`、`Output size: 40bits`、`Input size: 40bits`、
+    `MBX protocols : 04`；`-map` 见 `0x6040/0x6060/0x6071` 与 `0x6041/0x6061/0x6077`；
+  - SOEM `simple_ng`：`mapped 5O+5I bytes`、`all slaves are now operational`、`WKC 3` 稳定；
+  - IgH：`PREOP + 0x00000ec5:0x0000e5e2`（无 ecrt 应用时只到 PREOP）。
+- 本机无代码改动：`cargo test --workspace` **199 passed** 基线不变。
+
+**卡点**
+- 双主站验证只到 PREOP（IgH 无 CST 应用）；SOEM 简单应用不驱动 CST 状态机，
+  转矩行为仍由合成主站探针覆盖（`0x6077` 镜像 `0x6071`，⚠️ Tier0 简化）。
+
+**下次开工第一件事**
+- B11：SV660N 默认 PDO 条目（公开镜像/HTML 搜索），或厂商扩展对象核对。
+
+---
+
 ## 2026-11-13 02:08 班（低峰）— B11：**CST（转矩模式，5 字节 PDO）Tier0 行为**
 
 **做了什么**
