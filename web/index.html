@@ -38,6 +38,12 @@
   <section>
     <h2>载入状态</h2>
     <input id="file" type="file" accept="application/json,.json" multiple />
+    <div class="sub" style="margin-top:10px">
+      或从只读 API 载入：
+      <input id="api" type="text" value="http://127.0.0.1:8090" size="28" />
+      <button id="load-api">从 API 载入</button>
+      （<code>ec-sim-esc --serve 127.0.0.1:8090 --manifest plugins/…</code>）
+    </div>
     <div id="message" class="sub"></div>
   </section>
 

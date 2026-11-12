@@ -1,5 +1,37 @@
 ---
 
+## 2026-11-13 05:41 班（低峰）— **B21：`--serve` 只读 HTTP JSON API（/state、/dict）**
+
+**做了什么**
+- `ec-sim-esc --serve <addr> [--manifest|--esi]`：std `TcpListener` 实现的**只读 HTTP JSON API**
+  （无外部依赖），启动时生成快照，提供 `GET /state`（state-v1）、`GET /dict`（dict-v1，无 manifest
+  时 404）、`GET /health`；响应带 `Content-Type: application/json`、`Access-Control-Allow-Origin: *`、
+  `Cache-Control: no-store`、`Connection: close`。
+- `control-plane` 新增纯函数 `handle_get(path, state, dict)` + `HttpResponse`/`CORS_ALLOW_ORIGIN`，
+  路由 404 带 routes 列表；新增 1 个单元测试（/state、/dict?query、/dict 无字典 404、未知路径、
+  /health），总计 5 个 control-plane 测试。
+- `web/` 增加“从 API 载入”：输入 API 地址后 fetch `/state` 与 `/dict`，复用现有 state/dict 渲染。
+- 新增 `scripts/spikes/http-state-probe.sh`（manifest 画像：schema/CORS/缓存头/404；内置画像：
+  profile=null、/dict 404）。
+- 更新 `docs/STATUS.md` 快速开始、`docs/VERIFICATION.md`、AGENTS（B21 完成、新增 B22 实时状态模式）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **219 passed**
+  （control-plane 5 / esc-core 86 / esc-node 71 / plugin-host 27+3 / wire 23）；
+  `node --check web/app.js` 通过；本机 `--serve` 手工请求 `/state`、`/dict`、`/health`、404 全部符合。
+- 验证机：重建后 `http-state-probe.sh` **EXIT=0**（manifest 画像三类 200 + 未知路径 404 + 无 manifest
+  时 /dict 404）。
+
+**卡点**
+- 快照是启动时静态生成的（不反映运行中 AL/统计变化）；实时模式属 B22。
+
+**下次开工第一件事**
+- **B22**：`--serve` 实时模式（与 TAP/UDS 同进程，共享 `Responder` 状态、线程安全），`/state`
+  动态反映 AL/统计，`web/` 定时轮询；探针校验状态随 ESM 迁移变化。
+
+---
+---
+
 ## 2026-11-13 05:35 班（低峰）— **B20：`control-plane` 只读快照 API 骨架（state-v1 / dict-v1 + 路由）**
 
 **做了什么**

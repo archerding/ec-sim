@@ -52,6 +52,7 @@
 | `igh-cia402-op-probe.sh` | IgH ecrt 7B CiA402：OP + 状态字/模式/位置 | **EXIT=0** |
 | `igh-cia402-csv-op-probe.sh` | IgH ecrt 11B CSV：OP + 速度模式位置累加/速度显示 | **EXIT=0** |
 | `uds-multi-slave-probe.sh` | `--slaves 8` 多从站链：广播 WKC=8、逐站地址分配、配置地址寻址 | **EXIT=0** |
+| `http-state-probe.sh` | `--serve` 只读 HTTP API：`/state`/`/dict`/`/health` 200（CORS、Content-Type、no-store）、未知路径 404；无 manifest 时 `/dict` 404 | **EXIT=0** |
 | `dump-dict-probe.sh` | `--dump-dict --json` 输出合法 dict-v1（2 个画像）：0x6502 值（0x0410/0x3AD 小端）、0x6040=rw/16；纯文本 dump 向后兼容 | **EXIT=0** |
 | `dump-state-probe.sh` | `--dump-state`（2 个 manifest 画像 + 内置画像）输出合法 state-v1 JSON：身份/SM/PDO/DC/字典对象数；`web/` 资源存在 | **EXIT=0** |
 | `podman-unprivileged-probe.sh` | 无特权容器（podman，无 `--privileged/--network=host`）内跑 `--slaves 8` UDS shim：容器内启动、广播 WKC/地址分配、UDS 全链路通过 | **EXIT=0** |

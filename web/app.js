@@ -207,6 +207,20 @@ function tryFetchJson(name) {
     .catch(() => {});
 }
 
+// 从只读 HTTP API（`ec-sim-esc --serve`）载入 /state 与 /dict。
+document.getElementById("load-api").addEventListener("click", async () => {
+  const base = (document.getElementById("api").value || "").replace(/\/+$/, "");
+  try {
+    const stateResponse = await fetch(`${base}/state`);
+    if (!stateResponse.ok) throw new Error(`/state ${stateResponse.status}`);
+    loadJson(await stateResponse.text(), `${base}/state`);
+    const dictResponse = await fetch(`${base}/dict`);
+    if (dictResponse.ok) loadJson(await dictResponse.text(), `${base}/dict`);
+  } catch (error) {
+    message.textContent = `API 载入失败：${error.message}`;
+  }
+});
+
 // 静态服务下尝试自动读取同目录 state.json / dict.json；file:// 下会失败，忽略即可。
 Promise.all([tryFetchJson("state.json"), tryFetchJson("dict.json")]).then(() => {
   if (!currentState && !currentDict) {

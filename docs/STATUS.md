@@ -74,6 +74,7 @@ cargo run -q -p esc-node --bin ec-sim-esc -- --dump-dict --manifest plugins/gene
 cargo run -q -p esc-node --bin ec-sim-esc -- --dump-state --manifest plugins/generic-cia402-cst-servo/plugin.yaml > web/state.json
 cargo run -q -p esc-node --bin ec-sim-esc -- --dump-dict --json --manifest plugins/generic-cia402-cst-servo/plugin.yaml > web/dict.json
 python3 -m http.server 8080 --directory web   # 只读状态页（M2 起点）
+cargo run -q -p esc-node --bin ec-sim-esc -- --serve 127.0.0.1:8090 --manifest plugins/generic-cia402-cst-servo/plugin.yaml   # 只读 HTTP API：/state,/dict
 bash scripts/spikes/uds-loopback.sh        # UDS 合成主站基础闭环
 bash scripts/spikes/cia402-cst-probe.sh    # CST Tier0 行为
 cargo test --workspace

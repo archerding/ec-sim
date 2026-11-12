@@ -8,6 +8,7 @@
 //! ec-sim-esc --dump-sii [--manifest ... | --esi ...]  # 打印 SII hex/类别链后退出
 //! ec-sim-esc --dump-dict [--json] [--manifest ... | --esi ...] # 打印运行时对象字典（--json = dict-v1）后退出
 //! ec-sim-esc --dump-state [--manifest ... | --esi ...] # 打印只读状态 JSON（M2 WebUI 数据源）
+//! ec-sim-esc --serve 127.0.0.1:8090 [--manifest ...] # 只读 HTTP JSON API（/state,/dict）
 //! ec-sim-esc --version                                # 打印版本
 //!
 //! ESM 状态迁移前置条件检查默认**开启**（SM 未配置时拒绝进入 PREOP/SAFEOP 并给
@@ -228,6 +229,114 @@ fn dump_state_and_exit(
     std::process::ExitCode::SUCCESS
 }
 
+/// `--serve <addr>`：只读 HTTP JSON API（`/state`、`/dict`；std `TcpListener`，无外部依赖）。
+fn serve_http(
+    manifest_path: Option<&str>,
+    esi_path: Option<&str>,
+    addr: &str,
+) -> std::process::ExitCode {
+    use std::io::{Read, Write as _};
+    use std::net::TcpListener;
+
+    let manifest = match manifest_path {
+        Some(path) => match plugin_host::manifest::PluginManifest::load(path) {
+            Ok(manifest) => Some(manifest),
+            Err(err) => {
+                eprintln!("ec-sim-esc: {err}");
+                return std::process::ExitCode::from(2);
+            }
+        },
+        None => None,
+    };
+    let device = match esi_path {
+        Some(path) => {
+            let text = match std::fs::read_to_string(path) {
+                Ok(text) => text,
+                Err(err) => {
+                    eprintln!("ec-sim-esc: 读取 ESI 失败：{err}");
+                    return std::process::ExitCode::from(2);
+                }
+            };
+            match plugin_host::esi::parse_esi(&text) {
+                Ok(device) => Some(device),
+                Err(err) => {
+                    eprintln!("ec-sim-esc: 解析 ESI 失败：{err}");
+                    return std::process::ExitCode::from(2);
+                }
+            }
+        }
+        None => None,
+    };
+    let spec = match (&device, &manifest) {
+        (Some(device), Some(manifest)) => {
+            plugin_host::esi::sii_spec_from_esi_and_manifest(device, manifest)
+        }
+        (Some(device), None) => plugin_host::esi::sii_spec_from_esi(device),
+        (None, Some(manifest)) => plugin_host::sii_gen::sii_spec_from_manifest(manifest),
+        (None, None) => Ok(esc_core::sii::simulated_spec()),
+    };
+    let spec = match spec {
+        Ok(spec) => spec,
+        Err(err) => {
+            eprintln!("ec-sim-esc: {err}");
+            return std::process::ExitCode::from(2);
+        }
+    };
+
+    let (dict_objects, profile, dict_json) = match &manifest {
+        Some(manifest) => match plugin_host::dict_gen::dictionary_from_manifest(manifest) {
+            Ok(dict) => (
+                Some(dict.objects().len()),
+                Some((manifest.id.as_str(), manifest.name.as_str())),
+                Some(control_plane::dict_json(&dict)),
+            ),
+            Err(err) => {
+                eprintln!("ec-sim-esc: 生成对象字典失败：{err}");
+                return std::process::ExitCode::from(2);
+            }
+        },
+        None => (None, None, None),
+    };
+    let state = control_plane::state_json(&spec, dict_objects, profile);
+
+    let listener = match TcpListener::bind(addr) {
+        Ok(listener) => listener,
+        Err(err) => {
+            eprintln!("ec-sim-esc: --serve 绑定 {addr} 失败：{err}");
+            return std::process::ExitCode::from(4);
+        }
+    };
+    println!("SERVE http://{addr} routes=/state,/dict");
+    let _ = std::io::stdout().flush();
+
+    for stream in listener.incoming() {
+        let mut stream = match stream {
+            Ok(stream) => stream,
+            Err(_) => continue,
+        };
+        let mut buf = [0u8; 2048];
+        let _ = stream.read(&mut buf);
+        let request = String::from_utf8_lossy(&buf);
+        let path = request
+            .lines()
+            .next()
+            .and_then(|line| line.split_whitespace().nth(1))
+            .unwrap_or("/");
+        let response = control_plane::handle_get(path, &state, dict_json.as_deref());
+        let headers = format!(
+            "{}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: {}\r\nConnection: close\r\n\r\n",
+            response.status_line,
+            response.content_type,
+            response.body.len(),
+            control_plane::CORS_ALLOW_ORIGIN
+        );
+        let _ = stream.write_all(headers.as_bytes());
+        let _ = stream.write_all(response.body.as_bytes());
+        let _ = stream.flush();
+    }
+    std::process::ExitCode::SUCCESS
+}
+
 fn main() -> std::process::ExitCode {
     let mut args = std::env::args().skip(1);
     let mut tap_name: Option<String> = None;
@@ -246,6 +355,7 @@ fn main() -> std::process::ExitCode {
     let mut dump_dict = false;
     let mut dump_json = false;
     let mut dump_state = false;
+    let mut serve_addr: Option<String> = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--tap" => match args.next() {
@@ -325,6 +435,13 @@ fn main() -> std::process::ExitCode {
             "--dump-dict" => dump_dict = true,
             "--json" => dump_json = true,
             "--dump-state" => dump_state = true,
+            "--serve" => match args.next() {
+                Some(addr) => serve_addr = Some(addr),
+                None => {
+                    eprintln!("ec-sim-esc: --serve 需要监听地址（如 127.0.0.1:8090）");
+                    return std::process::ExitCode::from(2);
+                }
+            },
             "--version" | "-V" => {
                 println!("ec-sim-esc {}", env!("CARGO_PKG_VERSION"));
                 return std::process::ExitCode::SUCCESS;
@@ -340,6 +457,7 @@ fn main() -> std::process::ExitCode {
                      调试：--dump-sii [--manifest <yaml>] [--esi <xml>] 打印 SII 镜像 hex/类别链后退出；
                      --dump-dict [--json] [--manifest <yaml>] [--esi <xml>] 打印运行时对象字典后退出（--json 输出 dict-v1）；
                      --dump-state [--manifest <yaml>] [--esi <xml>] 打印只读状态 JSON（供 WebUI/工具消费）；
+                     --serve <addr> [--manifest|--esi] 只读 HTTP JSON API（/state,/dict）；
                      --version 打印版本。"
                 );
                 return std::process::ExitCode::SUCCESS;
@@ -353,6 +471,10 @@ fn main() -> std::process::ExitCode {
 
     if dump_dict {
         return dump_dict_and_exit(manifest_path.as_deref(), esi_path.as_deref(), dump_json);
+    }
+
+    if let Some(addr) = serve_addr.as_deref() {
+        return serve_http(manifest_path.as_deref(), esi_path.as_deref(), addr);
     }
 
     if dump_state {

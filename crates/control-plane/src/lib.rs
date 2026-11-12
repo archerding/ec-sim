@@ -230,11 +230,88 @@ pub fn dict_json(dict: &ObjectDictionary) -> String {
 /// 工具版本（随包版本）。
 pub const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// 允许跨源读取（只读接口；默认允许任意源，便于本机 Web 页面直接 fetch）。
+pub const CORS_ALLOW_ORIGIN: &str = "*";
+
+/// 只读 HTTP 响应（手写，无外部依赖）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HttpResponse {
+    /// 状态行（如 `HTTP/1.1 200 OK`）。
+    pub status_line: &'static str,
+    /// Content-Type。
+    pub content_type: &'static str,
+    /// 响应体。
+    pub body: String,
+}
+
+fn json_response(status_line: &'static str, body: String) -> HttpResponse {
+    HttpResponse {
+        status_line,
+        content_type: "application/json; charset=utf-8",
+        body,
+    }
+}
+
+fn not_found(message: &str) -> HttpResponse {
+    let body = format!(
+        "{{\"error\": \"{}\", \"routes\": [\"/state\", \"/dict\"]}}",
+        json_escape(message)
+    );
+    json_response("HTTP/1.1 404 Not Found", body)
+}
+
+/// 处理一个只读 GET 请求（供 `ec-sim-esc --serve` 使用；无状态、可单元测试）。
+///
+/// 路由：`/state`、`/dict`（无字典时 404）、`/` 与 `/health` 返回路由列表；其余 404。
+#[must_use]
+pub fn handle_get(path: &str, state: &str, dict: Option<&str>) -> HttpResponse {
+    let path = path.split('?').next().unwrap_or(path);
+    match path {
+        "/state" => json_response("HTTP/1.1 200 OK", state.to_string()),
+        "/dict" => match dict {
+            Some(body) => json_response("HTTP/1.1 200 OK", body.to_string()),
+            None => not_found("dict 不可用（未加载 manifest）"),
+        },
+        "/" | "/health" => json_response(
+            "HTTP/1.1 200 OK",
+            "{\"service\": \"ec-sim-control-plane\", \"routes\": [\"/state\", \"/dict\"]}"
+                .to_string(),
+        ),
+        _ => not_found("unknown path"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use esc_core::sii::simulated_spec;
 
+    #[test]
+    fn http_get_routes_state_dict_and_404() {
+        let state = "{\"schema\": \"ec-sim/state-v1\"}";
+        let dict = "{\"schema\": \"ec-sim/dict-v1\"}";
+        let ok_state = handle_get("/state", state, Some(dict));
+        assert_eq!(ok_state.status_line, "HTTP/1.1 200 OK");
+        assert_eq!(ok_state.body, state);
+        assert_eq!(ok_state.content_type, "application/json; charset=utf-8");
+
+        let ok_dict = handle_get("/dict?x=1", state, Some(dict));
+        assert_eq!(ok_dict.status_line, "HTTP/1.1 200 OK");
+        assert_eq!(ok_dict.body, dict);
+
+        let missing_dict = handle_get("/dict", state, None);
+        assert_eq!(missing_dict.status_line, "HTTP/1.1 404 Not Found");
+        assert!(missing_dict
+            .body
+            .contains("\"routes\": [\"/state\", \"/dict\"]"));
+
+        let unknown = handle_get("/nope", state, Some(dict));
+        assert_eq!(unknown.status_line, "HTTP/1.1 404 Not Found");
+
+        let health = handle_get("/health", state, Some(dict));
+        assert_eq!(health.status_line, "HTTP/1.1 200 OK");
+        assert!(health.body.contains("ec-sim-control-plane"));
+    }
     #[test]
     fn routes_are_registered_and_dispatch() {
         assert_eq!(
