@@ -140,8 +140,25 @@ pub fn sii_spec_from_manifest(manifest: &PluginManifest) -> Result<SiiSpec, Stri
         coe_details,
         general_flags: 0,
         ebus_current: 0,
-        // DC 类别：manifest 未声明 DC 时序参数（模拟器未实现 DC 同步），保持不声明。
-        dc: None,
+        // DC 类别：仅当 manifest 明确声明 `dc.supported: true` 且提供 `cycle_time0` 时写入。
+        // 模拟器尚未实现 DC 同步；声明前需确认主站行为（AGENTS §6 / B6）。
+        dc: if manifest.dc.supported {
+            if manifest.dc.cycle_time0 == 0 {
+                return Err("dc.supported=true 需要 dc.cycle_time0（ns）".to_string());
+            }
+            Some(esc_core::sii::SiiDc {
+                cycle_time0: manifest.dc.cycle_time0,
+                shift_time0: manifest.dc.shift_time0,
+                shift_time1: manifest.dc.shift_time1,
+                sync1_cycle_factor: manifest.dc.sync1_cycle_factor,
+                assign_activate: manifest.dc.assign_activate,
+                sync0_cycle_factor: manifest.dc.sync0_cycle_factor,
+                name_index: 0,
+                desc_index: 0,
+            })
+        } else {
+            None
+        },
     })
 }
 
@@ -199,6 +216,29 @@ dc: {supported: false, sync0: false}
 sources:
   - {title: "Public device manual", url: "https://example.invalid/manual.pdf", accessed: "2026-11-12"}
 "#;
+
+    #[test]
+    fn dc_supported_manifest_emits_dc_category() {
+        let with_dc = VALID_MANIFEST.replace(
+            "dc: {supported: false, sync0: false}",
+            "dc:\n  supported: true\n  cycle_time0: 1000000\n  sync0_cycle_factor: 1\n  sync1_cycle_factor: -1\n  assign_activate: 0x0300",
+        );
+        let manifest = PluginManifest::parse(&with_dc).expect("parse");
+        let spec = sii_spec_from_manifest(&manifest).expect("sii spec");
+        let dc = spec.dc.expect("manifest 声明了 DC");
+        assert_eq!(dc.cycle_time0, 1_000_000);
+        assert_eq!(dc.assign_activate, 0x0300);
+        let sii = esc_core::sii::SiiImage::from_spec(&spec);
+        let bytes = sii
+            .category_bytes(esc_core::sii::category::DC)
+            .expect("DC 类别应存在");
+        assert_eq!(bytes.len(), 24);
+
+        // 声明 DC 但缺少 cycle_time0 → 生成失败。
+        let missing = with_dc.replace("  cycle_time0: 1000000\n", "");
+        let manifest = PluginManifest::parse(&missing).expect("parse");
+        assert!(sii_spec_from_manifest(&manifest).is_err());
+    }
 
     #[test]
     fn valid_manifest_passes_validation() {

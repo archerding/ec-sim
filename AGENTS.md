@@ -169,6 +169,11 @@ user.email = deepseek-harness@users.noreply.github.com
     文档化布局（cycleTime0/shiftTime0/1、sync1/0CycleFactor、assignActivate、name/desc、
     reserved，24 字节）编码；`SiiSpec.dc = Some(..)` 时在 FMMU 后插入 DC 类别；新增 2 单测。
     ⚠️ 内置镜像/manifest/ESI 均**不声明** DC（模拟器尚未实现 DC 同步），因此不影响 SOEM/IgH；
+  - 进度（2026-11-13 01:58 班）：**manifest `dc` 时序字段已接入 SII DC 类别**——新增
+    `DcConfig{ supported, cycle_time0, shift_time0/1, sync0/1_cycle_factor, assign_activate }`，
+    `sii_gen` 在 `supported && cycle_time0>0` 时写入 DC 类别；`validate()` 拒绝缺 cycle_time0；
+    新增 manifest 解析/校验与 SII 生成测试。**所有仓库画像仍 dc.supported=false**（DC 仿真未实现）。
+    测试 **197 passed**。⚠️ 开启 DC 声明前必须先实现 DC 同步仿真。
     开启需先实现 DC 仿真与 manifest 时序字段。测试 **195 passed**。
   - 进度（2026-11-12 19:26 班）：**SM 类别 0x0029 + TxPDO 0x0032 + RxPDO 0x0033 已实现**
     （SM0/SM1 = mailbox、SM2 输出 0x1100、SM3 输入 0x1110；PDO 0x1A00/0x1600，

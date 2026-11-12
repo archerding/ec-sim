@@ -323,6 +323,28 @@ pub struct Identity {
     pub simulated: bool,
 }
 
+/// 分布式时钟（DC）声明（manifest `dc:` 块）。
+///
+/// 只有 `supported: true` 且提供 `cycle_time0`（ns）时，SII 生成器才会写入 DC 类别
+/// （0x003C）；模拟器自身尚未实现 DC 同步，声明前需确认主站行为（见 AGENTS §6/B6）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct DcConfig {
+    /// 是否声明支持 DC（SII DC 类别）。
+    pub supported: bool,
+    /// DC 周期时间（ns，写入 DC 类别 cycleTime0）。
+    pub cycle_time0: u32,
+    /// SYNC0 偏移（ns）。
+    pub shift_time0: u32,
+    /// SYNC1 偏移（ns）。
+    pub shift_time1: u32,
+    /// SYNC0 周期因子。
+    pub sync0_cycle_factor: i16,
+    /// SYNC1 周期因子（-1 = 禁用）。
+    pub sync1_cycle_factor: i16,
+    /// SYNC 激活位（ETG assign activate）。
+    pub assign_activate: u16,
+}
+
 /// Sync Manager 声明（manifest `sm:`）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SmConfig {
@@ -411,8 +433,8 @@ pub struct PluginManifest {
     pub tx_pdos: Vec<PdoConfig>,
     /// 对象声明。
     pub objects: Vec<ObjectConfig>,
-    /// 是否声明支持 DC。
-    pub dc_supported: bool,
+    /// 分布式时钟（DC）声明：支持标志 + 时序参数（SII DC 类别 0x003C）。
+    pub dc: DcConfig,
     /// 证据链（R5）。
     pub sources: Vec<Source>,
 }
@@ -512,9 +534,20 @@ impl PluginManifest {
             .transpose()?
             .unwrap_or_default();
 
-        let dc_supported = match root.get("dc").and_then(|node| node.get("supported")) {
-            Some(_) => boolean(root.get("dc").and_then(|node| node.get("supported")))?,
-            None => false,
+        let dc = match root.get("dc") {
+            Some(node) => DcConfig {
+                supported: optional_boolean(node.get("supported"))?,
+                cycle_time0: integer_or(node.get("cycle_time0"), 0)?,
+                shift_time0: integer_or(node.get("shift_time0"), 0)?,
+                shift_time1: integer_or(node.get("shift_time1"), 0)?,
+                sync0_cycle_factor: i16::try_from(signed_integer(node.get("sync0_cycle_factor"))?)
+                    .map_err(|_| "dc.sync0_cycle_factor 超出 i16".to_string())?,
+                sync1_cycle_factor: i16::try_from(signed_integer(node.get("sync1_cycle_factor"))?)
+                    .map_err(|_| "dc.sync1_cycle_factor 超出 i16".to_string())?,
+                assign_activate: u16::try_from(integer_or(node.get("assign_activate"), 0)?)
+                    .map_err(|_| "dc.assign_activate 超出 u16".to_string())?,
+            },
+            None => DcConfig::default(),
         };
 
         let sources = root
@@ -547,7 +580,7 @@ impl PluginManifest {
             rx_pdos,
             tx_pdos,
             objects,
-            dc_supported,
+            dc,
             sources,
         })
     }
@@ -584,6 +617,9 @@ impl PluginManifest {
             if source.url.trim().is_empty() || source.accessed.trim().is_empty() {
                 problems.push(format!("sources[{index}] 缺少 URL 或访问日期（R5）"));
             }
+        }
+        if self.dc.supported && self.dc.cycle_time0 == 0 {
+            problems.push("dc.supported=true 需要 dc.cycle_time0（ns）".to_string());
         }
         if self.sm.is_empty() {
             problems.push("sm 为空：必须声明 Sync Manager 布局".to_string());
@@ -889,6 +925,31 @@ fn parse_pdo_list(node: Option<&Yaml>) -> Result<Vec<PdoConfig>, String> {
         .collect()
 }
 
+/// 解析可选有符号整数（支持 `-` 前缀与 `0x` 十六进制）；缺省为 0。
+fn signed_integer(node: Option<&Yaml>) -> Result<i32, String> {
+    let Some(node) = node else {
+        return Ok(0);
+    };
+    let Some(text) = node.as_str() else {
+        return Err("数值字段不是标量".to_string());
+    };
+    let text = text.trim().replace('_', "");
+    let (negative, digits) = match text.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, text.strip_prefix('+').unwrap_or(&text)),
+    };
+    let value = match digits
+        .strip_prefix("0x")
+        .or_else(|| digits.strip_prefix("0X"))
+    {
+        Some(hex) => i64::from_str_radix(hex, 16),
+        None => digits.parse::<i64>(),
+    }
+    .map_err(|_| format!("非法整数：{text}"))?;
+    let value = if negative { -value } else { value };
+    i32::try_from(value).map_err(|_| format!("整数超出 i32：{text}"))
+}
+
 /// 解析整数：支持十进制与 `0x` 十六进制，允许下划线分隔与正负号。
 fn integer(node: Option<&Yaml>) -> Result<u32, String> {
     let Some(node) = node else {
@@ -1176,6 +1237,57 @@ sources:
                 "应报告“{needle}”：{problems:?}"
             );
         }
+    }
+
+    #[test]
+    fn parses_dc_configuration() {
+        const DC_MANIFEST: &str = r#"
+schema: ecsim.plugin/v1
+id: com.ecsim.x
+name: "X (SIMULATED)"
+version: 0.1.0
+kind: device
+identity:
+  vendor_id: 0x00000EC5
+  product_code: 7
+  simulated: true
+mailbox:
+  coe: {sdo: true, sdo_info: true, complete_access: false}
+sm:
+  - {index: 0, dir: mbox-in, start: 0x1000, len: 128}
+  - {index: 1, dir: mbox-out, start: 0x1080, len: 128}
+dc:
+  supported: true
+  cycle_time0: 1000000
+  shift_time0: 1000
+  shift_time1: 2000
+  sync0_cycle_factor: 1
+  sync1_cycle_factor: -1
+  assign_activate: 0x0300
+sources:
+  - {title: "t", url: "https://example.invalid", accessed: "2026-11-13"}
+"#;
+        let manifest = PluginManifest::parse(DC_MANIFEST).expect("parse");
+        assert!(manifest.dc.supported);
+        assert_eq!(manifest.dc.cycle_time0, 1_000_000);
+        assert_eq!(manifest.dc.shift_time0, 1000);
+        assert_eq!(manifest.dc.shift_time1, 2000);
+        assert_eq!(manifest.dc.shift_time0, 1000);
+        assert_eq!(manifest.dc.sync0_cycle_factor, 1);
+        assert_eq!(manifest.dc.sync1_cycle_factor, -1);
+        assert_eq!(manifest.dc.assign_activate, 0x0300);
+        assert!(manifest.validate().is_empty(), "{:?}", manifest.validate());
+
+        // 声明 DC 但缺少 cycle_time0 → validate 报错。
+        let missing = DC_MANIFEST.replace("  cycle_time0: 1000000\n", "");
+        let manifest = PluginManifest::parse(&missing).expect("parse");
+        assert!(
+            manifest
+                .validate()
+                .iter()
+                .any(|p| p.contains("cycle_time0")),
+            "应报告缺少 cycle_time0"
+        );
     }
 
     #[test]

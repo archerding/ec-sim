@@ -32,6 +32,37 @@
 
 ---
 
+## 2026-11-13 01:58 班（低峰）— B6：**manifest `dc` 时序字段接入 SII DC 类别**
+
+**做了什么**
+- manifest schema 扩展：`PluginManifest.dc_supported: bool` 替换为 `DcConfig`
+  （`supported`、`cycle_time0`、`shift_time0/1`、`sync0/sync1_cycle_factor`、
+  `assign_activate`；缺省 0）；解析支持 `0x` 十六进制与负的周期因子（新增
+  `signed_integer()`）；`validate()` 在 `supported=true` 但缺 `cycle_time0` 时报错。
+- `sii_gen::sii_spec_from_manifest` 在 `dc.supported` 且 `cycle_time0 > 0` 时构造
+  `SiiDc` 并写入 SII DC 类别（0x003C）；否则保持 `dc: None`。
+- 新增测试：manifest `parses_dc_configuration`（字段/缺省/缺 cycle_time0 校验）、
+  `sii_gen::dc_supported_manifest_emits_dc_category`（SII 中出现 24 字节 DC 类别；
+  缺 cycle_time0 时生成失败）。
+- **仓库内所有画像仍 `dc.supported: false`**——模拟器尚未实现 DC 同步，声明 DC 会让
+  主站进入 DC 配置路径；B6 的"生成能力 + 配置入口"已就绪，等 DC 仿真实现后再开启。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **197 passed**（esc-core 85 / esc-node 61 / plugin-host 27 + 1 集成 / wire 23）。
+- 内置镜像与既有 manifest 生成的 SII 字节不变（DC 均未声明），未占用验证机。
+
+**卡点**
+- 无 DC 同步仿真（0x0900 寄存器/SYNC0 驱动 tick/漂移）；开启声明前必须先实现，
+  否则主站可能在 DC 配置阶段等待。
+- manifest DC 时序字段尚未在真实主站上验证（无 profile 声明）。
+
+**下次开工第一件事**
+- B6 收尾：实现最小 DC 仿真（activate/cycle 寄存器 + tick 驱动 SYNC0 计数）并在
+  测试画像上验证；或 B11 SV660N 默认 PDO 条目查找。
+
+---
+
 ## 2026-11-13 01:56 班（低峰）— B6：**SII DC 类别（0x003C）生成已实现**
 
 **做了什么**
