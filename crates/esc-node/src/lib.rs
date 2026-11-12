@@ -882,7 +882,14 @@ impl Responder {
         state.data.truncate(total);
         if segment.last || state.data.len() >= total {
             let response = if state.complete_access {
-                self.write_complete_access(state.index, &state.data)
+                // CA：先按子索引拆分写入；成功仍回 **segment response**（CiA 301 对末段
+                // 的应答格式与中间段一致），失败则回 Abort。
+                let abort = self.write_complete_access(state.index, &state.data);
+                if abort.get(2).copied() == Some(mailbox::SDO_COMMAND_ABORT) {
+                    abort
+                } else {
+                    mailbox::sdo_download_segment_ok_service(segment.toggle)
+                }
             } else {
                 self.object_writes
                     .insert((state.index, state.subindex), state.data);
@@ -991,9 +998,12 @@ impl Responder {
     /// （每个子索引按其自身长度，**不做对齐填充**）；> 首段容量时走分段上传。
     fn build_complete_access_upload(&mut self, index: u16) -> Option<Vec<u8>> {
         let object = self.dict.object(index)?;
+        let max_subindex = object.max_subindex;
         let mut data = Vec::new();
-        for sub in 0..=object.max_subindex {
-            data.extend_from_slice(&self.dict.entry(index, sub)?.value);
+        for sub in 0..=max_subindex {
+            // 用 object_value 以便读到 Download/CA 写入的覆盖值。
+            let value = self.object_value(index, sub)?.to_vec();
+            data.extend_from_slice(&value);
         }
         self.upload = None;
         let first_capacity = mailbox::MAILBOX_SIZE - mailbox::MAILBOX_HEADER_LEN - 10;

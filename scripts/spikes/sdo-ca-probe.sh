@@ -6,6 +6,7 @@
 # 注意：每个模式启动**独立的模拟器实例**（UDS 套件的 SM watchdog 用例会改变 AL 状态，
 # 复用实例会破坏下一模式的初始状态断言）。
 #
+# 第三个模式用 CSV 画像 manifest（0x2100 = 140 字节可写字符串）验证 **>112 字节的 CA 分段下载**。
 # 前置：`cargo build --release -p esc-node`；python3；不需要 root（UDS 线缆层）。
 # 用法：./sdo-ca-probe.sh
 set -euo pipefail
@@ -32,8 +33,13 @@ trap cleanup EXIT
 
 run_mode() {
   mode="$1"
+  manifest="${2:-}"
   rm -f "$SOCK"
-  "$BIN" --uds "$SOCK" >"$LOG" 2>&1 &
+  if [ -n "$manifest" ]; then
+    "$BIN" --uds "$SOCK" --manifest "$manifest" >"$LOG" 2>&1 &
+  else
+    "$BIN" --uds "$SOCK" >"$LOG" 2>&1 &
+  fi
   SIM_PID=$!
   for _ in $(seq 1 100); do
     [ -S "$SOCK" ] && break
@@ -53,5 +59,6 @@ run_mode() {
 
 run_mode --sdo-ca
 run_mode --sdo-ca-download
+run_mode --sdo-ca-download-multi plugins/generic-cia402-csv-servo/plugin.yaml
 
 echo "OK: Complete Access 上传/下载在合成主站下通过"

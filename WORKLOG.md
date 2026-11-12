@@ -32,6 +32,43 @@
 
 ---
 
+## 2026-11-13 00:50 班（低峰）— B7：**CA 分段下载端到端验证**（合成主站多段）
+
+**做了什么**
+- UDS 合成主站（`scripts/spikes/uds_master_probe.py`）新增：
+  - `--sdo-ca-download-multi`：CA 下载 initiate（0x31，首帧 112 字节）+ 4 个 segment
+    （`0x20|toggle<<4|unused<<1|last`），再用 **CA 分段上传**读回并比对 140 字节；
+  - `sdo_upload_ca_full` / `sdo_download_ca_multi` 两个主站侧辅助函数（含 segment
+    toggle/last 校验）。
+- `scripts/spikes/sdo-ca-probe.sh` 增加第三个模式：用
+  `plugins/generic-cia402-csv-servo` 画像（`0x2100` 字符串扩为 **140 字节**）验证
+  >112 字节的 CA 分段下载。
+- 修复 `build_complete_access_upload`：改为通过 `object_value()` 读取，**包含 Download/CA
+  写入的覆盖值**（此前只读字典初值，导致"写入后 CA 回读不一致"）。
+- 末段 CA 分段下载的应答改为 **segment response**（`0x20|toggle<<4`，与 CiA 301 一致；
+  之前在末段回 0x60 不规范）；Abort 仍透传。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **177 passed**（esc-core 79 / esc-node 56 / plugin-host 25 + 1 集成 / wire 16）。
+- Linux 验证机：`bash scripts/spikes/sdo-ca-probe.sh` → **EXIT=0**，三模式全过：
+  - CA 上传：0x1C12 = `01 00 16`、0x1600 = `01 08 00 00 70`；
+  - CA 单帧下载：0x1600 写入后回读一致；
+  - **CA 分段下载**：140 字节对象多段写入并回读一致；
+  - 每个模式的 UDS 基础断言（BRD/APRD/APWR/FPRD/M、SM watchdog、ESM 前置条件）均通过。
+
+**卡点**
+- CA 的"部分写/子索引顺序"语义仍未实现/校验；IgH 1.6.13 公共 API 不下发 CA 位，IgH 侧
+  无法直接验证（合成主站覆盖）。
+- 为验证多段 CA，CSV 画像的 `0x2100` 字符串由 45B 扩为 140B（插件内容变化，允许且已过
+  守卫测试；⚠️ 若后续要更贴近设备，可换专用测试对象）。
+
+**下次开工第一件事**
+- 回到 B11：SV660N 公开手册 PDO/扩展对象核对（或 B5 剩余 0x0410 PDI watchdog 语义）；
+  B6 FMMU/DC 原文核实仍待条件。
+
+---
+
 ## 2026-11-13 00:47 班（低峰）— B7：**Complete Access（CA）分段下载**
 
 **做了什么**

@@ -233,7 +233,15 @@ user.email = deepseek-harness@users.noreply.github.com
     `--sdo-segmented-download`（initiate `0x21` + 7B/5B 分段 + 分段上传回读比对），
     验证机 `scripts/spikes/cia402-sdo-download-probe.sh` **EXIT=0**。IgH 侧 SDO
     （上传/下载）在该验证机上仍**阻塞**（ecrt ioctl，已复现两次）→ ⚠️ 待验证。
-  - 待做：IgH 侧分段上传/下载验证（环境恢复后）、CA 的 Abort/部分写语义细化。
+  - 待做：CA 部分写/顺序语义细化（IgH 侧仍无法验证 CA）。
+  - 进度（2026-11-13 00:50 班）：**CA 分段下载端到端验证通过**——UDS 合成主站新增
+    `--sdo-ca-download-multi`（140 字节对象：0x31 首帧 112 + 0x20|toggle|last 4 段，
+    再用 CA 分段上传回读比对）；`sdo-ca-probe.sh` 第三个模式用
+    `plugins/generic-cia402-csv-servo`（其 `0x2100` 字符串扩为 140 字节）；修复
+    CA 上传从**覆盖值**（object_writes）读取（此前只读字典初值，回读不一致）。验证机
+    **EXIT=0**（CA 上传/单帧下载/分段下载三模式全过 + UDS 基础断言）。测试 **177 passed**。
+    ⚠️ 末段 CA 分段下载应答改为 segment response（与 CiA 301 一致）；仍不校验部分写语义，
+    IgH 公共 API 不下发 CA 位。
   - 进度（2026-11-13 00:47 班）：**CA 分段下载已实现**——`mailbox::parse_complete_access_download_initiate`
     解析 CA initiate 的 size + 首帧数据；首帧不足 total 时转入 `SegmentedDownload`（保留既有
     分段 FSM），末段完成后按子索引长度拆分写入；命令 `0x20|toggle<<4|unused<<1|last` 与普通

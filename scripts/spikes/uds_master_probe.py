@@ -16,7 +16,8 @@
   （用于验证声明式 manifest 画像的设备名）。
 
 用法：python3 uds_master_probe.py [socket_path] [--timeout 2.0] [--lax]
-        [--sdo-segmented] [--sdo-segmented-download] [--sdo-ca] [--sdo-ca-download] [--expect-string=<text>] [--cia402]
+        [--sdo-segmented] [--sdo-segmented-download] [--sdo-ca] [--sdo-ca-download]
+        [--sdo-ca-download-multi] [--expect-string=<text>] [--cia402]
 退出码 0 = 全部断言通过。
 """
 import os
@@ -185,6 +186,71 @@ def sdo_download_ca(master, index, data):
     check(response[5] == 0x00, f"CA 下载响应子索引 {response[5]} != 0")
 
 
+def sdo_upload_ca_full(master, index):
+    """CA 上传并在数据超出首帧时继续 segment 上传（返回完整数据）。"""
+    service = struct.pack("<HBHB", 0x02 << 12, 0x50, index, 0x00)
+    response = mailbox_exchange(master, service)
+    check(len(response) >= 10, f"CA 上传 0x{index:04X} 响应过短：{len(response)}")
+    check(response[2] == 0x41, f"CA 上传 0x{index:04X} 响应命令 {response[2]:#04x} != 0x41")
+    check(struct.unpack("<H", response[3:5])[0] == index, "CA 响应索引回显不符")
+    check(response[5] == 0x00, "CA 响应子索引不是 0")
+    total = struct.unpack("<I", response[6:10])[0]
+    data = bytearray(response[10:])
+    toggle = 0
+    guard = 0
+    while len(data) < total:
+        guard += 1
+        check(guard <= 64, "CA 分段上传段数超限")
+        segment_request = (
+            b"\x00\x20"
+            + bytes([0x60 | (toggle << 4)])
+            + struct.pack("<H", index)
+            + bytes([0x00, 0x00])
+        )
+        response = mailbox_exchange(master, segment_request)
+        check(len(response) == 10, f"CA segment 响应长度 {len(response)} != 10")
+        command = response[2]
+        check((command & 0xE0) == 0x00, f"CA segment 响应命令 {command:#04x} 非法")
+        check(((command >> 4) & 0x01) == toggle, "CA segment 响应 toggle 未回显")
+        unused = (command >> 1) & 0x07
+        data += response[3 : 3 + (7 - unused)]
+        toggle ^= 1
+        if command & 0x01:
+            break
+    return bytes(data[:total])
+
+
+def sdo_download_ca_multi(master, index, data):
+    """CA 分段下载（命令 0x31 首帧 + 0x20|toggle<<4|unused<<1|last 多段）。"""
+    first = data[:112]
+    service = struct.pack("<HBHBI", 0x02 << 12, 0x31, index, 0x00, len(data)) + first
+    response = mailbox_exchange(master, service)
+    check(response[2] == 0x60, f"CA 下载 initiate 响应 {response[2]:#04x} != 0x60")
+    rest = data[112:]
+    offset = 0
+    toggle = 0
+    while offset < len(rest):
+        chunk = rest[offset : offset + 7]
+        offset += len(chunk)
+        unused = 7 - len(chunk)
+        last = 1 if offset == len(rest) else 0
+        service = (
+            struct.pack("<H", 0x02 << 12)
+            + bytes([0x20 | (toggle << 4) | (unused << 1) | last])
+            + chunk
+        )
+        response = mailbox_exchange(master, service)
+        check(
+            response[2] & 0xE0 == 0x20,
+            f"CA segment 下载响应命令 {response[2]:#04x} 非法",
+        )
+        check(
+            ((response[2] >> 4) & 0x01) == toggle,
+            "CA segment 下载响应 toggle 未回显",
+        )
+        toggle ^= 1
+
+
 def sdo_upload_segmented(master, index, subindex):
     """用 SDO 上传读取对象；>4 字节对象自动走 segmented upload（主站侧实现）。"""
     # initiate upload request：CoE 服务 0x2<<12、Command 0x40、Index、SubIndex。
@@ -243,6 +309,7 @@ def main():
     cia402_csv = False
     sdo_ca = False
     sdo_ca_download = False
+    sdo_ca_download_multi = False
     for arg in sys.argv[1:]:
         if arg.startswith("--timeout="):
             timeout = float(arg.split("=", 1)[1])
@@ -254,6 +321,8 @@ def main():
             sdo_segmented = True
         if arg == "--sdo-segmented-download":
             sdo_segmented_download = True
+        if arg == "--sdo-ca-download-multi":
+            sdo_ca_download_multi = True
         if arg == "--sdo-ca-download":
             sdo_ca_download = True
         if arg == "--sdo-ca":
@@ -359,6 +428,18 @@ def main():
                 f"CA 0x1600 数据 {data.hex()} != 01 08 00 00 70（计数 1 + 0x70000008）",
             )
             print("OK: Complete Access 上传（0x1C12/0x1600 全部子索引一次性读回）通过")
+
+        # 5h) 可选：Complete Access **分段**下载（>首帧 112 字节；需 manifest 提供足够大的
+        # 可写对象，如 generic-cia402-csv-servo 的 0x2100 = 140 字节）。
+        if sdo_ca_download_multi:
+            payload = bytes(0x41 + (i % 26) for i in range(140))
+            sdo_download_ca_multi(master, 0x2100, payload)
+            readback = sdo_upload_ca_full(master, 0x2100)
+            check(
+                readback == payload,
+                f"CA 分段下载回读不一致（{len(readback)} 字节）",
+            )
+            print("OK: Complete Access 分段下载（140 字节对象多段写入并回读一致）通过")
 
         # 5g) 可选：Complete Access 下载（命令 0x31，单帧写全部子索引并回读）。
         if sdo_ca_download:
