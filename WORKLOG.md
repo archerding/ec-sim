@@ -43,6 +43,25 @@
 
 ---
 
+## 2026-11-12（人工会话，补充推进）— B5 第一块：esc-core 寄存器 + AL 状态机
+
+**做了什么**
+- 完成 B5 的可独立验证子步骤：
+  - 4 KiB ESC 寄存器阵列（0x0000–0x0FFF），关键寄存器地址常量，读/写权限表（识别类/状态类对主站只读，内部写可维护）；
+  - AL Control/Status/Status Code 语义：Error ACK、ID Request、非法状态迁移码 `0x0011`；
+  - ESM 迁移表（INIT↔PREOP↔SAFEOP↔OP，任意状态可回 INIT，OP 不可直接回 PREOP）。
+
+**验证结果**
+- `cargo test --workspace`：**25 passed**（wire 16 + esc-core 9）；
+- `cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets -- -D warnings` 通过。
+
+**卡点**
+- 剩余（B5 后续）：SM/FMMU 寄存器块、EEPROM 接口状态机、watchdog、DC。
+
+**下次开工第一件事**
+- 继续 **B5**：SM/FMMU 寄存器块 + EEPROM 接口状态机（Busy / 8 字节能力位）。
+
+---
 ## 2026-11-12（人工会话）— 班次规则改为"窗口内持续推进"
 
 **做了什么**
