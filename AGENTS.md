@@ -233,7 +233,15 @@ user.email = deepseek-harness@users.noreply.github.com
     `--sdo-segmented-download`（initiate `0x21` + 7B/5B 分段 + 分段上传回读比对），
     验证机 `scripts/spikes/cia402-sdo-download-probe.sh` **EXIT=0**。IgH 侧 SDO
     （上传/下载）在该验证机上仍**阻塞**（ecrt ioctl，已复现两次）→ ⚠️ 待验证。
-  - 待做：IgH 侧分段上传/下载验证（环境恢复后）、Complete Access（CA）下载（上传已实现）。
+  - 待做：IgH 侧分段上传/下载验证（环境恢复后）、CA 多帧下载（当前仅支持单帧）。
+  - 进度（2026-11-13 00:41 班）：**Complete Access（CA）下载（单帧）已实现**——
+    `mailbox::parse_complete_access_download` 解析命令 `0x31`（initiate normal download +
+    CA 位），应答器按字典各子索引字节长度拆分数据逐项写入 `object_writes`（未知对象
+    Abort 0x06020000、只读对象 0x06010002、长度不符 0x05040000），回 0x60。
+    证据：`scripts/spikes/sdo-ca-probe.sh` 验证机 **EXIT=0**（CA 上传 0x1C12/0x1600 +
+    CA 下载 0x1600 写入并回读一致，每模式独立模拟器实例）；单测
+    `mailbox_complete_access_download_writes_all_subindices`；测试 **176 passed**。
+    ⚠️ 仅单帧 CA 下载（数据不超邮箱首段）；CA 分段下载未实现；IgH 侧仍无法直接验证 CA。
   - 进度（2026-11-13 00:36 班）：**Complete Access（CA）上传已实现**——`mailbox::parse_complete_access_upload`
     解析命令 `0x50`（initiate upload + CA 位 bit4），应答器按对象子索引 0..max 的值
     **按各自长度拼接**（不填充）一次返回（超过首段容量走既有分段上传路径）；未知对象回

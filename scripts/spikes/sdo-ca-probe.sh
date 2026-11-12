@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# B7 验证：**Complete Access（CA）SDO 上传**——合成主站用命令 0x50 一次读回
-# 0x1C12 / 0x1600 的全部子索引，断言数据按子索引自身长度拼接（不填充）。
+# B7 验证：**Complete Access（CA）SDO 上传/下载**——合成主站用命令 0x50 一次读回
+# 0x1C12 / 0x1600 的全部子索引（按子索引自身长度拼接、不填充），再用命令 0x31
+# 单帧 CA 下载 0x1600 并回读验证。
+#
+# 注意：每个模式启动**独立的模拟器实例**（UDS 套件的 SM watchdog 用例会改变 AL 状态，
+# 复用实例会破坏下一模式的初始状态断言）。
 #
 # 前置：`cargo build --release -p esc-node`；python3；不需要 root（UDS 线缆层）。
 # 用法：./sdo-ca-probe.sh
@@ -16,24 +20,38 @@ LOG=/tmp/ec-sim-sdo-ca.log
   exit 1
 }
 
+SIM_PID=""
 cleanup() {
-  killall ec-sim-esc 2>/dev/null || true
+  if [ -n "$SIM_PID" ]; then
+    kill "$SIM_PID" 2>/dev/null || true
+    wait "$SIM_PID" 2>/dev/null || true
+  fi
   rm -f "$SOCK"
 }
 trap cleanup EXIT
 
-cleanup
-"$BIN" --uds "$SOCK" >"$LOG" 2>&1 &
-for _ in $(seq 1 100); do
-  [ -S "$SOCK" ] && break
-  sleep 0.05
-done
-[ -S "$SOCK" ] || {
-  cat "$LOG"
-  echo "FAIL: 模拟器未创建 UDS socket $SOCK"
-  exit 1
+run_mode() {
+  mode="$1"
+  rm -f "$SOCK"
+  "$BIN" --uds "$SOCK" >"$LOG" 2>&1 &
+  SIM_PID=$!
+  for _ in $(seq 1 100); do
+    [ -S "$SOCK" ] && break
+    sleep 0.05
+  done
+  [ -S "$SOCK" ] || {
+    cat "$LOG"
+    echo "FAIL: 模拟器未创建 UDS socket $SOCK（模式 $mode）"
+    exit 1
+  }
+  "$PY" scripts/spikes/uds_master_probe.py "$SOCK" "$mode"
+  kill "$SIM_PID" 2>/dev/null || true
+  wait "$SIM_PID" 2>/dev/null || true
+  SIM_PID=""
+  rm -f "$SOCK"
 }
 
-"$PY" scripts/spikes/uds_master_probe.py "$SOCK" --sdo-ca
+run_mode --sdo-ca
+run_mode --sdo-ca-download
 
-echo "OK: Complete Access 上传在合成主站下通过"
+echo "OK: Complete Access 上传/下载在合成主站下通过"

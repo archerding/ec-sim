@@ -32,6 +32,39 @@
 
 ---
 
+## 2026-11-13 00:41 班（低峰）— B7：**Complete Access（CA）SDO 下载（单帧）**
+
+**做了什么**
+- `esc-core::mailbox::parse_complete_access_download`：解析 CA 下载请求（命令字节 `0x31`
+  = initiate normal download + CA 位 bit4；u32 长度在 +6，数据随后）。
+- `esc-node::Responder::handle_download_complete_access`：按字典对象子索引 0..max 的
+  **字节长度**拆分数据、逐项写入 `object_writes`；未知对象 → Abort 0x06020000、
+  只读对象 → 0x06010002、数据长度不符 → 0x05040000；成功回 0x60（子索引 0）。
+- 合成主站新增 `--sdo-ca-download`（写入 0x1600 后回读校验）；`sdo-ca-probe.sh` 改为
+  **每个模式独立模拟器实例**（UDS 套件会改变 AL 状态，复用实例破坏初始断言），并同时跑
+  CA 上传 + 下载两种模式；新增单测
+  `mailbox_complete_access_download_writes_all_subindices`。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **176 passed**（esc-core 79 / esc-node 55 / plugin-host 25 + 1 集成 / wire 16）。
+- Linux 验证机：`bash scripts/spikes/sdo-ca-probe.sh` → **EXIT=0**：
+  - CA 上传：0x1C12 = `01 00 16`、0x1600 = `01 08 00 00 70`；
+  - CA 下载：0x1600 写入 `01 08 00 00 70` 后回读一致；
+  - 每个模式的 UDS 基础断言（BRD/APRD/APWR/FPRD/M、SM watchdog、ESM 前置条件）均通过。
+
+**卡点**
+- 仅支持**单帧** CA 下载（数据不超邮箱首段）；更大的 CA 下载需要 CA 分段写语义
+  （当前回 0x05040000）——⚠️ 待后续。
+- CA 上传/下载仍无法用 IgH 1.6.13 公共 API 验证（不下发 CA 位）；SOEM 同样不产生 CA 请求。
+- 简化实现：不校验 CA 数据内子索引顺序的"部分写"语义；PDO 映射对象按普通数组处理。
+
+**下次开工第一件事**
+- CA 分段下载（沿用既有分段下载 FSM，完成后拆分写入）或继续 B11（SV660N 公开手册
+  PDO/扩展对象核对）；B6 FMMU/DC 原文核实仍待条件。
+
+---
+
 ## 2026-11-13 00:36 班（低峰）— B7：**Complete Access（CA）SDO 上传**
 
 **做了什么**

@@ -749,6 +749,9 @@ impl Responder {
                     mailbox::sdo_abort_payload(ca_index, 0x00, mailbox::SDO_ABORT_OBJECT_NOT_EXIST)
                 }
             }
+        } else if let Some((ca_index, ca_data)) = mailbox::parse_complete_access_download(service) {
+            // Complete Access 下载（单帧，数据按子索引长度拆分后逐项写）。
+            self.handle_download_complete_access(ca_index, ca_data)
         } else if let Some(info_request) = mailbox::parse_sdo_info_request(service) {
             // CoE SDO Information 服务（`ethercat sdos` / SOEM `slaveinfo -sdo`）。
             match info_request {
@@ -911,6 +914,43 @@ impl Responder {
             });
         }
         Some(service)
+    }
+
+    /// 处理 **Complete Access 下载**：把单帧数据按各子索引的字节长度拆分，逐项写入
+    /// object_writes（要求每一项都可写；未知对象/只读对象回对应 Abort；数据长度不符回
+    /// 0x05040000）。⚠️ 仅支持单帧 CA 下载。
+    fn handle_download_complete_access(&mut self, index: u16, data: &[u8]) -> Vec<u8> {
+        let Some(object) = self.dict.object(index) else {
+            return mailbox::sdo_abort_payload(index, 0x00, mailbox::SDO_ABORT_OBJECT_NOT_EXIST);
+        };
+        let mut offset = 0usize;
+        for sub in 0..=object.max_subindex {
+            let Some(entry) = self.dict.entry(index, sub) else {
+                return mailbox::sdo_abort_payload(
+                    index,
+                    0x00,
+                    mailbox::SDO_ABORT_OBJECT_NOT_EXIST,
+                );
+            };
+            let len = usize::from(entry.bit_length.saturating_add(7)) / 8;
+            if len == 0 || offset + len > data.len() {
+                return mailbox::sdo_abort_payload(
+                    index,
+                    0x00,
+                    mailbox::SDO_ABORT_PROTOCOL_TIMEOUT,
+                );
+            }
+            if !entry.writable {
+                return mailbox::sdo_abort_payload(index, sub, mailbox::SDO_ABORT_READ_ONLY);
+            }
+            self.object_writes
+                .insert((index, sub), data[offset..offset + len].to_vec());
+            offset += len;
+        }
+        if offset != data.len() {
+            return mailbox::sdo_abort_payload(index, 0x00, mailbox::SDO_ABORT_PROTOCOL_TIMEOUT);
+        }
+        mailbox::sdo_download_ok_service(index, 0)
     }
 
     /// 构造 **Complete Access 上传**响应：把对象从子索引 0 到最大子索引的值按顺序拼接
@@ -2109,6 +2149,60 @@ mod tests {
         assert!(!mailbox::mailbox_full(read_sm1_status(&mut responder)));
         assert_eq!(responder.stats().mailbox_requests, 1);
         assert_eq!(responder.stats().mailbox_responses, 1);
+    }
+
+    #[test]
+    fn mailbox_complete_access_download_writes_all_subindices() {
+        // CA 下载（命令 0x31，单帧）：0x1600 = 计数 1 + 映射字 0x70000008（5 字节）。
+        let mut responder = Responder::default();
+        let mut payload = vec![0u8; mailbox::MAILBOX_SIZE];
+        payload[0..2].copy_from_slice(&15u16.to_le_bytes()); // 服务数据长度 = 10 + 5
+        payload[2..4].copy_from_slice(&0x1001u16.to_le_bytes());
+        payload[5] = mailbox::MAILBOX_TYPE_COE;
+        payload[6..8].copy_from_slice(&(mailbox::COE_COMMAND_SDO_REQUEST << 12).to_le_bytes());
+        payload[8] = 0x31; // CA download（normal、size indicated）
+        payload[9..11].copy_from_slice(&0x1600u16.to_le_bytes());
+        payload[11] = 0x00;
+        payload[12..16].copy_from_slice(&5u32.to_le_bytes());
+        payload[16..21].copy_from_slice(&[0x01, 0x08, 0x00, 0x00, 0x70]);
+        let write = request(&[DatagramData::auto_increment(
+            Command::Apwr,
+            1,
+            0,
+            mailbox::MAILBOX_RX_OFFSET,
+            payload,
+        )]);
+        responder
+            .handle_frame(&write, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let response = read_tx_mailbox(&mut responder);
+        let header = MailboxHeader::parse(&response).expect("mailbox header");
+        assert_eq!(header.length, 6, "CA 下载响应为 6 字节（无数据）");
+        assert_eq!(response[8], 0x60, "initiate download response 0x60");
+        assert_eq!(u16::from_le_bytes([response[9], response[10]]), 0x1600);
+        assert_eq!(response[11], 0x00);
+
+        // 回读：CA 上传 0x1600 应返回刚写入的 5 字节。
+        let payload = mailbox_request_payload(
+            mailbox::MAILBOX_TYPE_COE,
+            mailbox::COE_COMMAND_SDO_REQUEST,
+            0x50,
+            0x1600,
+            0x00,
+        );
+        let write = request(&[DatagramData::auto_increment(
+            Command::Apwr,
+            1,
+            0,
+            mailbox::MAILBOX_RX_OFFSET,
+            payload,
+        )]);
+        responder
+            .handle_frame(&write, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let response = read_tx_mailbox(&mut responder);
+        assert_eq!(response[8], 0x41);
+        assert_eq!(&response[16..21], &[0x01, 0x08, 0x00, 0x00, 0x70]);
     }
 
     #[test]
