@@ -14,11 +14,16 @@
 //!   逻辑地址与 DL 用户内存（0x1000–0xFFFF）之间搬运字节；WKC 按两家主站一致的规则累加
 //!   （LRD 读 +1、LWR 写 +1、LRW 读 +1 / 写 +2，见 [`Responder::process_logical`] 与
 //!   `handle_frame` 中的注释）。
+//! - **邮箱（B7 子项 1）**：FPRD/FPWR 到 DL 用户内存（≥ 0x1000）按物理地址读写；主站写
+//!   SM0 邮箱缓冲（0x1000）即解析邮箱头，对 CoE SDO 请求在 SM1 缓冲（0x1080）回
+//!   SDO Abort（0x06020000），并用 SM1 Status（0x080D）bit3 = mailbox full 通知主站；
+//!   主站读走 SM1 缓冲后清除该位，见 [`esc_core::mailbox`] 与 [`Responder::handle_mailbox_request`]。
 //!
 //! 命中后按命令的读/写属性回填数据并累加 WKC；未命中的 datagram 原样保留（WKC 不变）。
 
 use esc_core::eeprom::EepromInterface;
 use esc_core::fmmu::{Fmmu, FMMU_MAX};
+use esc_core::mailbox::{self, MailboxHeader};
 use esc_core::memory::DlUserMemory;
 use esc_core::sii::SiiImage;
 use esc_core::{reg, AlControl, EscAl, Registers};
@@ -93,6 +98,10 @@ pub struct Stats {
     pub frames_dropped: u64,
     /// 命中的 datagram 数。
     pub datagrams_hit: u64,
+    /// 收到的邮箱请求数（写入 SM0 缓冲的邮箱报文）。
+    pub mailbox_requests: u64,
+    /// 已回 SDO Abort 的邮箱响应数。
+    pub mailbox_responses: u64,
 }
 
 /// 单从站最小 ESC 应答器。
@@ -317,9 +326,20 @@ impl Responder {
         (read_hit, write_hit)
     }
 
-    fn read_registers(&self, address: u16, len: usize) -> Vec<u8> {
+    /// 按物理地址读：EEPROM 窗口 / DL 用户内存（≥ 0x1000）/ 寄存器区。
+    ///
+    /// 读 SM1 邮箱缓冲（0x1080）表示主站取走响应，此时清 SM1 Status 的 mailbox full 位
+    /// （模拟从站邮箱已被消费；真实 ESC 由 PDI/协议栈处理）。
+    fn read_registers(&mut self, address: u16, len: usize) -> Vec<u8> {
         if EepromInterface::covers(address, len) {
             return self.eeprom.read(address, len);
+        }
+        if DlUserMemory::covers(address, len) {
+            let bytes = self.memory.read(address, len).unwrap_or_default();
+            if address == mailbox::MAILBOX_TX_OFFSET {
+                mailbox::clear_mailbox_full(&mut self.regs);
+            }
+            return bytes;
         }
         let mut out = vec![0u8; len];
         for (i, byte) in out.iter_mut().enumerate() {
@@ -331,9 +351,19 @@ impl Responder {
         out
     }
 
+    /// 按物理地址写：EEPROM 窗口 / DL 用户内存（≥ 0x1000）/ 寄存器区。
+    ///
+    /// 写 SM0 邮箱缓冲（0x1000）视为一条邮箱报文，交给 [`Self::handle_mailbox_request`]。
     fn write_registers(&mut self, address: u16, data: &[u8]) {
         if EepromInterface::covers(address, data.len()) {
             self.eeprom.write(address, data);
+            return;
+        }
+        if DlUserMemory::covers(address, data.len()) {
+            self.memory.write(address, data);
+            if address == mailbox::MAILBOX_RX_OFFSET {
+                self.handle_mailbox_request(data);
+            }
             return;
         }
         let mut touched_al_control = false;
@@ -346,6 +376,40 @@ impl Responder {
         if touched_al_control {
             self.sync_al_state();
         }
+    }
+
+    /// 处理主站写入 SM0 缓冲的一条邮箱报文（[`esc_core::mailbox`]）。
+    ///
+    /// 目前只实现 **CoE SDO 请求 → SDO Abort 响应**：证明邮箱数据链路可用，
+    /// 对象字典（SDO 上传成功路径）与 SDO Info 留到 B7 后续子步骤。
+    fn handle_mailbox_request(&mut self, message: &[u8]) {
+        let Some(header) = MailboxHeader::parse(message) else {
+            return;
+        };
+        self.stats.mailbox_requests = self.stats.mailbox_requests.saturating_add(1);
+        if header.protocol() != mailbox::MAILBOX_TYPE_COE {
+            return;
+        }
+        let available = message.len() - mailbox::MAILBOX_HEADER_LEN;
+        let service_len = usize::from(header.length).min(available);
+        let service =
+            &message[mailbox::MAILBOX_HEADER_LEN..mailbox::MAILBOX_HEADER_LEN + service_len];
+        let Some(response_service) = mailbox::sdo_abort_response(service) else {
+            return;
+        };
+        let response_header = MailboxHeader {
+            length: 0,
+            address: header.address,
+            priority: header.priority,
+            mbox_type: mailbox::MAILBOX_TYPE_COE,
+        };
+        let Some(response) = mailbox::build_mailbox(response_header, &response_service) else {
+            return;
+        };
+        // 与真实 ESC 一致：响应放在 SM1 缓冲，置 mailbox full 等主站取走。
+        let _ = self.memory.write(mailbox::MAILBOX_TX_OFFSET, &response);
+        mailbox::set_mailbox_full(&mut self.regs);
+        self.stats.mailbox_responses = self.stats.mailbox_responses.saturating_add(1);
     }
 
     fn sync_al_state(&mut self) {
@@ -1003,5 +1067,175 @@ mod tests {
         assert_eq!(wkc, 1);
         assert_eq!(&data[..4], &[0xFF; 4], "未映射字节不被覆盖");
         assert_eq!(&data[4..], &[0u8; 8], "DL 用户内存初值为 0");
+    }
+
+    /// 构造主站写入 SM0 邮箱缓冲的一条 128 字节报文（与 SOEM `ecx_mbxsend` 的
+    /// `FPWR(mbx_wo, mbxl, ...)` 相同：整块 128 字节，头 6 字节 + CoE 服务数据）。
+    fn mailbox_request_payload(
+        mbox_type: u8,
+        coe_command: u16,
+        sdo_command: u8,
+        index: u16,
+        subindex: u8,
+    ) -> Vec<u8> {
+        let mut payload = vec![0u8; mailbox::MAILBOX_SIZE];
+        payload[0..2].copy_from_slice(&10u16.to_le_bytes()); // 服务数据长度
+        payload[2..4].copy_from_slice(&0x1001u16.to_le_bytes()); // 站地址（IgH 风格）
+        payload[4] = 0; // channel/priority
+        payload[5] = mbox_type;
+        payload[6..8].copy_from_slice(&(coe_command << 12).to_le_bytes());
+        payload[8] = sdo_command;
+        payload[9..11].copy_from_slice(&index.to_le_bytes());
+        payload[11] = subindex;
+        payload
+    }
+
+    fn read_tx_mailbox(responder: &mut Responder) -> Vec<u8> {
+        let read = request(&[DatagramData::auto_increment(
+            Command::Aprd,
+            2,
+            0,
+            mailbox::MAILBOX_TX_OFFSET,
+            vec![0u8; mailbox::MAILBOX_SIZE],
+        )]);
+        let reply = responder
+            .handle_frame(&read, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let (wkc, data) = reply_datagram(
+            &reply,
+            ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10,
+            mailbox::MAILBOX_SIZE,
+        );
+        assert_eq!(wkc, 1);
+        data
+    }
+
+    fn read_sm1_status(responder: &mut Responder) -> u8 {
+        let read = request(&[DatagramData::auto_increment(
+            Command::Aprd,
+            3,
+            0,
+            mailbox::SM1_STATUS_ADDRESS,
+            vec![0u8; 1],
+        )]);
+        let reply = responder
+            .handle_frame(&read, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let (wkc, data) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 1);
+        assert_eq!(wkc, 1);
+        data[0]
+    }
+
+    #[test]
+    fn mailbox_sdo_request_gets_abort_response() {
+        // SOEM/IgH 发起 SDO 上传（0x1C12:00）：邮箱数据链路应答 Abort（对象不存在）。
+        let mut responder = Responder::default();
+        let payload = mailbox_request_payload(
+            mailbox::MAILBOX_TYPE_COE,
+            mailbox::COE_COMMAND_SDO_REQUEST,
+            0x40, // initiate upload request
+            0x1C12,
+            0x00,
+        );
+        let write = request(&[DatagramData::auto_increment(
+            Command::Apwr,
+            1,
+            0,
+            mailbox::MAILBOX_RX_OFFSET,
+            payload,
+        )]);
+        let reply = responder
+            .handle_frame(&write, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let (wkc, _) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 128);
+        assert_eq!(wkc, 1);
+
+        // 主站轮询 SM1 Status：bit3 = mailbox full。
+        assert!(
+            mailbox::mailbox_full(read_sm1_status(&mut responder)),
+            "响应就绪后 SM1 status bit3 必须置位"
+        );
+
+        // 读 SM1 缓冲：邮箱头 + CoE SDO Abort 响应。
+        let response = read_tx_mailbox(&mut responder);
+        let header = MailboxHeader::parse(&response).expect("mailbox header");
+        assert_eq!(header.protocol(), mailbox::MAILBOX_TYPE_COE);
+        assert_eq!(header.length, 10, "CoE 头 2 + Abort 8 字节");
+        assert_eq!(
+            u16::from_le_bytes([response[6], response[7]]),
+            mailbox::COE_COMMAND_SDO_RESPONSE << 12,
+            "CoE 命令 = SDO response"
+        );
+        assert_eq!(response[8], mailbox::SDO_COMMAND_ABORT);
+        assert_eq!(u16::from_le_bytes([response[9], response[10]]), 0x1C12);
+        assert_eq!(response[11], 0x00);
+        assert_eq!(
+            u32::from_le_bytes([response[12], response[13], response[14], response[15]]),
+            mailbox::SDO_ABORT_OBJECT_NOT_EXIST
+        );
+
+        // 主站取走数据后 mailbox full 清除。
+        assert!(!mailbox::mailbox_full(read_sm1_status(&mut responder)));
+        assert_eq!(responder.stats().mailbox_requests, 1);
+        assert_eq!(responder.stats().mailbox_responses, 1);
+    }
+
+    #[test]
+    fn mailbox_non_coe_requests_are_not_answered() {
+        let mut responder = Responder::default();
+        // 非 CoE 协议类型（0x04 = FoE）：只记录收到，不应答。
+        let payload = mailbox_request_payload(0x04, 0, 0, 0, 0);
+        let write = request(&[DatagramData::auto_increment(
+            Command::Apwr,
+            1,
+            0,
+            mailbox::MAILBOX_RX_OFFSET,
+            payload,
+        )]);
+        responder
+            .handle_frame(&write, DEFAULT_SIM_MAC)
+            .expect("reply");
+        assert_eq!(responder.stats().mailbox_requests, 1);
+        assert_eq!(responder.stats().mailbox_responses, 0);
+        assert!(!mailbox::mailbox_full(read_sm1_status(&mut responder)));
+
+        // CoE SDO Info（0x8）暂不实现：也不应答。
+        let payload = mailbox_request_payload(
+            mailbox::MAILBOX_TYPE_COE,
+            0x8, // SDO information
+            0x01,
+            0,
+            0,
+        );
+        let write = request(&[DatagramData::auto_increment(
+            Command::Apwr,
+            1,
+            0,
+            mailbox::MAILBOX_RX_OFFSET,
+            payload,
+        )]);
+        responder
+            .handle_frame(&write, DEFAULT_SIM_MAC)
+            .expect("reply");
+        assert_eq!(responder.stats().mailbox_requests, 2);
+        assert_eq!(responder.stats().mailbox_responses, 0);
+        assert!(!mailbox::mailbox_full(read_sm1_status(&mut responder)));
+    }
+
+    #[test]
+    fn too_short_mailbox_write_is_ignored() {
+        let mut responder = Responder::default();
+        let write = request(&[DatagramData::auto_increment(
+            Command::Apwr,
+            1,
+            0,
+            mailbox::MAILBOX_RX_OFFSET,
+            vec![0u8; 4],
+        )]);
+        responder
+            .handle_frame(&write, DEFAULT_SIM_MAC)
+            .expect("reply");
+        assert_eq!(responder.stats().mailbox_requests, 0);
+        assert_eq!(responder.stats().mailbox_responses, 0);
     }
 }

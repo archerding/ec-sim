@@ -83,11 +83,13 @@ fn run(tap_name: &str, verbose: bool) -> std::process::ExitCode {
         let stats = responder.stats();
         if verbose && stats.frames_in % 50 == 0 {
             eprintln!(
-                "STATS in={} out={} dropped={} hits={} al=0x{:02x} station=0x{:04x}",
+                "STATS in={} out={} dropped={} hits={} mbox={} mboxresp={} al=0x{:02x} station=0x{:04x}",
                 stats.frames_in,
                 stats.frames_out,
                 stats.frames_dropped,
                 stats.datagrams_hit,
+                stats.mailbox_requests,
+                stats.mailbox_responses,
                 responder.al_status(),
                 responder.station_address()
             );

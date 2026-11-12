@@ -6,6 +6,58 @@
 
 ---
 
+## 2026-11-12 19:36 班（低峰）— B7 子项 1：邮箱数据链路（SII mailbox 声明 + SM0/SM1 + CoE SDO Abort 应答）
+
+**做了什么**
+- `esc-core` 新增 `mailbox` 模块：邮箱头（6 字节）解析/编码、CoE **SDO Abort** 响应构造
+  （对任意 CoE SDO 请求回 `0x06020000` = object does not exist）、SM1 Status 的 mailbox full 位
+  （0x080D bit3）读写。编码按两家未修改主站复核：IgH `master/fsm_coe.c` 的 CoE 头 u16 bit12–15
+  （0x2 = SDO 请求、0x3 = SDO 响应、0x8 = SDO Info）、SDO 命令 0x40 = initiate upload、
+  0x80 = abort；SOEM `src/ec_coe.c: ecx_SDOread()` 接受 `ECT_SDO_ABORT` 并从 CoE 数据 +6 起
+  读 4 字节 abort code。
+- `sii.rs`：固定区 0x0014–0x001C 声明 boot/std 两套 mailbox（rx 0x1000 / tx 0x1080、各 128 字节、
+  协议 word = **0x0004 = CoE**）；SM 类别 SM0 = 0x1000（control `0x26`）、SM1 = 0x1080
+  （control `0x22`），与 IgH `fsm_slave_config.c` 默认邮箱 SM、SOEM `EC_DEFAULTMBXSM0/1` 一致。
+  **踩坑**：首次把 CoE 协议位写成 0x0001（那是 AoE），主站读到 `MBX protocols : 01` 后完全不发
+  CoE 请求；按 IgH `EC_MBOX_COE = 0x04` / SOEM `ECT_MBXPROT_COE = 0x0004` 修正后才通。
+- `esc-node`：FPRD/FPWR 到 ≥0x1000 的物理地址改为读写 DL 用户内存（此前被忽略）；写 SM0 缓冲
+  （0x1000）解析邮箱头，对 CoE SDO 请求在 SM1 缓冲（0x1080）回 Abort 并置 SM1 Status bit3；
+  主站读走 SM1 缓冲后清该位（模拟从站已消费）。`Stats` 增加 `mailbox_requests`/`mailbox_responses`，
+  `--verbose` 输出 `mbox=/mboxresp=`。
+- 新增断言脚本 `scripts/spikes/soem-mailbox-probe.sh`：`slaveinfo <tap> -map` 触发 SOEM 的 CoE
+  SDO 读取，断言 `MBX length 128/128 + protocols 04`、1 从站、8 位 I/O 映射不变、且应答器统计
+  出现 `mbox>0` / `mboxresp>0`。
+- 测试新增 **8 条**：esc-core +5（邮箱头往返/协议掩码、容量检查、SOEM 风格上传请求→Abort 编码、
+  SDO Info/短数据不应答、mailbox full 位）、esc-node +3（SDO 请求→Abort 响应 + 状态位 + 主站
+  取走后清除、非 CoE/SDO Info 不应答、过短邮箱写入忽略）。
+
+**验证结果**
+- 本机 Windows（rustc 1.97.1）：fmt/clippy(-D warnings) exit 0；`cargo test --workspace` **90 passed**
+  （esc-core 49 / esc-node 25 / wire 16）。
+- Linux 验证机（**未修改的** SOEM，零补丁）：
+  - `slaveinfo -map`：`MBX length wr: 128 rd: 128 MBX protocols : 04`（CoE）、发出 SDO 请求
+    （`PACKET slave:1 index:1c00.00`），应答器 `mbox=1 mboxresp=1`；
+    `soem-mailbox-probe.sh` → `OK: SOEM 通过 CoE 邮箱发出 SDO 请求并收到 SDO Abort（mbox=1 mboxresp=1）`。
+  - 过程数据回归 `soem-process-data.sh`：仍 `mapped 1O+1I` → **OP**、1055 轮 **WKC 3**、0 次 wrong。
+  - 双主站扫描 `minimal-esc-responder.sh`：SOEM `1 slaves found`/8bits/`State: 4`；IgH
+    `0  0:0  PREOP  +`、拓扑断言 OK；统计可见 `mbox=3 mboxresp=3`。
+- IgH 侧仍 PREOP（`ethercat slaves` 不触发 SDO）；IgH 进 OP 还需要对象字典
+  （0x1C12/0x1A00 等）让主站配置 PDO 域，属 B7 后续。
+
+**卡点**
+- 邮箱只回 Abort（无对象字典）：IgH `ethercat sdos` 这类 SDO Info 请求仍会超时（SDO Info 未实现）。
+- 输入数据恒 0；SM buffered/PDI 握手语义、watchdog 未实现。
+- ⚠️ 待验证：真实 ESC 的 SM Status/缓冲区状态位语义（本实现用"主站读走即清 mailbox full"的简化
+  模型）；多从站/多邮箱并发、mailbox counter（高 4 位）未实现。
+
+**下次开工第一件事**
+- **B7 子项 2：对象字典 + SDO 上传（0x1C12/0x1C13/0x1600/0x1A00/0x1018）**：把 Abort-only
+  响应扩展为按索引查表应答（expedited upload），先覆盖主站配置 PDO 域所需的
+  0x1C12/0x1C13/0x1600/0x1A00 与 0x1018；验收 = SOEM `slaveinfo -map` 打印出 PDO 映射（不再为空）、
+  IgH `ethercat sdos` 能列出对象。
+
+---
+
 ## 2026-11-12 19:26 班（低峰）— B6 子项：SII SM/TxPDO/RxPDO 类别（8 位 IO 画像）+ 修正 LRW WKC → SOEM 零补丁进 OP
 
 **做了什么**

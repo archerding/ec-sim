@@ -85,7 +85,8 @@ user.email = deepseek-harness@users.noreply.github.com
   证据：[spike-3](docs/spikes/spike-3-minimal-esc-responder.md)、[复现脚本](scripts/spikes/minimal-esc-responder.sh)。
   顺带修正 `wire::auto_increment_step` 的 ADP 方向（主站 ADP = 环位置相反数、转发前 +1）。
   ⚠️ **OP 状态**：SOEM 零补丁已能进 OP（2026-11-12 19:26 班起，SII SM/PDO 类别 + FMMU 逻辑寻址，
-  8 位 PDO 交换、每轮 WKC 3；见 B8 进度）；**IgH 仍停在 PREOP**（需 B7 mailbox/CoE 配置 PDO 域）。
+  8 位 PDO 交换、每轮 WKC 3；见 B8 进度）；**IgH 仍停在 PREOP**（19:36 班已声明 mailbox/CoE 并回
+  SDO Abort，仍需 B7 对象字典/SDO 上传才能配置 PDO 域）。
   IgH 拓扑计算已修（DL Status 0x0110 位按 ETG.1000.4 table 34 修正为单从站正确值 `0x5610`，
   `Failed to calculate bus topology` 消失，2026-11-12 18:56 班；多从站拓扑待 B8）；
   SII 固定区 CRC-8 已补齐（word 0x0007，B6 子项，2026-11-12 晚班）。
@@ -107,13 +108,20 @@ user.email = deepseek-harness@users.noreply.github.com
   - 待做：SM 触发的 mailbox 握手/watchdog、AL SAFEOP/OP 的 ESM 前置条件检查。
 - [ ] **B6 SII 生成器**：ESI XML → SII 镜像（含固定区 CRC-8（**word 0x0007**，覆盖 0x0000–0x0006，已实现）、category 链 0x0029/0x0032/0x0033、0xFFFF 终止）。
   - 进度（2026-11-12 19:26 班）：**SM 类别 0x0029 + TxPDO 0x0032 + RxPDO 0x0033 已实现**
-    （8 位输入/输出通用画像：SM2 输出 0x1100、SM3 输入 0x1110；PDO 0x1A00/0x1600，
+    （SM0/SM1 = mailbox、SM2 输出 0x1100、SM3 输入 0x1110；PDO 0x1A00/0x1600，
     对象 0x6000:00/0x7000:00）。字节布局按 IgH `slave.c` 与 SOEM `ec_main.c` 的解析代码逐字节复核；
-    EEPROM 大小 word 0x003E 改为 2（384 字节）。证据：`crates/esc-core/src/sii.rs`，测试 82 passed；
-    SOEM `slaveinfo` 显示 `Output size: 8bits / Input size: 8bits`。
+    EEPROM 大小 word 0x003E 改为 2（384 字节）。证据：`crates/esc-core/src/sii.rs`，测试 90 passed；
+    SOEM `slaveinfo` 显示 `Output size: 8bits / Input size: 8bits`、`MBX protocols : 04`。
   - 待做：FMMU 类别 0x0028（⚠️ 字段语义待核实，不凭记忆猜）、DC 类别、ESI XML → SII 生成器。
   ⚠️ 旧文档把 CRC 写成 word 0x003F，经 SOEM `eepromtool`/IgH `tool/sii_crc.cpp` 复核已更正（0x003F 是 SII 版本 = 1）。
 - [ ] **B7 CoE 最小闭环**：加速 SDO 上传/下载 + 0x1C12/0x1C13/0x1600/0x1A00 + Abort 码；先**不做** SDO Info 与 Complete Access（SII 对应位清 0）。
+  - 进度（2026-11-12 19:36 班）：**邮箱数据链路已通**——SII 声明 CoE mailbox（固定区 0x0014–0x001C，
+    SM0 0x1000 / SM1 0x1080 各 128 字节；协议位 = `0x0004` CoE，注意不是 0x0001=AoE），
+    `esc-node` 对 CoE SDO 请求回 **SDO Abort**（0x06020000）并置 SM1 Status bit3，主站读走后清除。
+    证据：`crates/esc-core/src/mailbox.rs`、`scripts/spikes/soem-mailbox-probe.sh`
+    （SOEM `slaveinfo -map` 断言 mbox>0）；未修改 SOEM 侧 `mbox=1 mboxresp=1`，过程数据 OP/WKC3 无回归。
+  - 待做：**对象字典 + SDO 上传**（0x1C12/0x1C13/0x1600/0x1A00/0x1018）、Abort 码表、SDO Info、
+    Complete Access（IgH 进 OP 需要主站能配置 PDO 域）。
 - [ ] **B9 声明式插件加载器**：读取 `plugins/<id>/plugin.yaml` → 生成 SII + 对象字典 + 默认 PDO 分配 + SM/FMMU 布局（不依赖行为代码），并在 IgH/SOEM 上扫描到该从站。
 - [ ] **B10 首个 P0 设备插件**：Beckhoff EL2008 兼容 8DO（声明式），完成 `facts.md`（含来源 URL）、manifest、双主站扫描验证记录（`docs/plugins/`）。
 - [ ] **B11 CiA402 行为插件**：以 Inovance SV660N 兼容画像为第一个目标，实现 CSP 状态机（Tier0/内置 profile 起步）。

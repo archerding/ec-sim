@@ -10,8 +10,12 @@
 //!   `ECT_SII_START = 0x0040`（`ecx_siifind` 用 `ECT_SII_START << 1` 转字节地址）。
 //!
 //! 已实现（B6 子项，2026-11-12 19:26 班）：**SM 类别 0x0029**（4 个 Sync Manager：
-//! SM0/SM1 暂不定义 mailbox，SM2 = 8 位输出、SM3 = 8 位输入）、**TxPDO 类别 0x0032**
+//! SM0/SM1 = mailbox、SM2 = 8 位输出、SM3 = 8 位输入）、**TxPDO 类别 0x0032**
 //! （`0x1A00`，8 位输入）与 **RxPDO 类别 0x0033**（`0x1600`，8 位输出）。
+//! 已实现（B7 子项 1，2026-11-12 19:36 班）：固定区 **0x0014–0x001C 的 mailbox 参数**
+//! （boot/std 两套 rx/tx 偏移与 128 字节容量、`mailbox_protocols = 0x0001` = CoE），
+//! SM0 = 0x1000 / SM1 = 0x1080（control 0x26/0x22，与 IgH `fsm_slave_config.c` 默认邮箱
+//! 及 SOEM `EC_DEFAULTMBXSM0/1` 一致）。
 //! 字节布局按两家**未修改**主站的解析代码逐字节复核（只读参考、未复制代码）：
 //! - IgH `master/slave.c`：`ec_slave_fetch_sii_syncs()` 每条 8 字节
 //!   （start u16、length u16、control u8、status u8、enable u8、pdi_control u8）；
@@ -24,8 +28,8 @@
 //!   `src/ec_config.c: ecx_map_sii()` 在无 mailbox（CoE 不可用）时回退到 SII PDO 类别，
 //!   据此设置 SM2/SM3 的长度与类型并映射 PDO（8 位 → 1 字节）。
 //!
-//! 尚未实现（B6 其余）：FMMU 类别 0x0028、DC 类别、ESI XML → SII 生成器、
-//! mailbox 类别（B7 再启用 SM0/SM1 与 CoE）。
+//! 尚未实现（B6/B7 其余）：FMMU 类别 0x0028、DC 类别、ESI XML → SII 生成器、
+//! 对象字典与 SDO Info（邮箱目前只回 SDO Abort，见 [`crate::mailbox`]）。
 //!
 //! 固定区校验（ETG.1000.6 §5.4 table 16，已按两家未修改主站复核）：
 //! - **word 0x0007：SII CRC-8**，覆盖 word 0x0000–0x0006（14 字节），多项式
@@ -54,6 +58,23 @@ pub const SII_VERSION_WORD: u16 = 0x003F;
 pub const SIM_EEPROM_SIZE: u16 = 2;
 /// 本镜像声明的 SII 版本（ETG.1000.6：固定为 1）。
 pub const SIM_SII_VERSION: u16 = 1;
+
+/// 标准/引导模式 mailbox 参数（SII 固定区 word 0x0014–0x001C）。
+///
+/// IgH `master/fsm_slave_scan.c` 读取偏移：boot rx 0x0014、boot tx 0x0016、
+/// std rx 0x0018、std tx 0x001A（偏移/容量各 1 word），协议字 0x001C；任一字段为
+/// `0xFFFF` 时 IgH 关闭邮箱。SOEM `src/ec_config.c` 从 `mbx_wo/mbx_ro/mbx_l/mbx_rl`
+/// 读取同样字段。标准模式（std）在 PREOP 后生效，boot 模式用于 bootstrap。
+pub const SIM_MAILBOX_OFFSET_RX: u16 = crate::mailbox::MAILBOX_RX_OFFSET;
+/// 发送邮箱（SM1）偏移。
+pub const SIM_MAILBOX_OFFSET_TX: u16 = crate::mailbox::MAILBOX_TX_OFFSET;
+/// 邮箱容量（字节，两个方向相同）。
+pub const SIM_MAILBOX_SIZE: u16 = crate::mailbox::MAILBOX_SIZE as u16;
+/// mailbox protocol 位：bit2 = CoE（`0x0004`；ETG.1000.6 / IgH `EC_MBOX_COE = 0x04` /
+/// SOEM `ECT_MBXPROT_COE = 0x0004`）。注意 bit0 = AoE、bit1 = EoE、bit3 = FoE、
+/// bit4 = SoE、bit5 = VoE（两家定义一致）——2026-11-12 19:36 班首次写错成 0x0001（AoE），
+/// 现象是 SOEM 读到协议 01、不发起任何 CoE 邮箱请求。
+pub const SIM_MAILBOX_PROTOCOLS: u16 = 0x0004;
 
 /// SII 类别类型（ETG.1000.6）。
 pub mod category {
@@ -180,24 +201,28 @@ impl SiiSyncManager {
 
 /// 本镜像的 4 个 SM 条目。
 ///
-/// SM0/SM1 全 0：**mailbox 未启用**（固定区 0x0014–0x001C 也为 0，主站不会协商 CoE/FoE/EoE/SoE，
-/// 属 B7 范围）。SM2 = 输出（buffered、方向 write = `0x04`），SM3 = 输入（buffered、方向 read = `0x00`）；
+/// SM0 = mailbox out（主站 → 从站，0x1000，128 字节，control `0x26` = mailbox 模式 +
+/// 写方向 + 事件位），SM1 = mailbox in（从站 → 主站，0x1080，128 字节，control `0x22`）。
+/// 这两个 control 值与 IgH `master/fsm_slave_config.c` 的默认邮箱 SM 配置
+/// （`sync.control_register = 0x26 / 0x22`）及 SOEM `src/ec_config.c` 的
+/// `EC_DEFAULTMBXSM0 = 0x00010026` / `EC_DEFAULTMBXSM1 = 0x00010022` 一致。
+/// SM2 = 输出（buffered、方向 write = `0x04`），SM3 = 输入（buffered、方向 read = `0x00`）；
 /// 方向位编码见 `sm.rs` 模块文档（ETG.1000.4 table 58）。
 pub const SIM_SYNC_MANAGERS: [SiiSyncManager; 4] = [
     SiiSyncManager {
-        physical_start_address: 0,
-        length: 0,
-        control: 0,
+        physical_start_address: SIM_MAILBOX_OFFSET_RX,
+        length: SIM_MAILBOX_SIZE,
+        control: 0x26,
         status: 0,
-        enable: 0,
+        enable: 1,
         pdi_control: 0,
     },
     SiiSyncManager {
-        physical_start_address: 0,
-        length: 0,
-        control: 0,
+        physical_start_address: SIM_MAILBOX_OFFSET_TX,
+        length: SIM_MAILBOX_SIZE,
+        control: 0x22,
         status: 0,
-        enable: 0,
+        enable: 1,
         pdi_control: 0,
     },
     SiiSyncManager {
@@ -305,11 +330,12 @@ pub struct SiiImage {
 }
 
 impl SiiImage {
-    /// 构造"1 个仿真从站"的最小 SII：固定区 + 字符串/通用/SM/TxPDO/RxPDO 类别 + 终止字。
+    /// 构造"1 个仿真从站"的最小 SII：固定区（含 mailbox 参数）+ 字符串/通用/SM/TxPDO/RxPDO
+    /// 类别 + 终止字。
     ///
-    /// 邮箱配置全为 0（不提供 mailbox），因此主站不会协商 CoE/FoE/EoE/SoE；SOEM 在
-    /// `ecx_map_sii()` 无 CoE 可用的分支里回退到本镜像的 PDO 类别，得到 **8 位输入 / 8 位输出**
-    /// 的默认映射。IgH 未获 mailbox protocol 时扫描结束在 PREOP。
+    /// mailbox 声明为 **CoE、SM0/SM1 各 128 字节**（0x1000/0x1080）：主站会协商 CoE 并做
+    /// PREOP 邮箱配置；应答器目前对 SDO 请求回 Abort（[`crate::mailbox`]），尚未提供对象字典。
+    /// SOEM 在 CoE 映射失败后回退本镜像的 PDO 类别，得到 **8 位输入 / 8 位输出** 默认映射。
     #[must_use]
     pub fn simulated_slave() -> Self {
         let mut words = vec![0u16; usize::from(SII_FIRST_CATEGORY_WORD)];
@@ -317,7 +343,16 @@ impl SiiImage {
         put_u32(&mut words, 0x000A, SIM_PRODUCT_CODE);
         put_u32(&mut words, 0x000C, SIM_REVISION);
         put_u32(&mut words, 0x000E, SIM_SERIAL);
-        // 0x0014..=0x001C 保持 0：无 mailbox、无 mailbox protocol。
+        // mailbox 参数：boot 与 std 两套都声明（偏移/容量），协议字 bit0 = CoE。
+        words[0x0014] = SIM_MAILBOX_OFFSET_RX;
+        words[0x0015] = SIM_MAILBOX_SIZE;
+        words[0x0016] = SIM_MAILBOX_OFFSET_TX;
+        words[0x0017] = SIM_MAILBOX_SIZE;
+        words[0x0018] = SIM_MAILBOX_OFFSET_RX;
+        words[0x0019] = SIM_MAILBOX_SIZE;
+        words[0x001A] = SIM_MAILBOX_OFFSET_TX;
+        words[0x001B] = SIM_MAILBOX_SIZE;
+        words[0x001C] = SIM_MAILBOX_PROTOCOLS;
         words[usize::from(SII_EEPROM_SIZE_WORD)] = SIM_EEPROM_SIZE;
         words[usize::from(SII_VERSION_WORD)] = SIM_SII_VERSION;
         // 固定区 CRC-8 必须在 0x0000–0x0006 全部确定后计算，写入 word 0x0007。
@@ -467,8 +502,22 @@ mod tests {
         assert_eq!(sii.read_word(0x000A), (SIM_PRODUCT_CODE & 0xFFFF) as u16);
         assert_eq!(sii.read_word(0x000C), (SIM_REVISION & 0xFFFF) as u16);
         assert_eq!(sii.read_word(0x000E), (SIM_SERIAL & 0xFFFF) as u16);
-        // 无 mailbox：标准 mailbox protocol word 为 0
-        assert_eq!(sii.read_word(0x001C), 0);
+        // mailbox 声明（B7 子项 1）：boot 与 std 两套 rx/tx 偏移 + 容量 + CoE 协议位。
+        // IgH 读 std 在 word 0x0018/0x001A，SOEM 读 mbx_wo/mbx_ro/mbx_l/mbx_rl。
+        assert_eq!(sii.read_word(0x0014), SIM_MAILBOX_OFFSET_RX);
+        assert_eq!(sii.read_word(0x0015), SIM_MAILBOX_SIZE);
+        assert_eq!(sii.read_word(0x0016), SIM_MAILBOX_OFFSET_TX);
+        assert_eq!(sii.read_word(0x0017), SIM_MAILBOX_SIZE);
+        assert_eq!(sii.read_word(0x0018), SIM_MAILBOX_OFFSET_RX);
+        assert_eq!(sii.read_word(0x0019), SIM_MAILBOX_SIZE);
+        assert_eq!(sii.read_word(0x001A), SIM_MAILBOX_OFFSET_TX);
+        assert_eq!(sii.read_word(0x001B), SIM_MAILBOX_SIZE);
+        assert_eq!(sii.read_word(0x001C), SIM_MAILBOX_PROTOCOLS);
+        assert_eq!(
+            sii.read_word(0x001C) & 0x0004,
+            0x0004,
+            "bit2 = CoE（IgH EC_MBOX_COE = 0x04 / SOEM ECT_MBXPROT_COE = 0x0004）"
+        );
         // alias 为 0（word 0x0004，IgH 读取位置）
         assert_eq!(sii.read_word(0x0004), 0);
     }
@@ -622,9 +671,21 @@ mod tests {
         }
         assert_eq!(parsed, SIM_SYNC_MANAGERS.to_vec());
 
-        // SM0/SM1 未定义 mailbox（B7 再启用）。
-        assert_eq!(parsed[0].physical_start_address, 0);
-        assert_eq!(parsed[1].physical_start_address, 0);
+        // SM0/SM1 = mailbox：物理 0x1000/0x1080、128 字节、control 0x26/0x22（IgH/SOEM 默认值）。
+        assert_eq!(parsed[0].physical_start_address, SIM_MAILBOX_OFFSET_RX);
+        assert_eq!(parsed[0].length, SIM_MAILBOX_SIZE);
+        assert_eq!(
+            parsed[0].control, 0x26,
+            "mailbox out: 模式 10 + 写方向 + 事件位"
+        );
+        assert_eq!(parsed[0].enable & 0x01, 0x01);
+        assert_eq!(parsed[1].physical_start_address, SIM_MAILBOX_OFFSET_TX);
+        assert_eq!(parsed[1].length, SIM_MAILBOX_SIZE);
+        assert_eq!(
+            parsed[1].control, 0x22,
+            "mailbox in: 模式 10 + 读方向 + 事件位"
+        );
+        assert_eq!(parsed[1].enable & 0x01, 0x01);
         // SM2 = 8 位输出：物理 0x1100、写方向（control bit2）、使能。
         assert_eq!(parsed[2].physical_start_address, SIM_OUTPUT_SM_START);
         assert_eq!(parsed[2].length, 1);

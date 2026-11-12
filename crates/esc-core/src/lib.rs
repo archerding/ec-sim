@@ -6,14 +6,16 @@
 //! - AL Control (0x0120) / AL Status (0x0130) / AL Status Code (0x0134) 语义；
 //! - ESM 合法迁移表、错误位与 Error ACK、ID Request。
 //!
-//! 尚未实现（后续子步骤）：watchdog、DC、SM 触发的 mailbox 握手。
+//! 尚未实现（后续子步骤）：watchdog、DC、SM 触发的 mailbox 中断。
 //!
 //! 已实现（B2b 起）：[`sii`] 最小 SII 镜像、[`eeprom`] EEPROM 寄存器接口状态机；
 //! （B5 子项）[`sm`] Sync Manager 寄存器块（0x0800–0x083F）、[`fmmu`] FMMU 寄存器块
-//! （0x0600–0x067F）与逻辑→物理翻译、[`memory`] DL 用户内存（0x1000–0xFFFF）。
+//! （0x0600–0x067F）与逻辑→物理翻译、[`memory`] DL 用户内存（0x1000–0xFFFF）；
+//! （B7 子项 1）[`mailbox`] 邮箱头解析与 CoE SDO Abort 应答。
 
 pub mod eeprom;
 pub mod fmmu;
+pub mod mailbox;
 pub mod memory;
 pub mod sii;
 pub mod sm;

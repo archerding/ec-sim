@@ -98,7 +98,26 @@ Iteration    1:   117 usec  WKC 3  O: 00  I: 00  T: 0
   `FMMU0 ... Ty:02 Act:01`。
 - 复现脚本：[soem-process-data.sh](../../scripts/spikes/soem-process-data.sh)
   （断言 1 从站 / 1O+1I / OP / 每轮 WKC=3）。
-- IgH 因无 mailbox/CoE 仍停在 PREOP（`0  0:0  PREOP  +`），属 B7 范围。
+- IgH 因缺对象字典仍停在 PREOP（19:36 班已声明 mailbox/CoE 并回 SDO Abort，见 §3.2 与 §5）。
+
+### 3.2 邮箱数据链路：SOEM 经 CoE 邮箱发 SDO、从站回 Abort（2026-11-12 19:36 班）
+
+SII 声明 CoE mailbox（固定区 0x0014–0x001C：SM0 0x1000 / SM1 0x1080 各 128 字节，
+协议 word = `0x0004`）后，未修改 SOEM 会真正发起 CoE 请求；应答器用 SM1 Status bit3 通知
+响应就绪，主站读走后清除：
+
+```
+MBX length wr: 128 rd: 128 MBX protocols : 04
+Time:... PACKET slave:1 index:1c00.00 error:3     # SOEM 收到 SDO Abort 后的包错误记录
+```
+
+- 应答器统计：`mbox=1 mboxresp=1`（收到 SDO 请求并回 Abort；无对象字典，回
+  `0x06020000` = object does not exist）。
+- 复现脚本：[soem-mailbox-probe.sh](../../scripts/spikes/soem-mailbox-probe.sh)
+  （断言 mailbox 声明 / 8 位映射不变 / `mbox>0` / `mboxresp>0`）。
+- **踩坑**：CoE 的 mailbox protocol 位是 **0x0004**（0x0001 = AoE、0x0002 = EoE）；
+  首次写成 0x0001 时 SOEM 显示 `MBX protocols : 01` 且**完全不发 CoE 请求**。
+- 过程数据与双主站扫描无回归（§3.1 仍 OP/WKC3；IgH 仍 PREOP）。
 
 ## 4. 过程中发现并修正的四个真问题
 
@@ -143,7 +162,10 @@ Iteration    1:   117 usec  WKC 3  O: 00  I: 00  T: 0
   同时 `slaveinfo` 与 IgH `ethercat slaves` 无回归。仍属"预回归"，**不构成**一致性测试/认证结论。
 - ~~**未进 OP**~~ ✅ **SOEM 已进 OP（2026-11-12 19:26 班）**：SII SM/TxPDO/RxPDO 类别 + FMMU
   逻辑寻址 + LRW WKC 修正后，未修改 SOEM `simple_ng` 进入 OP 并做 8 位 PDO 交换（§3.1）。
-  **IgH 仍停在 PREOP**：需要 mailbox + CoE SDO 才能配置 PDO 域，属 B7；当前 SII 未声明 mailbox。
+  **IgH 仍停在 PREOP**：19:36 班已声明 mailbox/CoE 并实现 SDO Abort 应答（§3.2），但 IgH 配置
+  PDO 域需要 SDO **上传成功**（对象字典），属 B7 后续。
+- **邮箱只回 Abort**：没有对象字典，SOEM 的 PDO 映射读取会失败并回退 SII 映射；
+  SDO Info（0x8）未实现，`ethercat sdos` 这类请求会超时。
 - **输入/输出数据是静态的**：模拟器没有 PDI/应用层，输入恒 0；SM2/SM3 的 buffered/SM 握手语义、
   邮箱、watchdog 均未实现。
 - **SII 暂无 FMMU 类别 0x0028 与 DC 类别**：SOEM `FMMUfunc` 仍显示 `0:0`；
@@ -153,9 +175,9 @@ Iteration    1:   117 usec  WKC 3  O: 00  I: 00  T: 0
 
 ## 6. 下一步
 
-- **B7 CoE 最小闭环**：SII 声明 mailbox（SM0/SM1 + 固定区 0x0018 起）与 CoE 协议位，实现邮箱
-  数据链路（SM 状态位、0x1000/0x1080 缓冲区）；先对未知对象回 SDO Abort（0x06020000）证明
-  链路通，再补对象字典（0x1C12/0x1C13/0x1600/0x1A00、0x1018）让 **IgH** 也能配置 PDO 域并进 OP；
+- **B7 子项 2：对象字典 + SDO 上传**（0x1C12/0x1C13/0x1600/0x1A00/0x1018）：把 Abort-only 响应
+  扩展为按索引查表应答（expedited upload），让 **IgH** 也能配置 PDO 域并进 OP；邮箱链路已在
+  19:36 班打通（§3.2，断言脚本 `soem-mailbox-probe.sh`）；
 - **B8 双主站冒烟**：SOEM 已零补丁进 OP（§3.1，断言脚本 `soem-process-data.sh`）；待 IgH 进 OP 后
   把两主站证据合并为最终冒烟记录；
 - DL Status 将在**多从站**场景下按实际拓扑继续验证（单从站已 ✅）。
