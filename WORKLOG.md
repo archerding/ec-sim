@@ -6,6 +6,45 @@
 
 ---
 
+## 2026-11-12 23:44 班（低峰）— B7 补缺口：**分段 SDO 下载**（segmented download）
+
+**做了什么**
+- `esc-core::mailbox` 新增分段下载报文支持（布局按 IgH `master/fsm_coe.c` 复核）：
+  - `parse_initiate_download()`：normal download（命令字节恰为 `0x21`，Size u32 在 +6，
+    首段数据从 +10 开始，承载上限 = 邮箱容量）；
+  - `parse_segment_download()`：segment 请求（命令字节
+    `0x20 | toggle<<4 | unused<<1 | last`，头 3 字节 + 最多 7 字节数据，末段用 unused 标零）；
+  - `sdo_download_segment_ok_service()`：segment 响应
+    （CoE `0x3<<12` + `0x20 | toggle<<4`，与 IgH 校验 bit7-5==0x01 一致）。
+- `esc-node::Responder` 新增分段下载状态 `SegmentedDownload` 与处理：
+  - initiate 校验对象可写（只读 → Abort `0x06010002`，不存在 → `0x06020000`），
+    首段不完整则保持下载状态；
+  - segment 累积数据、末段写入 `object_writes`（可被 SDO Upload 回读）；
+    没有进行中的下载时收到 segment 请求 → Abort `0x05040000`；
+  - 与分段上传分支互斥（有下载状态时优先按 segment 解析，避免 `0x20`/`0x21` 命令字节歧义）。
+- 新增两个单测：`segmented_download_requests_and_response_layout`（报文布局）、
+  `segmented_download_writes_long_object`（20 字节字符串对象：initiate 8B + 7B + 5B
+  分段下载后回读一致）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **164 passed**（esc-core 77 / esc-node 49 / plugin-host 21 + 1 集成 / wire 16）。
+- ⚠️ **未在验证机用真实主站做分段下载**：IgH `ethercat download` CLI 适合短数据/
+  expedited；构造长数据需要额外夹具。本班只做 datagram 级单测（同样的字节布局按 IgH
+  源码逐项复核）→ 真实主站验证列为待验证。
+
+**卡点**
+- Complete Access 的下载/上传仍未实现（SII CA 位保持 0）。
+- 分段下载只写 `object_writes`，不做对象类型/长度校验（SDO 层允许任意长度覆盖）；
+  无并发多传输仲裁（单主站串行场景）。
+- 与分段上传一样：状态机对 toggle 只做回显，不校验连续性（上位主站均应正确翻转）。
+
+**下次开工第一件事**
+- 在验证机上用长数据夹具（或 IgH 应用 API）验证真实主站的分段下载；或继续 B11
+  （9/11 字节 PDO → CSV 模式 / SV660N 手册核对）；B6 FMMU/DC 原文核实仍待条件。
+
+---
+
 ## 2026-11-12 23:40 班（低峰）— B11 第七步：CiA 402 行为**模式门控 + 错误注入**（Tier0）
 
 **做了什么**

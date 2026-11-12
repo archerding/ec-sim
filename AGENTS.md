@@ -206,7 +206,12 @@ user.email = deepseek-harness@users.noreply.github.com
     `segmented SDO 读到 0x1008 = 'Beckhoff EL2008 compatible 8DO (SIMULATED)'（42 字节）`。
     ⚠️ IgH 侧 SDO 上传在该验证机上**整体超时**（expedited 与 segmented 同样失败，dmesg 有
     ecrt ioctl 内核栈转储），判定为环境问题；恢复后需补 `ethercat upload -t string 0x1008 0`。
-  - 待做：IgH 侧分段上传验证（环境恢复后）、Complete Access、分段 Download。
+  - 进度（2026-11-12 23:44 班）：**分段 SDO 下载（segmented download）已实现**——`mailbox`
+    支持 initiate（`0x21` + Size u32）与 segment 请求/响应（`0x20|toggle<<4|unused<<1|last`，
+    布局按 IgH `fsm_coe.c` 的 `prepare_down_start`/`prepare_segment_request` 复核）；
+    `esc-node` 增加分段下载状态与写入（只读/未知对象 Abort）。测试 **164 passed**。
+    ⚠️ 仅 datagram 级单测，**未在验证机用真实主站验证**（需长数据夹具）。
+  - 待做：IgH 侧分段上传/下载验证（环境/夹具）、Complete Access（CA）。
 - [x] ~~**B9 声明式插件加载器**~~ ✅ **2026-11-12 21:25 班完成**：`plugin-host` 零依赖解析
   `plugin.yaml`（YAML 子集 + R2/R5 校验）→ `sii_gen` 生成 SII 镜像、`dict_gen` 生成运行时
   对象字典（0x1018 身份 / 0x1C00 SM 类型 / 0x1C12+0x1C13 分配 / PDO 映射 / 用户对象）；

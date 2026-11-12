@@ -151,6 +151,104 @@ pub const SDO_ABORT_OBJECT_NOT_EXIST: u32 = 0x0602_0000;
 /// SDO Abort 码：不支持的访问（本实现只读，因此 Download 等请求回该码）。
 pub const SDO_ABORT_UNSUPPORTED_ACCESS: u32 = 0x0601_0000;
 
+/// SDO 命令字节：download segment request（分段下载的后续段；`0x20 | toggle<<4 | unused<<1 | last`）。
+pub const SDO_COMMAND_DOWNLOAD_SEGMENT_REQUEST: u8 = 0x20;
+
+/// 分段下载的 initiate download 请求（**normal、非 expedited**，命令字节 `0x21`）。
+///
+/// 布局按 IgH `master/fsm_coe.c: ec_fsm_coe_prepare_down_start()`：
+/// CoE 头 2 + Command + Index 2 + SubIndex 1 + Size(u32) + 首段数据（最多到邮箱容量）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InitiateDownload {
+    /// 对象索引。
+    pub index: u16,
+    /// 子索引。
+    pub subindex: u8,
+    /// 数据总长度（u32）。
+    pub total_size: u32,
+    /// 首段数据（可能小于总长度）。
+    pub data: Vec<u8>,
+}
+
+/// 解析 download initiate 请求（normal、size indicated，命令字节必须恰为 `0x21`）。
+///
+/// ⚠️ 命令字节 `0x20|...` 与 segment 请求共享 bit7-5，因此这里只接受 `0x21`；
+/// 从站在有进行中的分段下载时应优先按 segment 请求解析（见 `esc-node`）。
+#[must_use]
+pub fn parse_initiate_download(service: &[u8]) -> Option<InitiateDownload> {
+    if service.len() < 10 {
+        return None;
+    }
+    let coe = u16::from_le_bytes([service[0], service[1]]);
+    if coe >> 12 != COE_COMMAND_SDO_REQUEST {
+        return None;
+    }
+    if service[2] != (SDO_COMMAND_DOWNLOAD_SEGMENT_REQUEST | 0x01) {
+        return None;
+    }
+    Some(InitiateDownload {
+        index: u16::from_le_bytes([service[3], service[4]]),
+        subindex: service[5],
+        total_size: u32::from_le_bytes([service[6], service[7], service[8], service[9]]),
+        data: service[10..].to_vec(),
+    })
+}
+
+/// 分段下载请求的解析结果。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SegmentDownload {
+    /// toggle 位。
+    pub toggle: u8,
+    /// 末段未使用的字节数（0..7）。
+    pub unused: u8,
+    /// 是否末段。
+    pub last: bool,
+    /// 本段数据（长度 = 7 - unused）。
+    pub data: Vec<u8>,
+}
+
+/// 解析 download segment 请求（命令字节 `0x20 | toggle<<4 | unused<<1 | last`）。
+///
+/// 布局按 IgH `master/fsm_coe.c: ec_fsm_coe_down_prepare_segment_request()`：
+/// CoE 头 2 + Command + 最多 7 字节数据（不足 7 字节时补零并用 `unused` 标注）。
+#[must_use]
+pub fn parse_segment_download(service: &[u8]) -> Option<SegmentDownload> {
+    if service.len() < 3 {
+        return None;
+    }
+    let coe = u16::from_le_bytes([service[0], service[1]]);
+    if coe >> 12 != COE_COMMAND_SDO_REQUEST {
+        return None;
+    }
+    let command = service[2];
+    if command & 0xE0 != SDO_COMMAND_DOWNLOAD_SEGMENT_REQUEST {
+        return None;
+    }
+    let toggle = (command >> 4) & 0x01;
+    let unused = (command >> 1) & 0x07;
+    let last = command & 0x01 != 0;
+    let used = SDO_SEGMENT_DATA_LEN.saturating_sub(usize::from(unused));
+    let payload = &service[3..];
+    if payload.len() < used {
+        return None;
+    }
+    Some(SegmentDownload {
+        toggle,
+        unused,
+        last,
+        data: payload[..used].to_vec(),
+    })
+}
+
+/// 构造分段下载的 segment 响应：CoE 0x3<<12 + `0x20 | toggle<<4`（IgH 校验 bit7-5 == 0x01）。
+#[must_use]
+pub fn sdo_download_segment_ok_service(toggle: u8) -> Vec<u8> {
+    let mut service = Vec::with_capacity(3);
+    service.extend_from_slice(&(COE_COMMAND_SDO_RESPONSE << 12).to_le_bytes());
+    service.push(SDO_COMMAND_DOWNLOAD_SEGMENT_REQUEST | ((toggle & 0x01) << 4));
+    service
+}
+
 /// SDO Abort 码：尝试写只读对象（CiA 301）。
 pub const SDO_ABORT_READ_ONLY: u32 = 0x0601_0002;
 
@@ -709,6 +807,34 @@ mod tests {
             None
         );
         assert_eq!(parse_sdo_info_request(&[0x00, 0x80, 0x01]), None);
+    }
+
+    #[test]
+    fn segmented_download_requests_and_response_layout() {
+        // initiate download（normal、size indicated，命令字节恰为 0x21）。
+        let mut service = vec![0x00, 0x20, 0x21];
+        service.extend_from_slice(&0x2100u16.to_le_bytes());
+        service.push(0x00);
+        service.extend_from_slice(&20u32.to_le_bytes());
+        service.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        let initiate = parse_initiate_download(&service).expect("initiate download");
+        assert_eq!(initiate.index, 0x2100);
+        assert_eq!(initiate.subindex, 0);
+        assert_eq!(initiate.total_size, 20);
+        assert_eq!(initiate.data, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+
+        // segment download 请求：0x20 | toggle<<4 | unused<<1 | last。
+        // toggle=1、unused=4（3 字节有效）、last=1 → 0x20|0x10|0x08|0x01 = 0x39。
+        let segment_request = [0x00, 0x20, 0x39, 9, 10, 11, 0, 0, 0, 0];
+        let segment = parse_segment_download(&segment_request).expect("segment download");
+        assert_eq!(segment.toggle, 1);
+        assert_eq!(segment.unused, 4);
+        assert!(segment.last);
+        assert_eq!(segment.data, vec![9, 10, 11]);
+
+        // segment 响应：CoE 0x3<<12 + 0x20 | toggle<<4（IgH 校验 bit7-5 == 0x01）。
+        assert_eq!(sdo_download_segment_ok_service(0), vec![0x00, 0x30, 0x20]);
+        assert_eq!(sdo_download_segment_ok_service(1), vec![0x00, 0x30, 0x30]);
     }
 
     #[test]

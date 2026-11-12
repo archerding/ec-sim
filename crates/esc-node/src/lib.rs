@@ -123,6 +123,19 @@ struct SegmentedUpload {
     offset: usize,
 }
 
+/// 进行中的分段 SDO 下载（值 > 4 字节时使用，CiA 301 segmented download）。
+#[derive(Debug, Clone)]
+struct SegmentedDownload {
+    /// 对象索引。
+    index: u16,
+    /// 子索引。
+    subindex: u8,
+    /// 数据总长度。
+    total_size: u32,
+    /// 已收到的数据。
+    data: Vec<u8>,
+}
+
 /// CiA 402 状态机行为：每个帧周期读 SM2 的控制字，写 SM3 的状态字（Tier0 骨架）。
 #[derive(Debug, Clone)]
 struct Cia402Behavior {
@@ -162,6 +175,8 @@ pub struct Responder {
     dict: ObjectDictionary,
     /// 进行中的分段 SDO 上传（值 > 4 字节的对象）。
     upload: Option<SegmentedUpload>,
+    /// 进行中的分段 SDO 下载（值 > 4 字节的对象）。
+    download: Option<SegmentedDownload>,
     /// 可选的 CiA 402 状态机行为（SM2 控制字 → SM3 状态字），见 [Responder::with_cia402_behavior]。
     cia402: Option<Cia402Behavior>,
     stats: Stats,
@@ -193,6 +208,7 @@ impl Responder {
             esm_preconditions: true,
             dict: ObjectDictionary::simulated(),
             upload: None,
+            download: None,
             cia402: None,
             stats: Stats::default(),
         }
@@ -682,85 +698,94 @@ impl Responder {
         let service_len = usize::from(header.length).min(available);
         let service =
             &message[mailbox::MAILBOX_HEADER_LEN..mailbox::MAILBOX_HEADER_LEN + service_len];
-        let response_service =
-            if let Some(segment_request) = mailbox::parse_upload_segment_request(service) {
-                // SDO 分段上传的后续段请求（值 > 4 字节的对象，CiA 301）。
-                self.upload_segment_response(segment_request)
-                    .unwrap_or_else(|| {
-                        mailbox::sdo_abort_payload(
-                            segment_request.index,
-                            segment_request.subindex,
-                            mailbox::SDO_ABORT_PROTOCOL_TIMEOUT,
-                        )
-                    })
-            } else if let Some(info_request) = mailbox::parse_sdo_info_request(service) {
-                // CoE SDO Information 服务（`ethercat sdos` / SOEM `slaveinfo -sdo`）。
-                match info_request {
-                    SdoInfoRequest::OdList { .. } => {
-                        mailbox::build_sdo_info_od_list(&self.dict.object_indices())
-                    }
-                    SdoInfoRequest::ObjectDescription { index } => match self.dict.object(index) {
-                        Some(description) => mailbox::build_sdo_info_object_description(
-                            description.index,
-                            description.data_type,
-                            description.max_subindex,
-                            description.object_code,
-                            &description.name,
-                        ),
-                        None => mailbox::build_sdo_info_error(mailbox::SDO_ABORT_OBJECT_NOT_EXIST),
-                    },
-                    SdoInfoRequest::EntryDescription {
-                        index, subindex, ..
-                    } => match self.dict.entry(index, subindex) {
-                        Some(entry) => mailbox::build_sdo_info_entry_description(
-                            entry.index,
-                            entry.subindex,
-                            entry.value_info,
-                            entry.data_type,
-                            entry.bit_length,
-                            entry.access,
-                            &entry.name,
-                        ),
-                        None => mailbox::build_sdo_info_error(mailbox::SDO_ABORT_OBJECT_NOT_EXIST),
-                    },
+        let response_service = if self.download.is_some() {
+            // 进行中的分段下载：本帧的 SDO 请求按 download segment request 解析。
+            match mailbox::parse_segment_download(service) {
+                Some(segment) => self.handle_download_segment(segment),
+                None => {
+                    mailbox::sdo_abort_payload(0x0000, 0x00, mailbox::SDO_ABORT_PROTOCOL_TIMEOUT)
                 }
-            } else {
-                match mailbox::parse_sdo_request(service) {
-                    Some(SdoRequest::Upload { index, subindex }) => {
-                        match self.build_upload_response(index, subindex) {
-                            Some(service) => service,
-                            None => mailbox::sdo_abort_payload(
-                                index,
-                                subindex,
-                                mailbox::SDO_ABORT_OBJECT_NOT_EXIST,
-                            ),
-                        }
+            }
+        } else if let Some(initiate) = mailbox::parse_initiate_download(service) {
+            self.handle_download_initiate(initiate)
+        } else if let Some(segment_request) = mailbox::parse_upload_segment_request(service) {
+            // SDO 分段上传的后续段请求（值 > 4 字节的对象，CiA 301）。
+            self.upload_segment_response(segment_request)
+                .unwrap_or_else(|| {
+                    mailbox::sdo_abort_payload(
+                        segment_request.index,
+                        segment_request.subindex,
+                        mailbox::SDO_ABORT_PROTOCOL_TIMEOUT,
+                    )
+                })
+        } else if let Some(info_request) = mailbox::parse_sdo_info_request(service) {
+            // CoE SDO Information 服务（`ethercat sdos` / SOEM `slaveinfo -sdo`）。
+            match info_request {
+                SdoInfoRequest::OdList { .. } => {
+                    mailbox::build_sdo_info_od_list(&self.dict.object_indices())
+                }
+                SdoInfoRequest::ObjectDescription { index } => match self.dict.object(index) {
+                    Some(description) => mailbox::build_sdo_info_object_description(
+                        description.index,
+                        description.data_type,
+                        description.max_subindex,
+                        description.object_code,
+                        &description.name,
+                    ),
+                    None => mailbox::build_sdo_info_error(mailbox::SDO_ABORT_OBJECT_NOT_EXIST),
+                },
+                SdoInfoRequest::EntryDescription {
+                    index, subindex, ..
+                } => match self.dict.entry(index, subindex) {
+                    Some(entry) => mailbox::build_sdo_info_entry_description(
+                        entry.index,
+                        entry.subindex,
+                        entry.value_info,
+                        entry.data_type,
+                        entry.bit_length,
+                        entry.access,
+                        &entry.name,
+                    ),
+                    None => mailbox::build_sdo_info_error(mailbox::SDO_ABORT_OBJECT_NOT_EXIST),
+                },
+            }
+        } else {
+            match mailbox::parse_sdo_request(service) {
+                Some(SdoRequest::Upload { index, subindex }) => {
+                    match self.build_upload_response(index, subindex) {
+                        Some(service) => service,
+                        None => mailbox::sdo_abort_payload(
+                            index,
+                            subindex,
+                            mailbox::SDO_ABORT_OBJECT_NOT_EXIST,
+                        ),
                     }
-                    Some(SdoRequest::Download {
-                        index,
-                        subindex,
-                        data,
-                    }) => {
-                        if self
-                            .dict
-                            .entry(index, subindex)
-                            .is_some_and(|entry| entry.writable)
-                        {
-                            self.object_writes.insert((index, subindex), data.to_vec());
-                            mailbox::sdo_download_ok_service(index, subindex)
+                }
+                Some(SdoRequest::Download {
+                    index,
+                    subindex,
+                    data,
+                }) => {
+                    if self
+                        .dict
+                        .entry(index, subindex)
+                        .is_some_and(|entry| entry.writable)
+                    {
+                        self.object_writes.insert((index, subindex), data.to_vec());
+                        mailbox::sdo_download_ok_service(index, subindex)
+                    } else {
+                        let abort_code = if self.dict.entry(index, subindex).is_some() {
+                            mailbox::SDO_ABORT_READ_ONLY
                         } else {
-                            let abort_code = if self.dict.entry(index, subindex).is_some() {
-                                mailbox::SDO_ABORT_READ_ONLY
-                            } else {
-                                mailbox::SDO_ABORT_OBJECT_NOT_EXIST
-                            };
-                            mailbox::sdo_abort_payload(index, subindex, abort_code)
-                        }
+                            mailbox::SDO_ABORT_OBJECT_NOT_EXIST
+                        };
+                        mailbox::sdo_abort_payload(index, subindex, abort_code)
                     }
-                    // master 发起的 Abort / 分段传输 / SDO Info：暂不应答。
-                    Some(SdoRequest::Other) | None => return,
                 }
-            };
+                // master 发起的 Abort / 分段传输 / SDO Info：暂不应答。
+                Some(SdoRequest::Other) | None => return,
+            }
+        };
         let response_header = MailboxHeader {
             length: 0,
             address: header.address,
@@ -774,6 +799,56 @@ impl Responder {
         let _ = self.memory.write(mailbox::MAILBOX_TX_OFFSET, &response);
         mailbox::set_mailbox_full(&mut self.regs);
         self.stats.mailbox_responses = self.stats.mailbox_responses.saturating_add(1);
+    }
+
+    /// 处理分段下载的 initiate 请求（normal、size indicated）。
+    fn handle_download_initiate(&mut self, initiate: mailbox::InitiateDownload) -> Vec<u8> {
+        if !self
+            .dict
+            .entry(initiate.index, initiate.subindex)
+            .is_some_and(|entry| entry.writable)
+        {
+            let abort_code = if self.dict.entry(initiate.index, initiate.subindex).is_some() {
+                mailbox::SDO_ABORT_READ_ONLY
+            } else {
+                mailbox::SDO_ABORT_OBJECT_NOT_EXIST
+            };
+            return mailbox::sdo_abort_payload(initiate.index, initiate.subindex, abort_code);
+        }
+        let total = usize::try_from(initiate.total_size).unwrap_or(usize::MAX);
+        let mut data = initiate.data;
+        data.truncate(total);
+        if data.len() >= total {
+            self.object_writes
+                .insert((initiate.index, initiate.subindex), data);
+            self.download = None;
+        } else {
+            self.download = Some(SegmentedDownload {
+                index: initiate.index,
+                subindex: initiate.subindex,
+                total_size: initiate.total_size,
+                data,
+            });
+        }
+        mailbox::sdo_download_ok_service(initiate.index, initiate.subindex)
+    }
+
+    /// 处理分段下载的 segment 请求（响应 `0x20|toggle<<4`；末段把数据写入对象）。
+    fn handle_download_segment(&mut self, segment: mailbox::SegmentDownload) -> Vec<u8> {
+        let Some(mut state) = self.download.take() else {
+            return mailbox::sdo_abort_payload(0x0000, 0x00, mailbox::SDO_ABORT_PROTOCOL_TIMEOUT);
+        };
+        state.data.extend_from_slice(&segment.data);
+        let total = usize::try_from(state.total_size).unwrap_or(usize::MAX);
+        state.data.truncate(total);
+        if segment.last || state.data.len() >= total {
+            self.object_writes
+                .insert((state.index, state.subindex), state.data);
+            self.download = None;
+        } else {
+            self.download = Some(state);
+        }
+        mailbox::sdo_download_segment_ok_service(segment.toggle)
     }
 
     /// 查对象当前值：优先 Download 覆盖值，其次运行时对象字典。
@@ -2424,6 +2499,81 @@ mod tests {
         assert_eq!(
             u32::from_le_bytes([response[6], response[7], response[8], response[9]]),
             mailbox::SDO_ABORT_OBJECT_NOT_EXIST
+        );
+    }
+
+    #[test]
+    fn segmented_download_writes_long_object() {
+        use esc_core::obj_dict::{RuntimeEntry, RuntimeObject};
+
+        let payload: Vec<u8> = (0u8..20).collect();
+        let dict = ObjectDictionary::new(
+            vec![RuntimeObject {
+                index: 0x2100,
+                max_subindex: 0,
+                object_code: esc_core::obj_dict::object_code::VAR,
+                data_type: esc_core::obj_dict::data_type::VISIBLE_STRING,
+                name: "Writable string".to_string(),
+            }],
+            vec![RuntimeEntry {
+                index: 0x2100,
+                subindex: 0,
+                value: vec![0u8; 20],
+                data_type: esc_core::obj_dict::data_type::VISIBLE_STRING,
+                bit_length: 160,
+                access: esc_core::obj_dict::access::READ_WRITE_PREOP,
+                value_info: 0,
+                name: "Writable string".to_string(),
+                writable: true,
+            }],
+        );
+        let mut responder = Responder::default().with_dictionary(dict);
+
+        // initiate download（normal，size indicated）：首段 8 字节。
+        let first = &payload[..8];
+        let mut service = Vec::new();
+        service.extend_from_slice(&[0x00, 0x20, 0x21]);
+        service.extend_from_slice(&0x2100u16.to_le_bytes());
+        service.push(0x00);
+        service.extend_from_slice(&u32::try_from(payload.len()).expect("size").to_le_bytes());
+        service.extend_from_slice(first);
+        write_mailbox(&mut responder, mailbox_service_payload(&service));
+        let response = read_tx_service(&mut responder);
+        assert_eq!(
+            response[2],
+            mailbox::SDO_COMMAND_DOWNLOAD_RESPONSE,
+            "initiate download 响应"
+        );
+        assert!(responder.download.is_some(), "首段不完整时应保持下载状态");
+
+        // segment 请求：剩余 12 字节，分 7 + 5 两段（toggle 0 → 1）。
+        let mut offset = first.len();
+        let mut toggle = 0u8;
+        while offset < payload.len() {
+            let remaining = payload.len() - offset;
+            let take = remaining.min(7);
+            let last = offset + take >= payload.len();
+            let unused = 7 - take;
+            let mut chunk = payload[offset..offset + take].to_vec();
+            chunk.resize(7, 0);
+            let command = 0x20
+                | (toggle << 4)
+                | (u8::try_from(unused).expect("unused") << 1)
+                | u8::from(last);
+            let mut service = vec![0x00, 0x20, command];
+            service.extend_from_slice(&chunk);
+            write_mailbox(&mut responder, mailbox_service_payload(&service));
+            let response = read_tx_service(&mut responder);
+            assert_eq!(response[2] & 0xE0, 0x20, "segment download 响应命令");
+            assert_eq!((response[2] >> 4) & 0x01, toggle, "toggle 回显");
+            offset += take;
+            toggle ^= 1;
+        }
+        assert!(!responder.download.is_some(), "末段后清除下载状态");
+        assert_eq!(
+            responder.object_value(0x2100, 0),
+            Some(payload.as_slice()),
+            "分段下载的数据必须写入对象并可回读"
         );
     }
 
