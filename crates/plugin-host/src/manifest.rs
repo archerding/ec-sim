@@ -733,6 +733,83 @@ impl PluginManifest {
                 }
             }
         }
+        // 对象声明合法性：dtype/access/初值/重复 (index,sub)。
+        let is_string_dtype = |dtype: &str| {
+            matches!(
+                dtype.trim().to_ascii_uppercase().as_str(),
+                "VISIBLE_STRING" | "OCTET_STRING" | "STRING"
+            )
+        };
+        let supported_dtype = |dtype: &str| {
+            is_string_dtype(dtype)
+                || matches!(
+                    dtype.trim().to_ascii_uppercase().as_str(),
+                    "BOOL"
+                        | "BOOLEAN"
+                        | "INT8"
+                        | "INTEGER8"
+                        | "INT16"
+                        | "INTEGER16"
+                        | "INT32"
+                        | "INTEGER32"
+                        | "UINT8"
+                        | "UNSIGNED8"
+                        | "UINT16"
+                        | "UNSIGNED16"
+                        | "UINT32"
+                        | "UNSIGNED32"
+                )
+        };
+        let mut seen_objects = std::collections::BTreeSet::new();
+        for object in &self.objects {
+            if !seen_objects.insert((object.index, object.sub)) {
+                problems.push(format!(
+                    "对象 {:#06x}:{:02X} 重复声明",
+                    object.index, object.sub
+                ));
+            }
+            if !supported_dtype(&object.data_type) {
+                problems.push(format!(
+                    "对象 {:#06x}:{:02X} dtype 不支持：{}",
+                    object.index, object.sub, object.data_type
+                ));
+            }
+            let access = object.access.trim().to_ascii_lowercase();
+            if !matches!(access.as_str(), "ro" | "rw") {
+                problems.push(format!(
+                    "对象 {:#06x}:{:02X} access 非法：{}（应为 ro/rw）",
+                    object.index, object.sub, object.access
+                ));
+            }
+            if is_string_dtype(&object.data_type) {
+                let Some(value) = object.value.as_deref() else {
+                    problems.push(format!(
+                        "对象 {:#06x}:{:02X} 是字符串类型但缺少 value",
+                        object.index, object.sub
+                    ));
+                    continue;
+                };
+                if u16::try_from(value.len() * 8).is_err() {
+                    problems.push(format!(
+                        "对象 {:#06x}:{:02X} 字符串过长（超过 u16 位长）",
+                        object.index, object.sub
+                    ));
+                }
+            } else if let Some(value) = object.value.as_deref() {
+                let text = value.trim().replace('_', "");
+                let parsed = text
+                    .strip_prefix("0x")
+                    .or_else(|| text.strip_prefix("0X"))
+                    .map(|hex| u64::from_str_radix(hex, 16))
+                    .unwrap_or_else(|| text.parse::<u64>());
+                if parsed.is_err() {
+                    problems.push(format!(
+                        "对象 {:#06x}:{:02X} 数值初值无法解析：value={value}（应为十进制或 0x 十六进制）",
+                        object.index, object.sub
+                    ));
+                }
+            }
+        }
         problems
     }
 }
@@ -1024,6 +1101,47 @@ sources:
             problems.iter().any(|p| p.contains("越过 0xFFFF")),
             "应报告 SM 区间越过 0xFFFF：{problems:?}"
         );
+    }
+
+    #[test]
+    fn rejects_invalid_object_declarations() {
+        const BAD: &str = r#"
+schema: ecsim.plugin/v1
+id: com.ecsim.x
+name: "X (SIMULATED)"
+version: 0.1.0
+kind: device
+identity:
+  vendor_id: 0x00000EC5
+  product_code: 5
+  simulated: true
+sm:
+  - {index: 0, dir: mbox-in, start: 0x1000, len: 128}
+  - {index: 1, dir: mbox-out, start: 0x1080, len: 128}
+objects:
+  - {index: 0x2000, sub: 0, name: A, dtype: UINT40, access: ro, value: 0}
+  - {index: 0x2001, sub: 0, name: B, dtype: UINT16, access: xyz, value: 0}
+  - {index: 0x2002, sub: 0, name: C, dtype: UINT16, access: ro, value: notanumber}
+  - {index: 0x2003, sub: 0, name: D, dtype: VISIBLE_STRING, access: ro}
+  - {index: 0x2004, sub: 0, name: E, dtype: UINT8, access: ro, value: 0}
+  - {index: 0x2004, sub: 0, name: E2, dtype: UINT8, access: ro, value: 0}
+sources:
+  - {title: "t", url: "https://example.invalid", accessed: "2026-11-13"}
+"#;
+        let manifest = PluginManifest::parse(BAD).expect("parse");
+        let problems = manifest.validate();
+        for needle in [
+            "dtype 不支持",
+            "access 非法",
+            "无法解析",
+            "缺少 value",
+            "重复声明",
+        ] {
+            assert!(
+                problems.iter().any(|p| p.contains(needle)),
+                "应报告“{needle}”：{problems:?}"
+            );
+        }
     }
 
     #[test]

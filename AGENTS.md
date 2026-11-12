@@ -257,6 +257,10 @@ user.email = deepseek-harness@users.noreply.github.com
     `len != 0`、起始地址在 `0x1000–0xFFFF`、区间不越过 `0xFFFF`、不同 SM 区间不重叠；
     新增单测。测试 **173 passed**；既有插件无回归（守卫测试全绿）。
     ⚠️ 未校验 SM control/type 语义（manifest 未声明）；地址与 SII 天然一致（同一来源）。
+  - 进度（2026-11-13 00:33 班）：**对象声明合法性校验**——`validate()` 检查 `objects` 的
+    dtype（仅支持的类型）、access（ro/rw）、字符串 value 必填与位长上限、数值 value 可解析、
+    (index,sub) 不重复；新增单测。测试 **174 passed**；既有插件无误报。
+    ⚠️ 未校验数值初值与 dtype 位宽匹配（截断风险）、SM control/type 语义。
 - [x] ~~**B10 首个 P0 设备插件**~~ ✅ **2026-11-12 21:33 班完成**：`plugins/beckhoff-el2008/`
   声明式画像（自有 VID/PID `0x00000EC5`/`0x0000E5D2`，名称带 SIMULATED；8 通道输出、
   0 输入、SM2 输出 1 字节、默认 RxPDO `0x1600`..`0x1607` 各映射 1 bit 输出对象

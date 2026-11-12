@@ -552,7 +552,7 @@ mod tests {
     }
 
     #[test]
-    fn string_values_are_not_supported_yet() {
+    fn numeric_dtype_rejects_non_numeric_value() {
         let mut manifest = fixture_manifest();
         manifest.objects.push(crate::manifest::ObjectConfig {
             index: 0x2001,

@@ -6,6 +6,35 @@
 
 ---
 
+## 2026-11-13 00:33 班（低峰）— B9 强化：**对象声明合法性校验**（dtype/access/初值/重复）
+
+**做了什么**
+- `plugin-host::PluginManifest::validate()` 增加 `objects` 声明校验：
+  - `dtype` 必须是 dict_gen 支持的类型（BOOL/8/16/32 位整数/VISIBLE_STRING/OCTET_STRING）；
+  - `access` 必须是 `ro` 或 `rw`（此前任何非 `rw` 会被静默当只读，现在显式报错）；
+  - 字符串类型必须有 `value` 且位长不超 u16；数值类型若有 `value` 必须能按十进制/`0x`
+    十六进制解析（带下划线容忍）；
+  - 同一 `(index, sub)` 重复声明报错。
+- 顺带把历史遗留的 dict_gen 测试名 `string_values_are_not_supported_yet` 改为
+  `numeric_dtype_rejects_non_numeric_value`（字符串对象已支持，原名误导）。
+- 新增单测 `rejects_invalid_object_declarations`（dtype/access/初值/缺 value/重复五种错误）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **174 passed**（esc-core 79 / esc-node 53 / plugin-host 25 + 1 集成 / wire 16）；
+  仓库内既有插件（EL2008/通用 CiA402/CSV/SV660N/示例）全部通过新校验（无误报）。
+
+**卡点**
+- 仍属"声明期"校验：不校验 SM control/type 语义、对象值位宽截断（如 0x1FF 写给 UINT8
+  会由 dict_gen 截断/报错？当前 dict_gen 按字节写入长度截断 ⚠️ 未单独校验），也不校验
+  PDO 映射与对象字典的运行时一致性（由主站 OP 期检查兜底）。
+
+**下次开工第一件事**
+- 校验数值初值与 dtype 位宽的匹配（避免 0x1FF→UINT8 截断）；或回到 B11（SV660N 公开
+  手册 PDO/扩展对象核对）；B6 FMMU/DC 原文核实仍待条件。
+
+---
+
 ## 2026-11-13 00:31 班（低峰）— B9 强化：**SM 地址/长度/区间重叠校验**
 
 **做了什么**
