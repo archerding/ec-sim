@@ -36,6 +36,7 @@
 | `manifest-slave-probe.sh` | `--manifest` 画像：SOEM 扫描身份、8 位 I/O、OP、WKC 3、`slaveinfo -sdo` | **EXIT=0** |
 | `esi-manifest-op-probe.sh` | `--esi`+`--manifest` 组合：SOEM/IgH 双双正常（SOEM mapped 1O+1I、OP、WKC 3；IgH PREOP+身份） | **EXIT=0** |
 | `beckhoff-el2008-probe.sh` | EL2008 兼容画像：SOEM 扫描/OP、IgH 身份 | **EXIT=0** |
+| `igh-dc-op-probe.sh` | IgH `ecrt_slave_config_dc`（0x0300/1ms）+ 5B CST：仍进 OP、`al_states=0x08`、`dc_wr=8` | **EXIT=0** |
 | `soem-dc-probe.sh` | 未修改 SOEM `ecx_configdc()` 路径：`Configuring distributed clock... done`、OP、WKC 3；应答器 `dc_rd/dc_wr > 0` | **EXIT=0** |
 | `sv660n-capability-probe.sh` | SV660N 画像能力位复核：SOEM 56/56、`CoE details=0x0d`（无 SDO Info）、`Has DC: 1`（DC 声明）；IgH PREOP+身份 `0xe5f1` | **EXIT=0** |
 | `generic-cia402-probe.sh` | 通用 CiA 402 画像：SOEM 56/56 bits、OP、WKC 3；IgH PREOP+身份 | **EXIT=0** |

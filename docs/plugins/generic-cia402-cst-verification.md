@@ -70,3 +70,18 @@ sudo bash scripts/spikes/igh-cia402-cst-op-probe.sh
 - Tier0 简化：转矩只镜像、无转矩环/负载/限幅/单位换算；状态机时序（Ti）与故障码
   表未实现。真实伺服行为仍需硬件与厂商手册核对。
 - 未在 IgH/SOEM 的真实 PDO 映射流程中验证该 5 字节布局（需要支持 CST 的主站应用）。
+
+## IgH DC 配置路径（`ecrt_slave_config_dc`，2026-11-13 02:52 班）
+
+```bash
+sudo bash scripts/spikes/igh-dc-op-probe.sh
+```
+
+ecrt 夹具在配置 5 字节 CST PDO 后**显式启用 DC**（`ecrt_slave_config_dc(sc, 0x0300,
+1000000, 0, 0, 0)`），验证模拟器 DC 配置路径：
+
+- `ethercat slaves` 应用运行期间：`0  0:0  OP  +  0x00000ec5:0x0000e5e2`；
+- 应用输出：`RESULT al_states=0x08 slaves_responding=1 link_up=1`、
+  `STATUS sw=0x0237 modes_display=10 torque_actual=300`；
+- 应答器 `STATS ... dc_rd=5 dc_wr=8 al=0x08`（IgH 确实读写了 DC 寄存器，且未破坏闭环）。
+- ⚠️ 仅**配置路径**验证，不是 DC 同步精度验证（模拟时钟为帧驱动，无 SYNC0 脉冲）。

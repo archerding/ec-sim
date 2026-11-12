@@ -368,6 +368,7 @@ user.email = deepseek-harness@users.noreply.github.com
   - 进度（2026-11-13 02:21 班）：**SV660N 画像能力位复核**——`scripts/spikes/sv660n-capability-probe.sh` **EXIT=0**：SOEM 56/56 bits、`CoE details=0d`（不声明 SDO Info，符合公开事实）、`Has DC: 0`（⚠️ 与真实设备默认开 DC 有差距）、MBX 04；IgH PREOP + 身份 `0xe5f1`。
   - 进度（2026-11-13 02:27 班）：**DC Tier0 落地**——ESC Support(0x0008) 声明 DC、0x0900–0x0917 帧驱动模拟时钟（`DC_TICK_NS=1000`）、SV660N 画像声明 SII DC 类别（assignActivate 0x300）；新增 `dc-clock-probe.sh`。验证机：SOEM `Has DC: 1`、`dc-clock-probe.sh` EXIT=0（0x0910 前进）、`soem-process-data.sh` 仍 OP/WKC 3 无回归；测试 **201 passed**。⚠️ 无真实 SYNC0 脉冲/漂移/传播延迟测量。
   - 进度（2026-11-13 02:46 班）：**SOEM DC 配置路径验证**——未修改 SOEM `simple_ng` 的 `ecx_configdc()` 在 SV660N 画像上 `Configuring distributed clock... done`、`mapped 7O+7I`、OP、`WKC 3`；应答器 `--verbose` 新增 `dc_rd/dc_wr` 统计（本次 `dc_rd=5300 dc_wr=5302`），证明主站确实读写 DC 寄存器。新增 `scripts/spikes/soem-dc-probe.sh`；测试 **202 passed**。⚠️ 仅路径验证，非同步精度。
+  - 进度（2026-11-13 02:52 班）：**IgH DC 配置路径验证**——ecrt 夹具显式 `ecrt_slave_config_dc(0x0300, 1ms)` 后仍进 OP：`al_states=0x08`、`sw=0x0237`、`torque=300`；应答器 `STATS dc_rd=5 dc_wr=8`。新增 `scripts/spikes/igh-dc-op-probe.sh`（夹具为验证机本地文件，不入库）。⚠️ 仅配置路径，非同步精度。
 - [ ] **B11 CiA402 行为插件**：以 Inovance SV660N 兼容画像为第一个目标，实现 CSP 状态机（Tier0/内置 profile 起步）。
   - 依赖 B10 已完成（声明式画像 + `--manifest` + 验证脚本可复用）；先 facts.md + 声明式画像，
     行为 WASM 只做 Tier0 状态机骨架。

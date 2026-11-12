@@ -32,6 +32,33 @@
 
 ---
 
+## 2026-11-13 02:52 班（低峰）— B6/B11：**IgH DC 配置路径验证（ecrt_slave_config_dc）**
+
+**做了什么**
+- 新增 `scripts/spikes/igh-dc-op-probe.sh`：在 CST 5 字节画像上由 ecrt 夹具**显式启用
+  DC**（`ecrt_slave_config_dc(sc, 0x0300, 1000000, 0, 0, 0)`），验证 IgH 的 DC 配置路径
+  不会破坏闭环：
+  - `ethercat slaves` 应用期间 `OP` + 身份 `0x00000ec5:0x0000e5e2`；
+  - `RESULT al_states=0x08 slaves_responding=1 link_up=1`；
+  - `STATUS sw=0x0237 modes_display=10 torque_actual=300`；
+  - 应答器 `STATS ... dc_rd=5 dc_wr=8 al=0x08`（IgH 确实读写 DC 寄存器）。
+- ecrt 夹具源码为验证机本地文件 `/opt/ecsim/work/igh-op/ecrt-dc-op.c`（**不入库**）。
+- 更新 `docs/plugins/generic-cia402-cst-verification.md`（IgH DC 配置路径节）、
+  `docs/VERIFICATION.md` 索引、`docs/STATUS.md` 差距表、AGENTS B11。
+
+**验证结果**
+- Linux 验证机：`igh-dc-op-probe.sh` → **EXIT=0**（见上）。
+- 本机无代码改动；`cargo test --workspace` **202 passed** 基线不变。
+
+**卡点**
+- 仅 **DC 配置路径**验证（寄存器读写、OP 不破坏）；不是同步精度验证：
+  模拟时钟帧驱动、无 SYNC0 脉冲/漂移补偿/传播延迟测量。
+
+**下次开工第一件事**
+- B11：继续找 SV660N 默认 PDO 条目；或评估真实 DC 同步（SYNC0 脉冲）实现价值。
+
+---
+
 ## 2026-11-13 02:46 班（低峰）— B6/B11：**SOEM DC 配置路径验证 + DC 访问统计**
 
 **做了什么**
