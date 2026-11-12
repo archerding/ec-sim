@@ -595,6 +595,72 @@ fn serve_live_http(
                 control_plane::pdo_json_decoded(&pdo, &decoded)
             }
         });
+        if path_only == "/events" && !invalid_slave {
+            let interval_ms = query_param(path, "interval_ms")
+                .and_then(|value| value.parse::<u64>().ok())
+                .unwrap_or(500)
+                .clamp(100, 5000);
+            let shared = std::sync::Arc::clone(&responders);
+            let spec_snapshot = spec.clone();
+            let profile_owned = manifest
+                .as_ref()
+                .map(|manifest| (manifest.id.clone(), manifest.name.clone()));
+            let dict_objects_snapshot = dict_objects;
+            let want_slave = slave_index;
+            let headers = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream; charset=utf-8\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: {}\r\nConnection: keep-alive\r\n\r\n",
+                control_plane::CORS_ALLOW_ORIGIN
+            );
+            if stream.write_all(headers.as_bytes()).is_ok() {
+                let _ = stream.flush();
+                std::thread::spawn(move || {
+                    let mut stream = stream;
+                    loop {
+                        let live = {
+                            let guard = shared.lock().unwrap();
+                            match guard.get(want_slave) {
+                                Some(responder) => {
+                                    let stats = responder.stats();
+                                    control_plane::LiveState {
+                                        station_address: responder.station_address(),
+                                        al_status: responder.al_status(),
+                                        al_status_code: responder.al_status_code(),
+                                        dc_time_ns: responder.dc_time_ns(),
+                                        frames_in: stats.frames_in,
+                                        frames_out: stats.frames_out,
+                                        frames_dropped: stats.frames_dropped,
+                                        datagrams_hit: stats.datagrams_hit,
+                                        mailbox_requests: stats.mailbox_requests,
+                                        mailbox_responses: stats.mailbox_responses,
+                                        dc_reg_reads: stats.dc_reg_reads,
+                                        dc_reg_writes: stats.dc_reg_writes,
+                                    }
+                                }
+                                None => break,
+                            }
+                        };
+                        let state = control_plane::live_state_json(
+                            &spec_snapshot,
+                            dict_objects_snapshot,
+                            profile_owned
+                                .as_ref()
+                                .map(|(id, name)| (id.as_str(), name.as_str())),
+                            &live,
+                        );
+                        // SSE 的 data 字段不能含裸换行：压成单行 JSON。
+                        let state = state.replace('\n', " ");
+                        if write!(stream, "data: {state}\n\n").is_err() {
+                            break;
+                        }
+                        if stream.flush().is_err() {
+                            break;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(interval_ms));
+                    }
+                });
+            }
+            continue;
+        }
         let response = if let Some(response) = static_web_response(path, web_root.as_deref()) {
             response
         } else if invalid_slave {

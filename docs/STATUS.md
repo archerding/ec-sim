@@ -79,7 +79,7 @@ cargo run -q -p esc-node --bin ec-sim-esc -- --dump-state --manifest plugins/gen
 cargo run -q -p esc-node --bin ec-sim-esc -- --dump-dict --json --manifest plugins/generic-cia402-cst-servo/plugin.yaml > web/dict.json
 python3 -m http.server 8080 --directory web   # 只读状态页（M2 起点）
 cargo run -q -p esc-node --bin ec-sim-esc -- --serve 127.0.0.1:8090 --manifest plugins/generic-cia402-cst-servo/plugin.yaml   # 只读 HTTP API：/state,/dict
-cargo run -q -p esc-node --bin ec-sim-esc -- --uds /tmp/ecsim.sock --serve 127.0.0.1:8091   # 实时模式：/state 含 live（AL/统计）、/pdo 过程数据、/pdo?history=1 时间序列（Web 波形）、/pdo 含 decoded 具名值、/topology 多从站摘要、/state?slave=N 与 /pdo?slave=N 逐站查看、/metrics Prometheus 文本指标（支持 ?slave=N 筛选；Web 指标卡片）
+cargo run -q -p esc-node --bin ec-sim-esc -- --uds /tmp/ecsim.sock --serve 127.0.0.1:8091   # 实时模式：/state 含 live（AL/统计）、/pdo 过程数据、/pdo?history=1 时间序列（Web 波形）、/pdo 含 decoded 具名值、/topology 多从站摘要、/state?slave=N 与 /pdo?slave=N 逐站查看、/metrics Prometheus 文本指标（支持 ?slave=N 筛选；Web 指标卡片）、/events SSE 推送
 cargo run -q -p esc-node --bin ec-sim-esc -- --uds /tmp/ecsim.sock --esm-lax --serve 127.0.0.1:8091 --web-root web   # 同源托管 WebUI + API
 bash scripts/spikes/uds-loopback.sh        # UDS 合成主站基础闭环
 bash scripts/spikes/cia402-cst-probe.sh    # CST Tier0 行为

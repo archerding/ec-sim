@@ -15,6 +15,7 @@ let currentPdoHistory = null;
 let currentTopology = null;
 let currentMetrics = null;
 let liveTimer = null;
+let liveSource = null;
 let liveBase = "";
 
 function el(tag, attrs, ...children) {
@@ -490,6 +491,10 @@ function loadJson(text, source) {
 }
 
 function stopLive() {
+  if (liveSource) {
+    liveSource.close();
+    liveSource = null;
+  }
   if (liveTimer) {
     clearInterval(liveTimer);
     liveTimer = null;
@@ -499,6 +504,49 @@ function stopLive() {
 function startLive() {
   stopLive();
   if (!liveBase) return;
+  // 优先 SSE（`GET /events`）：状态由服务端推送；PDO/拓扑/指标仍定时拉取（2s）。
+  if (typeof window !== "undefined" && window.EventSource) {
+    liveSource = new EventSource(`${liveBase}/events?slave=${selectedSlave()}`);
+    liveSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.schema === "ec-sim/state-v1") {
+          currentState = data;
+          message.textContent = `SSE：${liveBase}/events`;
+          renderAll();
+        }
+      } catch (error) {
+        message.textContent = `SSE 解析失败：${error.message}`;
+      }
+    };
+    liveSource.onerror = () => {
+      message.textContent = "SSE 连接中断（浏览器会自动重连）";
+    };
+    liveTimer = setInterval(async () => {
+      try {
+        const slave = selectedSlave();
+        const pdoResponse = await fetch(`${liveBase}/pdo?slave=${slave}`);
+        if (pdoResponse.ok)
+          loadJson(await pdoResponse.text(), `${liveBase}/pdo?slave=${slave} (live)`);
+        const historyResponse = await fetch(`${liveBase}/pdo?slave=${slave}&history=1`);
+        if (historyResponse.ok)
+          loadJson(
+            await historyResponse.text(),
+            `${liveBase}/pdo?slave=${slave}&history=1 (live)`,
+          );
+        const topologyResponse = await fetch(`${liveBase}/topology`);
+        if (topologyResponse.ok)
+          loadJson(await topologyResponse.text(), `${liveBase}/topology (live)`);
+        const metricsResponse = await fetch(`${liveBase}/metrics?slave=${slave}`);
+        if (metricsResponse.ok)
+          loadMetrics(await metricsResponse.text(), `${liveBase}/metrics?slave=${slave} (live)`);
+      } catch (error) {
+        message.textContent = `实时拉取失败：${error.message}`;
+      }
+    }, 2000);
+    return;
+  }
+  // 回退：无 EventSource 时用 1s 轮询。
   liveTimer = setInterval(async () => {
     try {
       const slave = selectedSlave();

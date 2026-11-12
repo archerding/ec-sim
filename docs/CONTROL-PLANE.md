@@ -50,6 +50,7 @@ cargo run -q -p esc-node --bin ec-sim-esc -- \
 | `GET /state?slave=N` | 实时 | `ec-sim/state-v1` | 指定从站（默认 0；越界/非法 → 404） |
 | `GET /pdo?slave=N`（可叠加 `history=1`） | 实时 | 同上 | 指定从站的 PDO/历史（各站独立缓冲） |
 | `GET /metrics?slave=N` | 实时 | Prometheus 文本 | 仅导出指定从站（默认全量） |
+| `GET /events` | 实时 | `text/event-stream` | SSE 推送 state-v1（默认 500ms，可 `?interval_ms=100..5000`；支持 `?slave=N`） |
 | 其他路径 | 全部 | `{"error": ..., "routes": [...]}` | 404 |
 
 ## 3. 示例
@@ -154,6 +155,7 @@ curl -si http://127.0.0.1:8091/nope   # 404 JSON
 | 路由/JSON schema | `cargo test -p control-plane`（13 个单测） |
 | 静态服务 | `scripts/spikes/http-state-probe.sh` |
 | 同源托管 web/ | `scripts/spikes/serve-web-probe.sh` |
+| SSE 推送 | `scripts/spikes/events-probe.sh` |
 | 实时状态/PDO/历史/拓扑/逐站/指标 | `live-state-probe.sh`、`pdo-live-probe.sh`、`pdo-history-probe.sh`、`pdo-decode-probe.sh`、`topology-probe.sh`、`slave-select-probe.sh`、`metrics-probe.sh`、`metrics-filter-probe.sh`（Linux/UDS） |
 | TAP 实时 | `scripts/spikes/tap-live-state-probe.sh`（root，验证机） |
 | 文档与代码路由一致 | `python3 scripts/spikes/control-plane-doc-check.py` |

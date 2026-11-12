@@ -24,7 +24,7 @@ cargo run -q -p esc-node --bin ec-sim-esc -- \
 - 选择/多选 dump JSON 文件（state-v1 / dict-v1 / pdo-v1 / pdo-history-v1 / topology-v1）；
 - 填 API 地址后拉取 `/state`、`/dict`、`/pdo`、`/pdo?history=1`、`/topology`、`/metrics`；
 - “从站 N”切换与拓扑节点/行点击切换（对应 API 的 `?slave=N`）；
-- “实时刷新（1s）”轮询；
+- “实时刷新”开关：优先 SSE `GET /events`（状态推送）+ 2s 拉取 PDO/拓扑/指标；无 EventSource 时回退 1s 轮询；
 - PDO Canvas 波形（SM2/SM3 前 2 字节）与 AL 状态色（INIT 橙 / PREOP 蓝 / SAFEOP 紫 / OP 绿）。
 
 ## 数据格式

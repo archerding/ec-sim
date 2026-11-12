@@ -1,5 +1,35 @@
 ---
 
+## 2026-11-13 06:47 班（低峰）— **B34：SSE `/events` 推送 + Web EventSource**
+
+**做了什么**
+- 实时 `--serve` 新增 **`GET /events`**（`text/event-stream`）：每个连接独立线程，按间隔推送
+  state-v1（含 `live`），默认 500ms、`?interval_ms=100..5000`、支持 `?slave=N`；`data:` 压成
+  单行 JSON（SSE 规范不允许裸换行）；客户端断开时写失败即退出线程（不阻塞 accept 循环）。
+- `web/` 实时刷新优先用 `EventSource`：状态由 SSE 推送，PDO/拓扑/指标仍 2s 拉取；无 EventSource
+  时回退 1s 轮询。
+- 新增 `scripts/spikes/events-probe.sh`：Content-Type、state+live、两事件间 `frames_in` 0→2、
+  断开后 `/state` 仍 200。
+- `docs/CONTROL-PLANE.md`（路由表/验证清单）、`docs/STATUS.md`、`web/README.md` 更新；
+  `control-plane-doc-check.py` 期望清单加 `/events` 与两个新探针（12 路由/12 探针）。
+- AGENTS：B34 完成、新增 B35（`--serve-write` 默认关闭的 `POST /pdo`）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **223 passed**；
+  `node --check web/app.js` 通过；`control-plane-doc-check.py` EXIT=0（12/12）。
+- 验证机：重建后 `events-probe.sh` **EXIT=0**——`OK: /events SSE 推送 state-v1（frames_in 0 -> 2），
+  断开后 /state 仍 200`。
+
+**卡点**
+- 写操作仍全部禁用（B35 起用显式开关、默认关闭）。
+
+**下次开工第一件事**
+- **B35**：`--serve-write` 显式开启 `POST /pdo`（写 SM2；`?slave=N`），默认拒绝；探针校验默认拒绝
+  与开启后写入生效，文档更新安全边界。
+
+---
+---
+
 ## 2026-11-13 06:38 班（低峰）— **B33：`--serve --web-root` 同源托管 `web/`**
 
 **做了什么**

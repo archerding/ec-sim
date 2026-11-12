@@ -52,6 +52,7 @@
 | `igh-cia402-op-probe.sh` | IgH ecrt 7B CiA402：OP + 状态字/模式/位置 | **EXIT=0** |
 | `igh-cia402-csv-op-probe.sh` | IgH ecrt 11B CSV：OP + 速度模式位置累加/速度显示 | **EXIT=0** |
 | `uds-multi-slave-probe.sh` | `--slaves 8` 多从站链：广播 WKC=8、逐站地址分配、配置地址寻址 | **EXIT=0** |
+| `events-probe.sh` | SSE `/events`：Content-Type、state-v1 + live、两事件间 frames_in 递增（0→2）、断开后 `/state` 仍 200 | **EXIT=0** |
 | `serve-web-probe.sh` | `--serve --web-root web`：`/` HTML、`/app.js` JS、`/state` JSON、未知 404；实时模式同源+live；无效 web-root 回退 API | **EXIT=0** |
 | `control-plane-doc-check.py` | 文档 `docs/CONTROL-PLANE.md` 路由表/探针/源码引用与代码逐条一致（11 条路径、10 个探针） | **EXIT=0** |
 | `metrics-filter-probe.sh` | `/metrics?slave=1` 仅导出 1 站（全量 3 站），越界/非法 slave → 404 | **EXIT=0** |

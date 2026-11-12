@@ -30,6 +30,7 @@ EXPECTED_PATHS = [
     "/state?slave=N",
     "/pdo?slave=N",
     "/metrics?slave=N",
+    "/events",
 ]
 
 EXPECTED_PROBES = [
@@ -43,6 +44,8 @@ EXPECTED_PROBES = [
     "metrics-probe.sh",
     "metrics-filter-probe.sh",
     "tap-live-state-probe.sh",
+    "serve-web-probe.sh",
+    "events-probe.sh",
 ]
 
 
