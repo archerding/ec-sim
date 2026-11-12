@@ -67,6 +67,45 @@ pdo:
         - {index: 0x607A, sub: 0, bits: 32}
         - {index: 0x60B8, sub: 0, bits: 16}
         - {index: 0x60FE, sub: 1, bits: 32}
+    - index: 0x1702  # PP/PV/PT/CSP/CSV/CST：7 objects / 19 bytes
+      entries:
+        - {index: 0x6040, sub: 0, bits: 16}
+        - {index: 0x607A, sub: 0, bits: 32}
+        - {index: 0x60FF, sub: 0, bits: 32}
+        - {index: 0x6071, sub: 0, bits: 16}
+        - {index: 0x6060, sub: 0, bits: 8}
+        - {index: 0x60B8, sub: 0, bits: 16}
+        - {index: 0x607F, sub: 0, bits: 32}
+    - index: 0x1703  # PP/PV/CSP/CSV：7 objects / 17 bytes
+      entries:
+        - {index: 0x6040, sub: 0, bits: 16}
+        - {index: 0x607A, sub: 0, bits: 32}
+        - {index: 0x60FF, sub: 0, bits: 32}
+        - {index: 0x6060, sub: 0, bits: 8}
+        - {index: 0x60B8, sub: 0, bits: 16}
+        - {index: 0x60E0, sub: 0, bits: 16}
+        - {index: 0x60E1, sub: 0, bits: 16}
+    - index: 0x1704  # PP/PV/PT/CSP/CSV/CST：9 objects / 23 bytes
+      entries:
+        - {index: 0x6040, sub: 0, bits: 16}
+        - {index: 0x607A, sub: 0, bits: 32}
+        - {index: 0x60FF, sub: 0, bits: 32}
+        - {index: 0x6071, sub: 0, bits: 16}
+        - {index: 0x6060, sub: 0, bits: 8}
+        - {index: 0x60B8, sub: 0, bits: 16}
+        - {index: 0x607F, sub: 0, bits: 32}
+        - {index: 0x60E0, sub: 0, bits: 16}
+        - {index: 0x60E1, sub: 0, bits: 16}
+    - index: 0x1705  # PP/PV/CSP/CSV：8 objects / 19 bytes
+      entries:
+        - {index: 0x6040, sub: 0, bits: 16}
+        - {index: 0x607A, sub: 0, bits: 32}
+        - {index: 0x60FF, sub: 0, bits: 32}
+        - {index: 0x6060, sub: 0, bits: 8}
+        - {index: 0x60B8, sub: 0, bits: 16}
+        - {index: 0x60E0, sub: 0, bits: 16}
+        - {index: 0x60E1, sub: 0, bits: 16}
+        - {index: 0x60B2, sub: 0, bits: 16}
     - index: 0x1B01  # PP/CSP：9 objects / 28 bytes
       entries:
         - {index: 0x603F, sub: 0, bits: 16}
@@ -78,6 +117,41 @@ pdo:
         - {index: 0x60BA, sub: 0, bits: 32}
         - {index: 0x60BC, sub: 0, bits: 32}
         - {index: 0x60FD, sub: 0, bits: 32}
+    - index: 0x1B02  # PP/PV/PT/CSP/CSV/CST：9 objects / 25 bytes
+      entries:
+        - {index: 0x603F, sub: 0, bits: 16}
+        - {index: 0x6041, sub: 0, bits: 16}
+        - {index: 0x6064, sub: 0, bits: 32}
+        - {index: 0x6077, sub: 0, bits: 16}
+        - {index: 0x6061, sub: 0, bits: 8}
+        - {index: 0x60B9, sub: 0, bits: 16}
+        - {index: 0x60BA, sub: 0, bits: 32}
+        - {index: 0x60BC, sub: 0, bits: 32}
+        - {index: 0x60FD, sub: 0, bits: 32}
+    - index: 0x1B03  # PP/PV/CSP/CSV：10 objects / 29 bytes
+      entries:
+        - {index: 0x603F, sub: 0, bits: 16}
+        - {index: 0x6041, sub: 0, bits: 16}
+        - {index: 0x6064, sub: 0, bits: 32}
+        - {index: 0x6077, sub: 0, bits: 16}
+        - {index: 0x60F4, sub: 0, bits: 32}
+        - {index: 0x6061, sub: 0, bits: 8}
+        - {index: 0x60B9, sub: 0, bits: 16}
+        - {index: 0x60BA, sub: 0, bits: 32}
+        - {index: 0x60BC, sub: 0, bits: 32}
+        - {index: 0x60FD, sub: 0, bits: 32}
+    - index: 0x1B04  # PP/PV/CSP/CSV：10 objects / 29 bytes
+      entries:
+        - {index: 0x603F, sub: 0, bits: 16}
+        - {index: 0x6041, sub: 0, bits: 16}
+        - {index: 0x6064, sub: 0, bits: 32}
+        - {index: 0x6077, sub: 0, bits: 16}
+        - {index: 0x6061, sub: 0, bits: 8}
+        - {index: 0x60F4, sub: 0, bits: 32}
+        - {index: 0x60B9, sub: 0, bits: 16}
+        - {index: 0x60BA, sub: 0, bits: 32}
+        - {index: 0x60BC, sub: 0, bits: 32}
+        - {index: 0x606C, sub: 0, bits: 32}
 
 objects:
   - {index: 0x1008, sub: 0, name: Device name, dtype: VISIBLE_STRING, access: ro, value: "Inovance SV660N-compatible servo (SIMULATED)"}
@@ -99,6 +173,13 @@ objects:
   - {index: 0x60F4, sub: 0, name: Following error actual value, dtype: INT32, access: ro, value: 0}
   - {index: 0x60FE, sub: 0, name: Physical outputs (number of entries), dtype: UINT8, access: ro, value: 1}
   - {index: 0x60FE, sub: 1, name: Physical outputs, dtype: UINT32, access: rw, value: 0}
+  - {index: 0x60FF, sub: 0, name: Target velocity, dtype: INT32, access: rw, value: 0}
+  - {index: 0x6071, sub: 0, name: Target torque, dtype: INT16, access: rw, value: 0}
+  - {index: 0x607F, sub: 0, name: Max. profile velocity, dtype: UINT32, access: rw, value: 0}
+  - {index: 0x60E0, sub: 0, name: Positive torque limit value, dtype: UINT16, access: rw, value: 0}
+  - {index: 0x60E1, sub: 0, name: Negative torque limit value, dtype: UINT16, access: rw, value: 0}
+  - {index: 0x60B2, sub: 0, name: Torque offset, dtype: INT16, access: rw, value: 0}
+  - {index: 0x606C, sub: 0, name: Velocity actual value, dtype: INT32, access: ro, value: 0}
   - {index: 0x2100, sub: 0, name: Config string, dtype: VISIBLE_STRING, access: rw, value: `EC-Sim SDO config (SIMULATED)`}
   - {index: 0x607A, sub: 0, name: Target position, dtype: INT32, access: rw, value: 0, pdo: rx}
 

@@ -151,8 +151,8 @@ ecrt 夹具（验证机本地、不入库）按 SV660N 画像的 Tier0 7 字节 
     `60BAh`(32) + `60FDh`(32) → **22 字节**；
   - 默认映射**不含** `6060h` 模式对象（模式经 SDO 或固定映射）。
 - 手册固定映射 `0x1701..0x1705`（RPDO）与 `0x1B01..0x1B04`（TPDO）条目/字节数记录在
-  [facts.md](facts.md)；**PP/CSP 对 `0x1701`/`0x1B01` 的映射对象已生成**（manifest 新字段
-  `pdo.fixed`，不进 SII/非默认分配），其余固定映射仍只记录事实。
+  [facts.md](facts.md)；**全部 9 个固定映射的映射对象已生成**（manifest 字段 `pdo.fixed`，
+  不进 SII/非默认分配，主站可经 `0x1C12/0x1C13` 选择）；守卫测试覆盖每组条目数与位长总和。
 - 验证（2026-11-13 03:46 班，Linux 验证机）：
   - `sv660n-capability-probe.sh` **EXIT=0**：SOEM `Output size: 64bits` / `Input size: 176bits`、
     `Has DC: 1`、`CoE details: 0d`、`MBX protocols : 04`；IgH PREOP + 身份 `0xe5f1`；

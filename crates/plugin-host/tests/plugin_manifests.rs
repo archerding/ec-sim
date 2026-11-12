@@ -153,7 +153,14 @@ fn sv660n_fixed_pdo_maps_match_public_manual() {
     let dict = dictionary_from_manifest(&manifest).expect("dictionary");
     let cases = [
         (0x1701u16, 4u8, 12u32, 0x6040_0010u32, 0x60FE_0120u32),
+        (0x1702, 7, 19, 0x6040_0010, 0x607F_0020),
+        (0x1703, 7, 17, 0x6040_0010, 0x60E1_0010),
+        (0x1704, 9, 23, 0x6040_0010, 0x60E1_0010),
+        (0x1705, 8, 19, 0x6040_0010, 0x60B2_0010),
         (0x1B01, 9, 28, 0x603F_0010, 0x60FD_0020),
+        (0x1B02, 9, 25, 0x603F_0010, 0x60FD_0020),
+        (0x1B03, 10, 29, 0x603F_0010, 0x60FD_0020),
+        (0x1B04, 10, 29, 0x603F_0010, 0x606C_0020),
     ];
     for (index, count, bytes, first, last) in cases {
         let object = dict

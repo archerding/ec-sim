@@ -380,6 +380,7 @@ user.email = deepseek-harness@users.noreply.github.com
   - 进度（2026-11-13 03:36 班）：**`0x6502` 经 SDO 上传验证**——新增 `--expect-6502=<hex>` 探针参数与 `scripts/spikes/cia402-modes-probe.sh`，对 7B/11B/5B 三个画像分别 SDO 上传 `0x6502` 并比对（0x01C1/0x03CD/0x0410）；验证机 **EXIT=0**。测试 208 passed。
   - 进度（2026-11-13 03:46 班）：**SV660N 默认可变 PDO 已按公开手册核对并落地**——本地文本提取公开通信手册（PDF **不入库**）：RPDO `0x1600`=6040h/607Ah/60B8h（8B）、TPDO `0x1A00`=603Fh/6041h/6064h/60BCh/60B9h/60BAh/60FDh（22B）；固定映射 0x1701..1705/0x1B01..1B04 条目与 1C12/1C13 选择规则、DC 寄存器细节记入 facts.md（固定映射暂不生成）。验证机：`sv660n-capability-probe` **EXIT=0**（SOEM 64/176 bits、Has DC 1）、`igh-sv660n-op-probe` **EXIT=0**（IgH 默认映射 + DC 仍进 OP、al_states=0x08、dc_wr=8）。⚠️ 固定映射位长为推算、厂商扩展对象/故障码表未收录。
   - 进度（2026-11-13 03:53 班）：**固定映射支持 + SV660N PP/CSP 固定映射落地**。manifest 新字段 `pdo.fixed`（只生成映射对象，不进 SII、非默认分配）；`0x1701`（4 对象/12B）与 `0x1B01`（9 对象/28B）已生成，位长与手册字节数吻合；守卫测试 `sv660n_fixed_pdo_maps_match_public_manual`；验证机 `--dump-dict` 确认 0x1701/0x1B01、`sv660n-capability-probe` 仍 EXIT=0。剩余 1702..1705/1B02..1B04 仅事实记录。测试 **209 passed**。
+  - 进度（2026-11-13 04:03 班）：**SV660N 全部 9 个固定映射落地**（`0x1701..0x1705`、`0x1B01..0x1B04`）——映射对象全部生成（仅字典，不进 SII/非默认分配）；每组条目数/位长总和与公开手册字节数一致；守卫测试 `sv660n_fixed_pdo_maps_match_public_manual` 覆盖 9 组；新增 60FF/6071/607F/60E0/60E1/60B2/606C 对象。测试 **209 passed**。
 - [ ] **B11 CiA402 行为插件**：以 Inovance SV660N 兼容画像为第一个目标，实现 CSP 状态机（Tier0/内置 profile 起步）。
   - 依赖 B10 已完成（声明式画像 + `--manifest` + 验证脚本可复用）；先 facts.md + 声明式画像，
     行为 WASM 只做 Tier0 状态机骨架。
