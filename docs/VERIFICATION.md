@@ -52,6 +52,7 @@
 | `igh-cia402-op-probe.sh` | IgH ecrt 7B CiA402：OP + 状态字/模式/位置 | **EXIT=0** |
 | `igh-cia402-csv-op-probe.sh` | IgH ecrt 11B CSV：OP + 速度模式位置累加/速度显示 | **EXIT=0** |
 | `uds-multi-slave-probe.sh` | `--slaves 8` 多从站链：广播 WKC=8、逐站地址分配、配置地址寻址 | **EXIT=0** |
+| `sdo-read-probe.sh` | `GET /sdo`：静态/实时均返回 sdo-v1（0x6040 Controlword/0x0006/16/rw），缺 index/非法/未知对象/未知子索引 → 404 | **EXIT=0** |
 | `run-all-probes.sh` | 一键聚合：按平台/root 选择探针并汇总；本机 2 PASS/12 SKIP，验证机 14 PASS/0 FAIL | **EXIT=0**（验证机） |
 | `write-pdo-probe.sh` | `POST /pdo` 写操作：默认 405 且 PDO 不变；`--serve-write` 后写 slave0=beef、slave1=1234；`POST /state` 404 | **EXIT=0** |
 | `events-probe.sh` | SSE `/events`：Content-Type、state-v1 + live、两事件间 frames_in 递增（0→2）、断开后 `/state` 仍 200 | **EXIT=0** |

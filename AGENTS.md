@@ -494,6 +494,9 @@ user.email = deepseek-harness@users.noreply.github.com
 - [x] ~~**B38 M3 范围与 ADR（插件宿主/WASM、SDO 写路径、鉴权/TLS）（M3 定界）**~~ ✅ **2026-11-13 07:28 完成**：新增 docs/adr/0002-m3-plugin-host-and-write-paths.md（D1 插件两类/行为插件不进实时环、D2 最小宿主 API、D3 SDO 写白名单+审计、D4 进程外 TLS+可选 token、D5 许可约束、D6 非目标、备选方案与未决问题）与 docs/plan/M3-scope.md（W1–W8 工作流/验收/风险/退出条件）；M2 清单/STATUS/README 互链；control-plane-doc-check 扩展 M3 文档存在性与互链（EXIT=0）。纯文档班，未跑 VM。
 - [ ] **B39 M3-W3：SDO 只读浏览 GET /sdo?index&sub（M3）**：从运行时对象字典读取值（名称/类型/位长/访问/值 hex，不经过 mailbox），未知对象 404；--serve 静态与实时模式均可用；探针校验已知对象（如 0x6040/0x6060）与未知对象。
 
+- [x] ~~**B39 M3-W3：SDO 只读浏览 `GET /sdo?index&sub`（M3）**~~ ✅ **2026-11-13 07:30 完成**：`control-plane::sdo_json`（运行时字典，不 mailbox；未知对象 None）+ 1 单测（共 14）；`GET /sdo?index=0x6040&sub=0` 静态与实时 `--serve` 均可用（sdo-v1：index/sub/object_name/name/type/bits/access/value_hex），缺 index/非法/未知对象/未知子索引 → 404；探针 `sdo-read-probe.sh` 验证机 **EXIT=0**；CONTROL-PLANE 路由/schema/验证、M3 清单 W3 状态、run-all-probes 清单同步；测试 **224 passed**。
+- [ ] **B40 M3-W4：SDO 受控写 `POST /sdo`（M3）**：`--serve-write` + manifest `writable` 白名单 + 安全排除表（0x1018 等身份对象）+ 审计环形缓冲（时间/来源/对象/旧值/新值，`/metrics` 写计数）；默认 405、非白名单 403、未知 404；探针覆盖默认/成功/拒绝/审计。
+
 ## 7. 目录约定
 
 ```

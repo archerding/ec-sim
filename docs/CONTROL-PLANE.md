@@ -44,6 +44,7 @@ cargo run -q -p esc-node --bin ec-sim-esc -- \
 | `GET /state` | 全部 | `ec-sim/state-v1` | 只读状态快照；实时模式额外含 `live` 字段 |
 | `GET /dict` | 全部 | `ec-sim/dict-v1` | 运行时对象字典（无 manifest 时 404） |
 | `GET /pdo` | 实时 | `ec-sim/pdo-v1` | SM2/SM3 原始字节 + `decoded` 具名解码 |
+| `GET /sdo?index=0x6040&sub=0` | 全部 | `ec-sim/sdo-v1` | 运行时对象字典只读浏览（不经过 mailbox；未知对象 404） |
 | `GET /pdo?history=1` | 实时 | `ec-sim/pdo-history-v1` | 按变化去重的 PDO 时间序列（每站 256 条） |
 | `GET /topology` | 实时 | `ec-sim/topology-v1` | 链上所有从站摘要 |
 | `GET /metrics` | 实时 | Prometheus 文本 | 每站计数器/状态，`text/plain; version=0.0.4` |
@@ -108,14 +109,25 @@ curl -si http://127.0.0.1:8091/nope   # 404 JSON
 | `schema` / `tool` / `count` | 元信息 |
 | `samples[]` | `sm2_hex` / `sm3_hex` / `al_status`（按 PDO 变化去重、每站最多 256 条） |
 
-### 4.5 `ec-sim/topology-v1`
+### 4.5 `ec-sim/sdo-v1`
+
+| 字段 | 说明 |
+| --- | --- |
+| `schema` / `tool` | 元信息 |
+| `index` / `sub` / `object_name` / `name` | 对象索引、子索引、对象名、条目名 |
+| `type` / `bits` / `access` | 数据类型、位长、`ro`/`rw` |
+| `value_hex` | 当前值（原始小端字节） |
+
+> 只读、来自运行时对象字典（`/dict` 的内存视图），**不发起** CoE SDO 邮箱往返；写路径见 M3 范围。
+
+### 4.6 `ec-sim/topology-v1`
 
 | 字段 | 说明 |
 | --- | --- |
 | `schema` / `tool` / `count` | 元信息 |
 | `slaves[]` | `index` / `station_address` / `al_status` / `al_status_code` / `frames_in` / `frames_out` / `sm2{address,hex}` / `sm3{address,hex}` |
 
-### 4.6 `/metrics`（Prometheus 文本）
+### 4.7 `/metrics`（Prometheus 文本）
 
 | 指标 | 类型 | 说明 |
 | --- | --- | --- |
@@ -166,6 +178,7 @@ curl -si http://127.0.0.1:8091/nope   # 404 JSON
 | 静态服务 | `scripts/spikes/http-state-probe.sh` |
 | 同源托管 web/ | `scripts/spikes/serve-web-probe.sh` |
 | SSE 推送 | `scripts/spikes/events-probe.sh` |
+| SDO 只读浏览 | `scripts/spikes/sdo-read-probe.sh` |
 | 写操作（默认关闭） | `scripts/spikes/write-pdo-probe.sh` |
 | 实时状态/PDO/历史/拓扑/逐站/指标 | `live-state-probe.sh`、`pdo-live-probe.sh`、`pdo-history-probe.sh`、`pdo-decode-probe.sh`、`topology-probe.sh`、`slave-select-probe.sh`、`metrics-probe.sh`、`metrics-filter-probe.sh`（Linux/UDS） |
 | TAP 实时 | `scripts/spikes/tap-live-state-probe.sh`（root，验证机） |

@@ -353,19 +353,20 @@ fn serve_http(
         }
     };
 
-    let (dict_objects, profile, dict_json) = match &manifest {
+    let (dict_objects, profile, dict_json, dict_for_decode) = match &manifest {
         Some(manifest) => match plugin_host::dict_gen::dictionary_from_manifest(manifest) {
             Ok(dict) => (
                 Some(dict.objects().len()),
                 Some((manifest.id.as_str(), manifest.name.as_str())),
                 Some(control_plane::dict_json(&dict)),
+                Some(dict),
             ),
             Err(err) => {
                 eprintln!("ec-sim-esc: 生成对象字典失败：{err}");
                 return std::process::ExitCode::from(2);
             }
         },
-        None => (None, None, None),
+        None => (None, None, None, None),
     };
     let state = control_plane::state_json(&spec, dict_objects, profile);
 
@@ -392,9 +393,12 @@ fn serve_http(
             .next()
             .and_then(|line| line.split_whitespace().nth(1))
             .unwrap_or("/");
-        let response = match static_web_response(path, web_root) {
-            Some(response) => response,
-            None => control_plane::handle_get(path, &state, dict_json.as_deref()),
+        let response = if let Some(response) = static_web_response(path, web_root) {
+            response
+        } else if path.split('?').next() == Some("/sdo") {
+            sdo_response(path, dict_for_decode.as_ref())
+        } else {
+            control_plane::handle_get(path, &state, dict_json.as_deref())
         };
         let headers = format!(
             "{}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: {}\r\nConnection: close\r\n\r\n",
@@ -410,7 +414,6 @@ fn serve_http(
     std::process::ExitCode::SUCCESS
 }
 
-#[cfg(target_os = "linux")]
 fn query_param<'a>(path: &'a str, name: &str) -> Option<&'a str> {
     let query = path.split_once('?')?.1;
     for pair in query.split('&') {
@@ -420,6 +423,38 @@ fn query_param<'a>(path: &'a str, name: &str) -> Option<&'a str> {
         }
     }
     None
+}
+
+fn parse_u16_param(text: &str) -> Option<u16> {
+    let text = text.trim();
+    if let Some(hex) = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+        u16::from_str_radix(hex, 16).ok()
+    } else {
+        text.parse::<u16>().ok()
+    }
+}
+
+fn sdo_response(
+    path: &str,
+    dict: Option<&esc_core::obj_dict::ObjectDictionary>,
+) -> control_plane::HttpResponse {
+    let Some(index_text) = query_param(path, "index") else {
+        return control_plane::not_found_json("需要 ?index=0x....[&sub=N]");
+    };
+    let Some(index) = parse_u16_param(index_text) else {
+        return control_plane::not_found_json("index 非法（支持 0x 十六进制或十进制）");
+    };
+    let sub = query_param(path, "sub")
+        .and_then(|value| value.parse::<u8>().ok())
+        .unwrap_or(0);
+    match dict.and_then(|dict| control_plane::sdo_json(dict, index, sub)) {
+        Some(body) => control_plane::HttpResponse {
+            status_line: "HTTP/1.1 200 OK",
+            content_type: "application/json; charset=utf-8",
+            body,
+        },
+        None => control_plane::not_found_json(&format!("对象不存在：0x{index:04X}:{sub:02X}")),
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -755,6 +790,8 @@ fn serve_live_http(
         }
         let response = if let Some(response) = static_web_response(&path, web_root.as_deref()) {
             response
+        } else if path_only == "/sdo" {
+            sdo_response(&path, dict_for_decode.as_ref())
         } else if invalid_slave {
             control_plane::not_found_json(&format!(
                 "slave {} 不存在（共 {slave_count} 个从站）",

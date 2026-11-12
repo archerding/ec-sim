@@ -714,6 +714,37 @@ pub fn metrics_text(slaves: &[MetricsSlave]) -> String {
     out
 }
 
+/// 生成 `sdo-v1` JSON：从运行时对象字典读取单个条目（不经过 EtherCAT mailbox）。
+///
+/// 未知对象/子索引返回 `None`。
+#[must_use]
+pub fn sdo_json(dict: &ObjectDictionary, index: u16, sub: u8) -> Option<String> {
+    let entry = dict.entry(index, sub)?;
+    let object_name = dict
+        .objects()
+        .iter()
+        .find(|object| object.index == index)
+        .map(|object| object.name.as_str())
+        .unwrap_or("");
+    let value_hex: String = entry
+        .value
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    Some(format!(
+        "{{\n  \"schema\": \"ec-sim/sdo-v1\",\n  \"tool\": \"ec-sim-esc {}\",\n  \"index\": \"0x{:04X}\",\n  \"sub\": {},\n  \"object_name\": \"{}\",\n  \"name\": \"{}\",\n  \"type\": \"0x{:04X}\",\n  \"bits\": {},\n  \"access\": \"{}\",\n  \"value_hex\": \"{}\"\n}}",
+        TOOL_VERSION,
+        index,
+        sub,
+        json_escape(object_name),
+        json_escape(&entry.name),
+        entry.data_type,
+        entry.bit_length,
+        if entry.writable { "rw" } else { "ro" },
+        value_hex
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -937,6 +968,20 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn sdo_json_reads_known_object_and_rejects_unknown() {
+        let dict = ObjectDictionary::simulated();
+        let json = sdo_json(&dict, 0x1018, 1).expect("0x1018:01 应存在");
+        assert!(json.contains("\"schema\": \"ec-sim/sdo-v1\""));
+        assert!(json.contains("\"index\": \"0x1018\""));
+        assert!(json.contains("\"sub\": 1"));
+        assert!(json.contains("\"name\": \"Vendor ID\""));
+        assert!(json.contains("\"access\": \"ro\""));
+        assert!(json.contains("\"value_hex\": \""));
+        assert!(sdo_json(&dict, 0xFFFF, 0).is_none());
+        assert!(sdo_json(&dict, 0x1018, 9).is_none());
     }
 
     #[test]

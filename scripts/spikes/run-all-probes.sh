@@ -54,6 +54,7 @@ metrics-filter|linux|metrics-filter-probe.sh|no
 serve-web|linux|serve-web-probe.sh|no
 events|linux|events-probe.sh|no
 write-pdo|linux|write-pdo-probe.sh|no
+sdo-read|linux|sdo-read-probe.sh|no
 tap-live|root|tap-live-state-probe.sh|no
 "
 

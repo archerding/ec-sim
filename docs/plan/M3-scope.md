@@ -24,7 +24,7 @@
 | --- | --- | --- | --- | --- |
 | W1 | WASM 插件宿主 spike | wasmi/wasmtime 选型对比（启动/体积/许可/MSRV）；最小 `read_pdo/write_pdo/log` 宿主 | spike 文档 + 可运行示例；不改变现有实时环 | ❌ 未开始 |
 | W2 | PDO arena 同步 | 双缓冲/generation 或 seqlock；插件崩溃隔离 | 单测 + 压测（无撕裂、无实时环阻塞） | ❌ 未开始 |
-| W3 | SDO 只读浏览 | `GET /sdo?index&sub` 从运行时字典读值（不 mailbox） | 探针：已知对象值/名称/类型；未知 404 | ❌ 未开始 |
+| W3 | SDO 只读浏览 | `GET /sdo?index&sub` 从运行时字典读值（不 mailbox） | 探针：已知对象值/名称/类型；未知 404 | ✅ 已完成（B39：`sdo-read-probe.sh`；sdo-v1 schema） |
 | W4 | SDO 受控写 | `POST /sdo`（`--serve-write` + manifest `writable` 白名单 + 审计） | 探针：默认拒绝、白名单成功、非白名单 403、审计记录 | ❌ 未开始 |
 | W5 | 可选 token | `--serve-token-env VAR`（`Authorization: Bearer`）；空 = 现状 | 探针：带/不带 token 的 200/401 行为 | ❌ 未开始 |
 | W6 | Web SDO 面板 | 只读浏览；写入需二次确认且仅当写开关启用 | `node --check` + 人工验收（⚠️ 无 DOM 测试） | ❌ 未开始 |

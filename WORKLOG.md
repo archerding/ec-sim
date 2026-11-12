@@ -1,5 +1,35 @@
 ---
 
+## 2026-11-13 07:30 班（低峰）— **B39：M3-W3 SDO 只读浏览 `GET /sdo`**
+
+**做了什么**
+- `control-plane` 新增 `sdo_json(dict, index, sub)`：从运行时对象字典读取条目（不经过 EtherCAT
+  mailbox），输出 `sdo-v1`（index/sub/object_name/name/type/bits/access/value_hex）；未知对象返回 `None`；
+  新增 1 个单测（control-plane 共 14）。
+- `ec-sim-esc --serve` 新增 `GET /sdo?index=0x6040&sub=0`（index 支持 0x 十六进制/十进制，sub 默认 0；
+  缺 index、非法 index、未知对象/子索引 → 404 JSON）；静态快照模式与 UDS/TAP 实时模式均支持
+  （两处均保留运行时字典）。
+- 新增 `scripts/spikes/sdo-read-probe.sh`：静态模式已知对象 200（Controlword/0x0006/16/rw）+ 404 矩阵；
+  实时模式返回 sdo-v1（0x6041）。
+- `docs/CONTROL-PLANE.md` 路由表/schema/验证清单、`docs/plan/M3-scope.md` W3 状态、
+  `control-plane-doc-check.py`（13 路由 / 14 探针）、`run-all-probes.sh` 探针清单同步。
+- AGENTS：B39 完成、新增 B40（M3-W4 SDO 受控写）。
+
+**验证结果**
+- `cargo fmt --check`、clippy 通过；`cargo test --workspace` **224 passed**；
+  `control-plane-doc-check.py` **EXIT=0**（13 路由 / 14 探针）。
+- 验证机：重建后 `sdo-read-probe.sh` **EXIT=0**（静态已知/404 矩阵 + 实时 0x6041）。
+
+**卡点**
+- 只读浏览不涉及写路径；写（W4）仍待做：白名单/审计/非白名单 403。
+
+**下次开工第一件事**
+- **B40**：`POST /sdo`（`--serve-write` + manifest `writable` 白名单 + 安全排除表 + 审计环形缓冲 +
+  `/metrics` 写计数），探针覆盖默认 405/成功/403/404/审计。
+
+---
+---
+
 ## 2026-11-13 07:28 班（低峰）— **B38：M3 范围与 ADR（插件宿主/写路径/鉴权定界）**
 
 **做了什么**
