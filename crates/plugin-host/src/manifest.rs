@@ -601,6 +601,58 @@ impl PluginManifest {
             if pdo.entries.is_empty() {
                 problems.push(format!("PDO {:#06x} 没有任何映射项", pdo.index));
             }
+            for entry in &pdo.entries {
+                if entry.bits == 0 {
+                    problems.push(format!("PDO {:#06x} 有 0 位长映射项", pdo.index));
+                }
+            }
+        }
+        // SM 长度与 PDO 位长一致性（rx→dir out、tx→dir in）：把 OP 期才发现的
+        // 映射不一致提前到 manifest 加载期（便于插件作者尽早修正；真实主站仍会检查）。
+        let sum_bits = |pdos: &[PdoConfig]| -> u32 {
+            pdos.iter()
+                .flat_map(|pdo| pdo.entries.iter())
+                .map(|entry| u32::from(entry.bits))
+                .sum()
+        };
+        for (dir, pdos) in [("out", &self.rx_pdos), ("in", &self.tx_pdos)] {
+            let Some(sm) = self.sm.iter().find(|sm| sm.dir == dir) else {
+                continue;
+            };
+            let bits = sum_bits(pdos);
+            if bits != u32::from(sm.len) * 8 {
+                problems.push(format!(
+                    "sm(dir {dir}) len={}B 与 PDO 位长 {bits}bit 不一致",
+                    sm.len
+                ));
+            }
+        }
+        // object 的 pdo 引用必须真实存在于对应 PDO 映射中。
+        for object in &self.objects {
+            let Some(pdo_dir) = object.pdo.as_deref() else {
+                continue;
+            };
+            let pdos = match pdo_dir {
+                "rx" => &self.rx_pdos,
+                "tx" => &self.tx_pdos,
+                other => {
+                    problems.push(format!(
+                        "对象 {:#06x}:{:02X} pdo={other} 非法（应为 rx/tx）",
+                        object.index, object.sub
+                    ));
+                    continue;
+                }
+            };
+            let found = pdos
+                .iter()
+                .flat_map(|pdo| pdo.entries.iter())
+                .any(|entry| entry.index == object.index && entry.sub == object.sub);
+            if !found {
+                problems.push(format!(
+                    "对象 {:#06x}:{:02X} 声明 pdo={pdo_dir} 但不在对应 PDO 映射中",
+                    object.index, object.sub
+                ));
+            }
         }
         problems
     }
@@ -781,6 +833,42 @@ sources:
         assert!(
             !manifest.validate().is_empty(),
             "模板含 TODO 占位，应报违规"
+        );
+    }
+
+    #[test]
+    fn rejects_sm_length_and_pdo_mapping_mismatch() {
+        // sm(out) len=2B（16bit），但 RxPDO 只映射 8bit → 校验必须报不一致。
+        let mismatch = VALID.replace(
+            "sm:\n  - {index: 0, dir: mbox-in, start: 0x1000, len: 128}\n  - {index: 1, dir: mbox-out, start: 0x1080, len: 128}",
+            "sm:\n  - {index: 0, dir: mbox-in, start: 0x1000, len: 128}\n  - {index: 1, dir: mbox-out, start: 0x1080, len: 128}\n  - {index: 2, dir: out, start: 0x1100, len: 2}\n  - {index: 3, dir: in, start: 0x1110, len: 1}",
+        )
+        .replace(
+            "sources:\n",
+            "pdo:\n  rx:\n    - index: 0x1600\n      entries:\n        - {index: 0x7000, sub: 0, bits: 8}\n  tx:\n    - index: 0x1A00\n      entries:\n        - {index: 0x6000, sub: 0, bits: 8}\n\nsources:\n",
+        )
+        .replace(
+            "sources:\n  - {title: \"Public manual\", url: \"https://example.invalid/x.pdf\", accessed: \"2026-11-12\"}",
+            "objects:\n  - {index: 0x7000, sub: 0, name: Out, dtype: UINT8, access: ro, value: 0, pdo: rx}\n\nsources:\n  - {title: \"Public manual\", url: \"https://example.invalid/x.pdf\", accessed: \"2026-11-12\"}",
+        );
+        let manifest = PluginManifest::parse(&mismatch).expect("parse");
+        let problems = manifest.validate();
+        assert!(
+            problems.iter().any(|p| p.contains("不一致")),
+            "应报告 SM/PDO 位长不一致：{problems:?}"
+        );
+        // 对象声明 pdo 但不在映射中 → 也要报。
+        let dangling = mismatch.replace(
+            "objects:\n  - {index: 0x7000, sub: 0, name: Out, dtype: UINT8, access: ro, value: 0, pdo: rx}",
+            "objects:\n  - {index: 0x7100, sub: 0, name: Out2, dtype: UINT8, access: ro, value: 0, pdo: rx}",
+        );
+        let manifest = PluginManifest::parse(&dangling).expect("parse");
+        assert!(
+            manifest
+                .validate()
+                .iter()
+                .any(|p| p.contains("不在对应 PDO 映射中")),
+            "应报告对象 pdo 引用不在映射中"
         );
     }
 

@@ -234,8 +234,7 @@ user.email = deepseek-harness@users.noreply.github.com
     验证机 `scripts/spikes/cia402-sdo-download-probe.sh` **EXIT=0**。IgH 侧 SDO
     （上传/下载）在该验证机上仍**阻塞**（ecrt ioctl，已复现两次）→ ⚠️ 待验证。
   - 待做：IgH 侧分段上传/下载验证（环境恢复后）、Complete Access（CA）。
-- [x] ~~**B9 声明式插件加载器**~~ ✅ **2026-11-12 21:25 班完成**：`plugin-host` 零依赖解析
-  `plugin.yaml`（YAML 子集 + R2/R5 校验）→ `sii_gen` 生成 SII 镜像、`dict_gen` 生成运行时
+- [x] ~~**B9 声明式插件加载器**~~ ✅ **2026-11-12 21:25 班完成**：`plugin-host` 零依赖解析  `plugin.yaml`（YAML 子集 + R2/R5 校验）→ `sii_gen` 生成 SII 镜像、`dict_gen` 生成运行时
   对象字典（0x1018 身份 / 0x1C00 SM 类型 / 0x1C12+0x1C13 分配 / PDO 映射 / 用户对象）；
   `esc-node` 新增运行时 `ObjectDictionary` 与 **`ec-sim-esc --manifest`**，SDO 上传/下载/
   SDO Info 全走运行时字典。Linux 验证机端到端（`scripts/spikes/manifest-slave-probe.sh`）：
@@ -244,6 +243,11 @@ user.email = deepseek-harness@users.noreply.github.com
   - 已知限制：SOEM `slaveinfo -sdo` 对 UINT8 子索引 0 的 2 字节读取有未初始化高位（偶发
     段错误，属 SOEM 工具夹具缺陷，脚本重试规避）；manifest 初值仅 8/16/32 位整数；
     FMMU 仍由主站配置阶段写入；DC 未实现。
+  - 进度（2026-11-13 00:23 班）：**加载期 SM/PDO 一致性校验**——`validate()` 增加
+    `dir: out/in` 的 SM `len×8` 与 RxPDO/TxPDO 位长之和比较、映射位长非 0、object 的
+    `pdo: rx/tx` 引用必须真实存在于对应映射（悬空/非法值报错）；新增单测。测试 **171 passed**；
+    验证机回归 `generic-cia402-probe.sh`/`cia402-csv-probe.sh`/`igh-el2008-op-probe.sh`
+    全部 EXIT=0（既有插件无误报）。⚠️ 仍未校验映射字的数据类型/位长一致性与 SM 地址合法性。
 - [x] ~~**B10 首个 P0 设备插件**~~ ✅ **2026-11-12 21:33 班完成**：`plugins/beckhoff-el2008/`
   声明式画像（自有 VID/PID `0x00000EC5`/`0x0000E5D2`，名称带 SIMULATED；8 通道输出、
   0 输入、SM2 输出 1 字节、默认 RxPDO `0x1600`..`0x1607` 各映射 1 bit 输出对象

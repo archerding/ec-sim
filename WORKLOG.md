@@ -6,6 +6,39 @@
 
 ---
 
+## 2026-11-13 00:23 班（低峰）— B9 强化：**manifest 加载期 SM/PDO 一致性校验**
+
+**做了什么**
+- `plugin-host::PluginManifest::validate()` 增加加载期一致性检查（原 0x0024/0x0025 的
+  映射错误只能到 OP 才暴露，现在提前到 manifest 加载）：
+  - **SM 长度 vs PDO 位长**：`dir: out` 的 SM `len × 8` 必须等于 RxPDO 映射位长之和；
+    `dir: in` 同理对应 TxPDO；
+  - **映射项位长非 0**；
+  - **object 的 `pdo: rx/tx` 引用必须真实存在于对应 PDO 映射**（索引+子索引匹配），
+    `pdo` 值只能是 `rx`/`tx`。
+- 新增单测 `rejects_sm_length_and_pdo_mapping_mismatch`（SM/PDO 位长不一致 + 对象
+  pdo 引用悬空两种错误）。
+- 该校验在 `ec-sim-esc --manifest` 启动路径与仓库插件守卫测试中都会执行。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **171 passed**（esc-core 79 / esc-node 53 / plugin-host 22 + 1 集成 / wire 16）；
+  仓库内全部插件与测试夹具均通过新校验（无误报）。
+- Linux 验证机回归（重建后）：`generic-cia402-probe.sh` **EXIT=0**（通用 CiA 402 扫描/OP）、
+  `cia402-csv-probe.sh` **EXIT=0**（CSV 行为+UDS 套件）、`igh-el2008-op-probe.sh`
+  **EXIT=0**（IgH `al_states=0x08`、EL2008 OP）→ 加载期校验对既有画像无回归。
+
+**卡点**
+- 只校验位长/引用正确性；不校验映射字里的对象**数据类型/位长**是否与声明一致
+  （如把 32 位对象映射成 16 位），也不校验分配顺序的语义。
+- SM 地址/区间重叠/类型方向等 ESC 级合法性仍未校验（B5 待做项）。
+
+**下次开工第一件事**
+- 扩展加载期校验：映射字对象的数据类型/位长一致性 + SM 地址/长度/类型合法性；或继续
+  B11（SV660N 公开手册 PDO/扩展对象核对）；B6 FMMU/DC 原文核实仍待条件。
+
+---
+
 ## 2026-11-13 00:20 班（低峰）— B11 验证：**IgH 侧 CSV 画像 OP + 11 字节 PDO 运行时行为**
 
 **做了什么**
