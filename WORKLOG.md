@@ -6,6 +6,34 @@
 
 ---
 
+## 2026-11-13 00:31 班（低峰）— B9 强化：**SM 地址/长度/区间重叠校验**
+
+**做了什么**
+- `plugin-host::PluginManifest::validate()` 增加 Sync Manager 布局合法性校验：
+  - `len` 必须非 0；
+  - 起始地址必须在 DL 用户内存 `0x1000–0xFFFF`；
+  - 区间不得越过 `0xFFFF`（`start+len` 溢出）；
+  - **不同 SM 的地址区间不得重叠**（按起始地址排序后逐对比较）。
+- 新增单测 `rejects_invalid_sync_manager_ranges`（地址 <0x1000、与 SM1 重叠、越过 0xFFFF
+  三种错误同时报告）。
+- 仓库内既有插件（EL2008/通用 CiA402/CSV/SV660N/示例）与新测试夹具均通过校验
+  （守卫测试全绿，无误报）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **173 passed**（esc-core 79 / esc-node 53 / plugin-host 24 + 1 集成 / wire 16）。
+
+**卡点**
+- 只校验地址区间合法性，不校验 SM 的 control/type/direction 语义（manifest 目前不声明
+  control/type；由 dict_gen 默认值决定）。
+- 未校验 SM 地址与 SII 声明的一致性（SII 由 manifest 生成，天然一致）。
+
+**下次开工第一件事**
+- 继续 B9 强化（SM control/type 语义、对象字典子索引范围）或回到 B11（SV660N 公开手册
+  PDO/扩展对象核对）；B6 FMMU/DC 原文核实仍待条件。
+
+---
+
 ## 2026-11-13 00:27 班（低峰）— B9 强化：**PDO 映射项的数据类型/位长 + 重复映射校验**
 
 **做了什么**

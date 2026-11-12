@@ -596,6 +596,44 @@ impl PluginManifest {
             if !matches!(sm.dir.as_str(), "mbox-in" | "mbox-out" | "out" | "in") {
                 problems.push(format!("sm[{}].dir 非法：{}", sm.index, sm.dir));
             }
+            // ESC/DL 内存地址合法性：用户内存 0x1000–0xFFFF，长度非 0 且不溢出。
+            if sm.len == 0 {
+                problems.push(format!("sm[{}].len 为 0", sm.index));
+            }
+            let start = u32::from(sm.start);
+            let end = start + u32::from(sm.len);
+            if start < 0x1000 {
+                problems.push(format!(
+                    "sm[{}] 起始地址 {:#06X} 不在 DL 用户内存（0x1000–0xFFFF）",
+                    sm.index, sm.start
+                ));
+            }
+            if end > 0x1_0000 {
+                problems.push(format!("sm[{}] 区间越过 0xFFFF", sm.index));
+            }
+        }
+        // SM 区间不得重叠（按起始地址排序后比较）。
+        let mut ranges: Vec<(u32, u32, u8)> = self
+            .sm
+            .iter()
+            .filter(|sm| sm.len > 0)
+            .map(|sm| {
+                (
+                    u32::from(sm.start),
+                    u32::from(sm.start) + u32::from(sm.len),
+                    sm.index,
+                )
+            })
+            .collect();
+        ranges.sort_by_key(|(start, _, _)| *start);
+        for pair in ranges.windows(2) {
+            let (_, end, index) = pair[0];
+            let (next_start, _, next_index) = pair[1];
+            if end > next_start {
+                problems.push(format!(
+                    "sm[{index}] 与 sm[{next_index}] 地址区间重叠（{end:#06X} > {next_start:#06X}）"
+                ));
+            }
         }
         for pdo in self.rx_pdos.iter().chain(self.tx_pdos.iter()) {
             if pdo.entries.is_empty() {
@@ -949,6 +987,42 @@ sources:
         assert!(
             problems.iter().any(|p| p.contains("重复映射")),
             "应报告同一 PDO 内重复映射：{problems:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_sync_manager_ranges() {
+        const BAD: &str = r#"
+schema: ecsim.plugin/v1
+id: com.ecsim.x
+name: "X (SIMULATED)"
+version: 0.1.0
+kind: device
+identity:
+  vendor_id: 0x00000EC5
+  product_code: 4
+  simulated: true
+sm:
+  - {index: 0, dir: mbox-in, start: 0x0900, len: 128}
+  - {index: 1, dir: mbox-out, start: 0x1080, len: 128}
+  - {index: 2, dir: out, start: 0x1080, len: 4}
+  - {index: 3, dir: in, start: 0xFFF0, len: 32}
+sources:
+  - {title: "t", url: "https://example.invalid", accessed: "2026-11-13"}
+"#;
+        let manifest = PluginManifest::parse(BAD).expect("parse");
+        let problems = manifest.validate();
+        assert!(
+            problems.iter().any(|p| p.contains("不在 DL 用户内存")),
+            "应报告 SM 起始地址越界：{problems:?}"
+        );
+        assert!(
+            problems.iter().any(|p| p.contains("重叠")),
+            "应报告 SM 区间重叠：{problems:?}"
+        );
+        assert!(
+            problems.iter().any(|p| p.contains("越过 0xFFFF")),
+            "应报告 SM 区间越过 0xFFFF：{problems:?}"
         );
     }
 

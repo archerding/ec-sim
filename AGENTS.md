@@ -253,6 +253,10 @@ user.email = deepseek-harness@users.noreply.github.com
     同一 PDO 内重复映射同一对象报错；新增单测。测试 **172 passed**；验证机
     `generic-cia402-probe.sh`/`cia402-csv-probe.sh` EXIT=0（无误报）。
     ⚠️ 仍未校验 SM 地址/区间/类型方向合法性；未声明对象的映射项跳过校验。
+  - 进度（2026-11-13 00:31 班）：**SM 地址/长度/区间重叠校验**——`validate()` 检查
+    `len != 0`、起始地址在 `0x1000–0xFFFF`、区间不越过 `0xFFFF`、不同 SM 区间不重叠；
+    新增单测。测试 **173 passed**；既有插件无回归（守卫测试全绿）。
+    ⚠️ 未校验 SM control/type 语义（manifest 未声明）；地址与 SII 天然一致（同一来源）。
 - [x] ~~**B10 首个 P0 设备插件**~~ ✅ **2026-11-12 21:33 班完成**：`plugins/beckhoff-el2008/`
   声明式画像（自有 VID/PID `0x00000EC5`/`0x0000E5D2`，名称带 SIMULATED；8 通道输出、
   0 输入、SM2 输出 1 字节、默认 RxPDO `0x1600`..`0x1607` 各映射 1 bit 输出对象
