@@ -1,5 +1,26 @@
 ---
 
+## 2026-11-13 07:28 班（低峰）— **B38：M3 范围与 ADR（插件宿主/写路径/鉴权定界）**
+
+**做了什么**
+- 新增 docs/adr/0002-m3-plugin-host-and-write-paths.md：插件分声明式/行为两类、行为插件永不进实时环（只经 PDO arena 交换）、最小宿主 API、SDO 写路径（--serve-write + manifest 白名单 + 审计 + 非白名单 403）、TLS 由反向代理终结 + 可选静态 token、许可约束（禁 GPL/LGPL；wasm 运行时需逐项核对）、备选方案与未决问题。
+- 新增 docs/plan/M3-scope.md：目标/非目标、W1–W8 工作流与可独立验收项（WASM 宿主、PDO arena、SDO 只读/受控写、token、Web SDO 面板、32 从站调研、MCP stub）、风险与 M3 退出条件草案。
+- M2 清单/STATUS/README 互链 M2/M3 文档；control-plane-doc-check.py 扩展 M3 文档存在性与互链检查（EXIT=0）。
+- AGENTS：B38 完成、新增 B39（M3-W3 SDO 只读浏览）。
+
+**验证结果**
+- python scripts/spikes/control-plane-doc-check.py **EXIT=0**（12 路由 / 13 探针，M2/M3 清单已互链）；
+- cargo fmt --check、clippy、cargo test --workspace **223 passed** 不变；纯文档班未跑 VM。
+
+**卡点**
+- ADR 0002 为“提议”状态；wasm 运行时选型、PDO arena 同步协议、写白名单豁免策略未决。
+
+**下次开工第一件事**
+- **B39**：M3-W3 GET /sdo?index&sub 从运行时字典只读浏览（不 mailbox；未知对象 404），静态/实时均可用，探针校验已知/未知对象。
+
+---
+---
+
 ## 2026-11-13 07:13 班（低峰）— **B37：一键预回归 `run-all-probes.sh`**
 
 **做了什么**

@@ -75,6 +75,9 @@ node --check web/app.js
 
 ## 5. 结论
 
+M3（插件宿主 / SDO 写路径 / 鉴权）范围与退出条件见 [M3 范围](M3-scope.md) 与
+[ADR 0002](../adr/0002-m3-plugin-host-and-write-paths.md)。
+
 **M2 的"只读观测面 + 显式写开关"已达到退出候选状态**：控制面 API/SSE/指标/文档/测试齐全，
 WebUI 可同源或离线使用，写操作默认关闭且文档化警告。未完成项（SDO 编辑、插件热加载、
 ESI 导入、鉴权/TLS、MCP、32 从站）明确划入 M3+，不阻塞 M2 收尾。

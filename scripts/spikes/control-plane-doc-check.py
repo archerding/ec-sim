@@ -108,7 +108,22 @@ for probe in EXPECTED_PROBES + ["write-pdo-probe.sh"]:
 for doc_path in [ROOT / "README.md", ROOT / "docs" / "STATUS.md", DOC]:
     if "M2-exit-checklist" not in doc_path.read_text(encoding="utf-8"):
         fail(f"{doc_path.name} 未链接 M2 退出清单")
+# 6) M3 范围/ADR 存在且互链。
+m3_path = ROOT / "docs" / "plan" / "M3-scope.md"
+adr2_path = ROOT / "docs" / "adr" / "0002-m3-plugin-host-and-write-paths.md"
+for required in (m3_path, adr2_path):
+    if not required.is_file():
+        fail(f"M3 文档不存在：{required}")
+for doc_path in (ROOT / "docs" / "STATUS.md", ROOT / "README.md", m2_path):
+    text = doc_path.read_text(encoding="utf-8")
+    if "M3-scope" not in text:
+        fail(f"{doc_path.name} 未链接 M3 范围")
+if "0002-m3-plugin-host-and-write-paths" not in (ROOT / "docs" / "STATUS.md").read_text(encoding="utf-8"):
+    fail("STATUS.md 未链接 ADR 0002")
+if "0002-m3-plugin-host-and-write-paths" not in m3_path.read_text(encoding="utf-8"):
+    fail("M3 范围未链接 ADR 0002")
+
 print(
-    "OK: docs/CONTROL-PLANE.md 与代码路由一致（%d 条路径、%d 个探针），M2 清单已互链"
+    "OK: docs/CONTROL-PLANE.md 与代码路由一致（%d 条路径、%d 个探针），M2/M3 清单已互链"
     % (len(EXPECTED_PATHS), len(EXPECTED_PROBES))
 )

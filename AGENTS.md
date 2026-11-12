@@ -491,6 +491,9 @@ user.email = deepseek-harness@users.noreply.github.com
     仅基础 ACK；无 GUI 截图（以脱敏文本输出为证据）；SDO Info/分段/Complete Access 均已实现
     并验证（IgH 侧 SDO 上传/下载在验证机仍受 ecrt ioctl 阻塞，⚠️ 属于环境问题）。
 
+- [x] ~~**B38 M3 范围与 ADR（插件宿主/WASM、SDO 写路径、鉴权/TLS）（M3 定界）**~~ ✅ **2026-11-13 07:28 完成**：新增 docs/adr/0002-m3-plugin-host-and-write-paths.md（D1 插件两类/行为插件不进实时环、D2 最小宿主 API、D3 SDO 写白名单+审计、D4 进程外 TLS+可选 token、D5 许可约束、D6 非目标、备选方案与未决问题）与 docs/plan/M3-scope.md（W1–W8 工作流/验收/风险/退出条件）；M2 清单/STATUS/README 互链；control-plane-doc-check 扩展 M3 文档存在性与互链（EXIT=0）。纯文档班，未跑 VM。
+- [ ] **B39 M3-W3：SDO 只读浏览 GET /sdo?index&sub（M3）**：从运行时对象字典读取值（名称/类型/位长/访问/值 hex，不经过 mailbox），未知对象 404；--serve 静态与实时模式均可用；探针校验已知对象（如 0x6040/0x6060）与未知对象。
+
 ## 7. 目录约定
 
 ```
