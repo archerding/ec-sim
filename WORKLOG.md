@@ -6,6 +6,60 @@
 
 ---
 
+## 2026-11-12 19:26 班（低峰）— B6 子项：SII SM/TxPDO/RxPDO 类别（8 位 IO 画像）+ 修正 LRW WKC → SOEM 零补丁进 OP
+
+**做了什么**
+- `esc-core/sii.rs` 新增三个 SII 类别（字节布局按两家**未修改**主站的解析代码逐字节复核）：
+  - **0x0029 Sync Manager**：4 条 × 8 字节（physical start u16、length u16、control u8、status u8、
+    enable u8、pdi control u8）。SM0/SM1 全 0（mailbox 仍关闭，B7 再启用）；SM2 = 输出
+    （0x1100、1 字节、buffered/写方向 `control=0x04`）、SM3 = 输入（0x1110、1 字节、读方向 `0x00`）。
+  - **0x0032 TxPDO**（`0x1A00` → SM3，8 位输入对象 `0x6000:00`）与 **0x0033 RxPDO**
+    （`0x1600` → SM2，8 位输出对象 `0x7000:00`）：PDO 头 8 字节 + 每条映射 8 字节。
+  - 固定区 EEPROM 大小 word 0x003E 由 1（256 B）改为 2（384 B），覆盖新镜像（140 words = 280 B）。
+  - 证据来源：IgH `master/slave.c: ec_slave_fetch_sii_syncs()/ec_slave_fetch_sii_pdos()` 与
+    `master/fsm_slave_scan.c` 的类别分发（0x32 = TxPDO/输入、0x33 = RxPDO/输出）；
+    SOEM `src/ec_main.c: ecx_siiSM()`（类别 size words / 4 = SM 数）与 `ecx_siiPDO()`
+    （8 字节头 + 8 字节映射、+5 处 bit_length）、`src/ec_config.c: ecx_map_sii()`
+    （无 CoE 时回退 SII PDO → SM2/SM3 的长度与类型）。
+- **修正 LRW 的 WKC 规则**（19:19 班"读 +1、写 +1"的假设对 LRW 是错的）：逻辑寻址的 LRW 是
+  **写 FMMU 命中 +2、读 FMMU 命中 +1**（双向都命中 = 3），LRD = +1、LWR = +1。证据：
+  IgH `master/datagram_pair.c` 注释 "If LRW is used, output FMMUs increment the working counter
+  by 2, while input FMMUs increment it by 1"（期望值 `used[OUTPUT] * 2 + used[INPUT]`）；
+  SOEM `src/ec_main.c` 对 LWR 也乘 2（"output WKC counts 2 times when using LRW, emulate the
+  same for LWR"）。`wire::wkc_increment` 文档标明该例外。
+- 新增可复现断言脚本 `scripts/spikes/soem-process-data.sh`：未修改 SOEM `simple_ng` ↔ 本模拟器
+  做 8 位 PDO 交换，断言 1 从站 / 映射 1O+1I / 进入 OP / 每轮 WKC=3 / 0 次 wrong。
+- 测试新增 **3 条**（esc-core/sii：SM 类别按两个主站解析器复刻、TxPDO/RxPDO 字节与 bit_length、
+  EEPROM 容量覆盖全类别链），并更正 esc-node 的 LRW WKC 期望（写-only = 2、双向 = 3）。
+
+**验证结果**
+- 本机 Windows（rustc 1.97.1）：`cargo fmt --all -- --check` exit 0；
+  `cargo clippy --workspace --all-targets -- -D warnings` exit 0；
+  `cargo test --workspace` **82 passed**（esc-core 44 / esc-node 22 / wire 16）。
+- Linux 验证机（**未修改的** SOEM，零补丁）：
+  - `slaveinfo`：`Output size: 8bits`、`Input size: 8bits`、`State: 4`、
+    `SM2 A:1100 L:1 F:00010004 Type:3`、`SM3 A:1110 L:1 F:00010000 Type:4`、
+    `FMMU0 ... Lsb:0 Leb:7 Ps:1100 Ty:02 Act:01`；
+  - `simple_ng`：`mapped 1O+1I bytes` → SAFEOP → **all slaves are now operational**，
+    每轮 **WKC 3**（1055 轮、0 次 `wrong`，应答器侧 `al=0x08` = OP）；
+  - 新脚本：`OK: SOEM simple_ng 进入 OP，1055 轮 WKC=3，无 WKC 不符`。
+- IgH（**未修改**）：`0  0:0  PREOP  +  0x00000ec5:0x0000e5c1`，拓扑断言 OK（无 mailbox/CoE →
+  仍停在 PREOP，属 B7）。
+
+**卡点**
+- IgH 进 OP 需要 mailbox + CoE SDO（B7）才能配置 PDO 域；当前只有 SOEM 走 SII 回退路径能进 OP。
+- 输入数据恒 0（无 PDI/应用层）；SM2/SM3 的 buffered/SM 握手语义未实现；watchdog 未实现。
+- SII 尚无 FMMU 类别 0x0028（SOEM `FMMUfunc` 仍为 0:0）与 DC 类别；⚠️ 字段语义待核实后补，
+  不凭记忆猜。
+
+**下次开工第一件事**
+- **B7 子项 1：邮箱链路（SII mailbox 声明 + SM0/SM1 配置 + SDO Abort 应答）**：SII 固定区
+  0x0018 起声明 std mailbox 与 CoE 协议位、SM 类别补 SM0/SM1；实现 ESC 邮箱数据区
+  （0x1000/0x1080）与 SM 状态位、对未知对象回 SDO Abort（0x06020000）；验收 = SOEM
+  `slaveinfo -sdo` 能收到应答（不再超时）。之后再补对象字典与 PDO 映射（0x1C12/0x1A00/0x1600）。
+
+---
+
 ## 2026-11-12 19:19 班（低峰）— B5 子项：FMMU 逻辑寻址最小闭环（LRD/LWR/LRW）+ 修正 FMMU Type 只读错误
 
 **做了什么**
@@ -21,6 +75,8 @@
 - `esc-node` 接入逻辑寻址：LRD/LWR/LRW 不再一律不命中，改为遍历 8 个 FMMU；读方向要求
   Type.bit0、写方向要求 Type.bit1，按 `translate` 在逻辑地址与 DL 用户内存之间搬运；WKC 按
   "读命中 +1、写命中 +1"（LRW 双向命中 = +2），未命中不增。
+  **（2026-11-12 19:26 班更正：LRW 的写 FMMU 命中应为 +2、读 FMMU 命中 +1，双向 = 3；
+  依据 IgH `datagram_pair.c` 与 SOEM `ec_main.c`，详见本文件顶部 19:26 班条目。）**
 - **修正上一班次（19:02）的错误假设：FMMU Type（0x0B）不是只读**，它是主站写入的方向配置位
   （IgH `fmmu_config.c: ec_fmmu_config_page()` 写 `data + 11 = 0x01/0x02`；SOEM `ec_config.c`
   整块写 `ec_fmmut` 结构含 `FMMUtype`）。按只读丢弃会让方向位恒为 0、FMMU 永不命中；现在只读

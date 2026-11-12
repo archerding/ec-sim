@@ -11,7 +11,9 @@
 //! - `APRD/APWR/APRW`：收到 ADP == 0 的从站命中（见 [`wire::auto_increment_step`]）；
 //! - `FPRD/FPWR/FPRW`：配置站地址或站别名匹配才命中；
 //! - `LRD/LWR/LRW`：按已激活的 FMMU 命中（[`esc_core::fmmu::Fmmu::translate`]），在
-//!   逻辑地址与 DL 用户内存（0x1000–0xFFFF）之间搬运字节；WKC 按"读命中 +1、写命中 +1"。
+//!   逻辑地址与 DL 用户内存（0x1000–0xFFFF）之间搬运字节；WKC 按两家主站一致的规则累加
+//!   （LRD 读 +1、LWR 写 +1、LRW 读 +1 / 写 +2，见 [`Responder::process_logical`] 与
+//!   `handle_frame` 中的注释）。
 //!
 //! 命中后按命令的读/写属性回填数据并累加 WKC；未命中的 datagram 原样保留（WKC 不变）。
 
@@ -190,7 +192,15 @@ impl Responder {
                     logical_address,
                     &mut reply[data_start..wkc_offset],
                 );
-                u16::from(read_hit) + u16::from(write_hit)
+                // 逻辑寻址的 WKC 规则（两家未修改主站的实现一致）：
+                // LRW 的**写** FMMU 命中 +2、**读** FMMU 命中 +1，二者都命中 = 3；
+                // 纯 LRD 读 +1、纯 LWR 写 +1。
+                // 证据：IgH `master/datagram_pair.c` 注释 "If LRW is used, output FMMUs
+                // increment the working counter by 2, while input FMMUs increment it by 1"，
+                // 期望值 `used[OUTPUT] * 2 + used[INPUT]`；SOEM `src/ec_main.c` 对 LWR
+                // 也乘 2（"output WKC counts 2 times when using LRW, emulate the same for LWR"）。
+                let multiplier = if command == Command::Lrw { 2 } else { 1 };
+                u16::from(read_hit) + u16::from(write_hit) * multiplier
             } else if self.matches(command, adp) {
                 if command.is_read() {
                     let bytes = self.read_registers(register_offset, data_len);
@@ -265,7 +275,8 @@ impl Responder {
     /// FMMU 逻辑区间有交集，且物理侧落在 DL 用户内存内；读/写方向还必须分别满足
     /// FMMU 的 Type 位（bit0 = 可读、bit1 = 可写）。
     ///
-    /// 返回 `(读命中, 写命中)`，WKC 由调用方累加（读 +1、写 +1；LRW 双向 = +2）。
+    /// 返回 `(读命中, 写命中)`，WKC 由调用方累加：读命中 +1、写命中 +1；
+    /// 对 **LRW**，写命中额外再 +1（写 +2、读 +1，见 `handle_frame` 中的证据注释）。
     fn process_logical(
         &mut self,
         command: Command,
@@ -912,7 +923,7 @@ mod tests {
     #[test]
     fn lrw_increments_wkc_per_processed_direction() {
         let mut responder = Responder::default();
-        // 只有写方向 FMMU：LRW 的写部分命中 → WKC 1。
+        // 只有写方向 FMMU：LRW 的写部分命中 → WKC 2（LRW 的写命中 +2）。
         configure_fmmu(
             &mut responder,
             0,
@@ -923,9 +934,9 @@ mod tests {
             .handle_frame(&lrw, DEFAULT_SIM_MAC)
             .expect("reply");
         let (wkc, _) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 8);
-        assert_eq!(wkc, 1, "写方向命中 +1");
+        assert_eq!(wkc, 2, "LRW 写方向命中 +2");
 
-        // 再加读方向 FMMU：LRW 读写都命中 → WKC 2，且读到同一物理区。
+        // 再加读方向 FMMU：LRW 读写都命中 → WKC 3（写 +2、读 +1），且读到同一物理区。
         configure_fmmu(
             &mut responder,
             1,
@@ -936,7 +947,7 @@ mod tests {
             .handle_frame(&lrw, DEFAULT_SIM_MAC)
             .expect("reply");
         let (wkc, data) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 8);
-        assert_eq!(wkc, 2, "读写都命中 +2");
+        assert_eq!(wkc, 3, "LRW 读写都命中 = 写 2 + 读 1");
         assert_eq!(data, vec![0x5Au8; 8]);
     }
 

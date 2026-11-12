@@ -29,8 +29,9 @@
   `0xFFFF` 终止；**无 mailbox**（因此主站不会协商 CoE，扫描后停在 INIT/PREOP）；
 - datagram：BRD/BWR/BRW 广播命中，APRD/APWR 收到 ADP==0 命中，FPRD/FPWR 按站地址/别名命中，
   WKC 按读/写属性累加；逻辑寻址（LRD/LWR/LRW）本 spike 时未实现（2026-11-12 19:19 班已补：
-  按已激活 FMMU 命中在逻辑地址与 DL 用户内存 0x1000–0xFFFF 之间搬运；本 spike 的扫描阶段主站
-  尚不下发逻辑读写，故实测输出不受影响）。
+  按已激活 FMMU 命中在逻辑地址与 DL 用户内存 0x1000–0xFFFF 之间搬运；19:26 班又补了
+  **SII SM/TxPDO/RxPDO 类别**并修正 **LRW 的 WKC 规则**（写 FMMU +2、读 FMMU +1），
+  此后未修改的 SOEM `simple_ng` 能进入 **OP** 并做 8 位 PDO 交换，见 §3.1）。
 
 ## 3. 实测输出（脱敏）
 
@@ -74,6 +75,31 @@ EtherCAT 0: No DC reference clock found.
 应答器侧统计（`--verbose` 每 50 帧打印一次）：`in=1100 out=1094 dropped=6 hits=1094`，
 `al=0x02`（PREOP），说明主站 AL 握手被正确处理。
 
+### 3.1 过程数据预回归：未修改 SOEM `simple_ng` 进入 OP（2026-11-12 19:26 班）
+
+SII 增加 **SM 类别 0x0029 + TxPDO 0x0032 + RxPDO 0x0033**（8 位输入 / 8 位输出通用画像）后，
+SOEM 在无 CoE/mailbox 时回退到 SII PDO 类别，配置 SM2/SM3 与 FMMU，并完成 SAFEOP→OP：
+
+```
+Initializing SOEM on 'escsim0'... done
+Finding autoconfig slaves... 1 slaves found
+Sequential mapping of I/O... mapped 1O+1I bytes from 1 segments
+Waiting for all slaves in safe operational... done
+Setting operational state... all slaves are now operational
+Iteration    1:   117 usec  WKC 3  O: 00  I: 00  T: 0
+...
+```
+
+- WKC 3/轮 = 输出 FMMU +2、输入 FMMU +1（IgH `master/datagram_pair.c` 与 SOEM
+  `src/ec_main.c` 对 LRW/LWR 的期望一致）；1055 轮全部 `WKC 3`、0 次 `wrong`，
+  应答器侧 `al=0x08`（OP）。
+- `slaveinfo` 同步显示 `Output size: 8bits` / `Input size: 8bits` / `State: 4`、
+  `SM2 A:1100 L:1 F:00010004 Type:3`、`SM3 A:1110 L:1 F:00010000 Type:4`、
+  `FMMU0 ... Ty:02 Act:01`。
+- 复现脚本：[soem-process-data.sh](../../scripts/spikes/soem-process-data.sh)
+  （断言 1 从站 / 1O+1I / OP / 每轮 WKC=3）。
+- IgH 因无 mailbox/CoE 仍停在 PREOP（`0  0:0  PREOP  +`），属 B7 范围。
+
 ## 4. 过程中发现并修正的四个真问题
 
 1. **以太网填充**：IgH 主站把短 EtherCAT 帧补零到 60 字节（`Tx bytes / Tx frames = 60`），
@@ -115,13 +141,21 @@ EtherCAT 0: No DC reference clock found.
   验证证据：未修改的 SOEM `eepromtool -i` 对 TAP 上的应答器输出
   `Checksum: 0030` / `calculated: 0030`、`Size: 0001 = 256 bytes`、`Version: 0001`；
   同时 `slaveinfo` 与 IgH `ethercat slaves` 无回归。仍属"预回归"，**不构成**一致性测试/认证结论。
-- **未进 OP**：无 mailbox/PDO/SM/FMMU，`slaveinfo` 的 `State: 4` 与 IgH `PREOP` 说明只到 PREOP；
-  OP 需要 B5 的 SM/FMMU + B7 CoE，属 B8 范畴。
+- ~~**未进 OP**~~ ✅ **SOEM 已进 OP（2026-11-12 19:26 班）**：SII SM/TxPDO/RxPDO 类别 + FMMU
+  逻辑寻址 + LRW WKC 修正后，未修改 SOEM `simple_ng` 进入 OP 并做 8 位 PDO 交换（§3.1）。
+  **IgH 仍停在 PREOP**：需要 mailbox + CoE SDO 才能配置 PDO 域，属 B7；当前 SII 未声明 mailbox。
+- **输入/输出数据是静态的**：模拟器没有 PDI/应用层，输入恒 0；SM2/SM3 的 buffered/SM 握手语义、
+  邮箱、watchdog 均未实现。
+- **SII 暂无 FMMU 类别 0x0028 与 DC 类别**：SOEM `FMMUfunc` 仍显示 `0:0`；
+  ⚠️ 待验证其确切字段语义（不凭记忆猜）后再补。
 - **非认证**：以上只是"用例映射/预回归"，**不构成**一致性测试或 CTT 认证结论。
 - 验证机侧模块加载/卸载顺序、TAP MAC 等运维细节见本地 `.local/ops.md`（不入库）。
 
 ## 6. 下一步
 
-- **B8 双主站冒烟**：补齐 SM/FMMU/PDO 让两个主站都进 OP，并把本 spike 的脚本升级为断言脚本
-  （拓扑断言已于 2026-11-12 18:56 班加入 `minimal-esc-responder.sh`）；
+- **B7 CoE 最小闭环**：SII 声明 mailbox（SM0/SM1 + 固定区 0x0018 起）与 CoE 协议位，实现邮箱
+  数据链路（SM 状态位、0x1000/0x1080 缓冲区）；先对未知对象回 SDO Abort（0x06020000）证明
+  链路通，再补对象字典（0x1C12/0x1C13/0x1600/0x1A00、0x1018）让 **IgH** 也能配置 PDO 域并进 OP；
+- **B8 双主站冒烟**：SOEM 已零补丁进 OP（§3.1，断言脚本 `soem-process-data.sh`）；待 IgH 进 OP 后
+  把两主站证据合并为最终冒烟记录；
 - DL Status 将在**多从站**场景下按实际拓扑继续验证（单从站已 ✅）。

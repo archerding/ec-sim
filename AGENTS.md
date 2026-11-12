@@ -84,8 +84,10 @@ user.email = deepseek-harness@users.noreply.github.com
   （`Man: 00000ec5 ID: 0000e5c1`），IgH `ethercat slaves` 报 `0  0:0  PREOP  +  0x00000ec5:0x0000e5c1`。
   证据：[spike-3](docs/spikes/spike-3-minimal-esc-responder.md)、[复现脚本](scripts/spikes/minimal-esc-responder.sh)。
   顺带修正 `wire::auto_increment_step` 的 ADP 方向（主站 ADP = 环位置相反数、转发前 +1）。
-  ⚠️ 未进 OP（无 mailbox/PDO/SM/FMMU）；IgH 拓扑计算已修（DL Status 0x0110 位按 ETG.1000.4 table 34
-  修正为单从站正确值 `0x5610`，`Failed to calculate bus topology` 消失，2026-11-12 18:56 班；多从站拓扑待 B8）；
+  ⚠️ **OP 状态**：SOEM 零补丁已能进 OP（2026-11-12 19:26 班起，SII SM/PDO 类别 + FMMU 逻辑寻址，
+  8 位 PDO 交换、每轮 WKC 3；见 B8 进度）；**IgH 仍停在 PREOP**（需 B7 mailbox/CoE 配置 PDO 域）。
+  IgH 拓扑计算已修（DL Status 0x0110 位按 ETG.1000.4 table 34 修正为单从站正确值 `0x5610`，
+  `Failed to calculate bus topology` 消失，2026-11-12 18:56 班；多从站拓扑待 B8）；
   SII 固定区 CRC-8 已补齐（word 0x0007，B6 子项，2026-11-12 晚班）。
 - [x] ~~**B2 Spike 1（Linux TAP）**~~ ✅ **2026-11-12 完成**：TAP 双向承载 0x88A4，且**未修改的 SOEM 与 IgH 都能绑定 TAP 并发出真实帧**（IgH `ec_generic` 按 MAC 匹配 TAP）。证据：[spike-1](docs/spikes/spike-1-tap-bidirectional.md)、[spike-2](docs/spikes/spike-2-masters-on-tap.md)。
 - [ ] **B3 Spike 4（SOEM oshw shim）**：把 SOEM 的 `oshw` 收发包替换成 UDS，跑通 `ec_config_init` + `ec_config_map`（SOEM 以独立进程/容器方式使用）。
@@ -96,18 +98,31 @@ user.email = deepseek-harness@users.noreply.github.com
     主站整块写后回读；+8 条单测 +2 条 datagram 路径集成测试）。
   - 进度（2026-11-12 19:19 班）：**FMMU 逻辑→物理搬运最小闭环已完成**——LRD/LWR/LRW 按已激活
     FMMU 命中（字节对齐、Type 方向位、部分重叠），在逻辑地址与 `DlUserMemory`（0x1000–0xFFFF）
-    之间搬运；WKC 读/写各 +1。同班修正了 19:02 班"FMMU Type（0x0B）只读"的错误假设（两主站都会写
-    方向位），只读的只有保留字节 0x0D–0x0F。证据：`crates/esc-core/src/{fmmu,memory}.rs`、
+    之间搬运；同班修正了 19:02 班"FMMU Type（0x0B）只读"的错误假设（两主站都会写方向位），
+    只读的只有保留字节 0x0D–0x0F。证据：`crates/esc-core/src/{fmmu,memory}.rs`、
     `crates/esc-node/src/lib.rs`，测试 79 passed。
-  - 待做：SM 触发的 mailbox 握手/watchdog、AL SAFEOP/OP 的 ESM 前置条件检查、
-    **SII 的 SM/PDO 类别（B6，主站配置 FMMU/SM 的前提）**。
+  - 进度（2026-11-12 19:26 班）：**更正 LRW 的 WKC 规则**——写 FMMU 命中 +2、读 FMMU 命中 +1
+    （IgH `master/datagram_pair.c` 与 SOEM `src/ec_main.c` 证据；19:19 班的"读写各 +1"不适用于
+    LRW），SOEM 过程数据 WKC 从 2 修正为期望的 3。
+  - 待做：SM 触发的 mailbox 握手/watchdog、AL SAFEOP/OP 的 ESM 前置条件检查。
 - [ ] **B6 SII 生成器**：ESI XML → SII 镜像（含固定区 CRC-8（**word 0x0007**，覆盖 0x0000–0x0006，已实现）、category 链 0x0029/0x0032/0x0033、0xFFFF 终止）。
+  - 进度（2026-11-12 19:26 班）：**SM 类别 0x0029 + TxPDO 0x0032 + RxPDO 0x0033 已实现**
+    （8 位输入/输出通用画像：SM2 输出 0x1100、SM3 输入 0x1110；PDO 0x1A00/0x1600，
+    对象 0x6000:00/0x7000:00）。字节布局按 IgH `slave.c` 与 SOEM `ec_main.c` 的解析代码逐字节复核；
+    EEPROM 大小 word 0x003E 改为 2（384 字节）。证据：`crates/esc-core/src/sii.rs`，测试 82 passed；
+    SOEM `slaveinfo` 显示 `Output size: 8bits / Input size: 8bits`。
+  - 待做：FMMU 类别 0x0028（⚠️ 字段语义待核实，不凭记忆猜）、DC 类别、ESI XML → SII 生成器。
   ⚠️ 旧文档把 CRC 写成 word 0x003F，经 SOEM `eepromtool`/IgH `tool/sii_crc.cpp` 复核已更正（0x003F 是 SII 版本 = 1）。
 - [ ] **B7 CoE 最小闭环**：加速 SDO 上传/下载 + 0x1C12/0x1C13/0x1600/0x1A00 + Abort 码；先**不做** SDO Info 与 Complete Access（SII 对应位清 0）。
 - [ ] **B9 声明式插件加载器**：读取 `plugins/<id>/plugin.yaml` → 生成 SII + 对象字典 + 默认 PDO 分配 + SM/FMMU 布局（不依赖行为代码），并在 IgH/SOEM 上扫描到该从站。
 - [ ] **B10 首个 P0 设备插件**：Beckhoff EL2008 兼容 8DO（声明式），完成 `facts.md`（含来源 URL）、manifest、双主站扫描验证记录（`docs/plugins/`）。
 - [ ] **B11 CiA402 行为插件**：以 Inovance SV660N 兼容画像为第一个目标，实现 CSP 状态机（Tier0/内置 profile 起步）。
 - [ ] **B8 双主站冒烟**：IgH `ethercat slaves` 与 SOEM `slaveinfo` 零补丁看到 OP，输出可复现脚本与截图。
+  - 进度（2026-11-12 19:26 班）：**SOEM 侧已零补丁进 OP**——`simple_ng`：`mapped 1O+1I bytes` →
+    SAFEOP → `all slaves are now operational`，每轮 **WKC 3**（1055 轮、0 次 wrong）；
+    `slaveinfo`：`Output size: 8bits / Input size: 8bits / State: 4`。断言脚本：
+    [soem-process-data.sh](scripts/spikes/soem-process-data.sh)。
+  - 待做：IgH 进 OP（需 B7 mailbox/CoE 配置 PDO 域）、双主站合并冒烟记录与截图。
 
 ## 7. 目录约定
 

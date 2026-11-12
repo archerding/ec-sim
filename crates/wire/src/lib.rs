@@ -205,8 +205,12 @@ impl Command {
 
     /// 每条命中该从站的 datagram 应给 Working Counter 增加的数值。
     ///
-    /// 规则（ETG.1000.4）：读命中 +1、写命中 +1、读+写命中 +2；逻辑命令按命中的
-    /// **FMMU 方向**分别累加，因此调用方可能对同一帧调用多次。
+    /// 规则（ETG.1000.4）：读命中 +1、写命中 +1、读+写命中 +2。
+    ///
+    /// ⚠️ **逻辑寻址的 LRW 是例外**：两家主站的期望是"写 FMMU 命中 +2、读 FMMU 命中 +1"
+    /// （IgH `master/datagram_pair.c`：`expected_working_counter = used[OUTPUT] * 2 +
+    /// used[INPUT]`；SOEM `src/ec_main.c` 对 LWR 也乘 2 以模拟 LRW），因此 LRW 不能直接用
+    /// 本函数的结果，由 `esc-node` 按 FMMU 命中方向分别累加。
     #[must_use]
     pub fn wkc_increment(self) -> u16 {
         u16::from(self.is_read()) + u16::from(self.is_write())
@@ -674,6 +678,8 @@ mod tests {
         assert_eq!(Command::Apwr.wkc_increment(), 1);
         assert_eq!(Command::Aprw.wkc_increment(), 2);
         assert_eq!(Command::Brd.wkc_increment(), 1);
+        // 这里是"命令自身读/写位之和"；逻辑寻址 LRW 的实际增量由 FMMU 方向决定
+        //（写命中 +2、读命中 +1），见 `wkc_increment` 文档，由 esc-node 处理。
         assert_eq!(Command::Lrw.wkc_increment(), 2);
         assert_eq!(Command::Armw.wkc_increment(), 2);
         // 所有命令的读/写属性与增量一致

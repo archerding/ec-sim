@@ -1,6 +1,6 @@
 //! 最小 SII（Slave Information Interface / EEPROM）镜像。
 //!
-//! 仅供 B2b 最小 ESC 应答器使用：固定区字段 + 字符串类别 + 通用类别 + `0xFFFF` 终止。
+//! 仅供 B2b 最小 ESC 应答器使用：固定区字段 + 字符串/通用/SM/TxPDO/RxPDO 类别 + `0xFFFF` 终止。
 //! 字段位置以**未修改主站实际读取的 word 偏移**为准（可用源码复核）：
 //! - IgH `master/fsm_slave_scan.c`：`sii_words + 0x0004`（alias）、`+0x0008`（Vendor）、
 //!   `+0x000A`（Product）、`+0x000C`（Revision）、`+0x000E`（Serial）、
@@ -9,7 +9,23 @@
 //!   `ECT_SII_ID = 0x000A`、`ECT_SII_REV = 0x000C`、`ECT_SII_SER = 0x000E`、
 //!   `ECT_SII_START = 0x0040`（`ecx_siifind` 用 `ECT_SII_START << 1` 转字节地址）。
 //!
-//! 尚未实现（B6）：FMMU/SM/TxPDO/RxPDO 类别、DC 类别、ESI XML → SII 生成器。
+//! 已实现（B6 子项，2026-11-12 19:26 班）：**SM 类别 0x0029**（4 个 Sync Manager：
+//! SM0/SM1 暂不定义 mailbox，SM2 = 8 位输出、SM3 = 8 位输入）、**TxPDO 类别 0x0032**
+//! （`0x1A00`，8 位输入）与 **RxPDO 类别 0x0033**（`0x1600`，8 位输出）。
+//! 字节布局按两家**未修改**主站的解析代码逐字节复核（只读参考、未复制代码）：
+//! - IgH `master/slave.c`：`ec_slave_fetch_sii_syncs()` 每条 8 字节
+//!   （start u16、length u16、control u8、status u8、enable u8、pdi_control u8）；
+//!   `ec_slave_fetch_sii_pdos()` PDO 头 8 字节（index u16、entry_count u8、sync_index u8、
+//!   保留 u8、name_index u8、保留 u16），每条映射 8 字节（index u16、subindex u8、
+//!   name_index u8、保留、bit_length u8、保留），类别 0x0032 = TxPDO（输入方向）、
+//!   0x0033 = RxPDO（输出方向），见 `master/fsm_slave_scan.c` 的类别分发；
+//! - SOEM `src/ec_main.c`：`ecx_siiSM()` 按类别大小 word 数 /4 得 SM 数、每条 8 字节；
+//!   `ecx_siiPDO()` 同样按 8 字节 PDO 头 / 8 字节映射项遍历，读取 +5 处的 bit_length；
+//!   `src/ec_config.c: ecx_map_sii()` 在无 mailbox（CoE 不可用）时回退到 SII PDO 类别，
+//!   据此设置 SM2/SM3 的长度与类型并映射 PDO（8 位 → 1 字节）。
+//!
+//! 尚未实现（B6 其余）：FMMU 类别 0x0028、DC 类别、ESI XML → SII 生成器、
+//! mailbox 类别（B7 再启用 SM0/SM1 与 CoE）。
 //!
 //! 固定区校验（ETG.1000.6 §5.4 table 16，已按两家未修改主站复核）：
 //! - **word 0x0007：SII CRC-8**，覆盖 word 0x0000–0x0006（14 字节），多项式
@@ -34,10 +50,26 @@ pub const SII_CHECKSUM_BYTES: usize = 14;
 pub const SII_EEPROM_SIZE_WORD: u16 = 0x003E;
 /// SII 版本 word。
 pub const SII_VERSION_WORD: u16 = 0x003F;
-/// 本镜像声明的 EEPROM 大小：值 1 = 2 KiBit = 256 字节（覆盖当前约 202 字节镜像）。
-pub const SIM_EEPROM_SIZE: u16 = 1;
+/// 本镜像声明的 EEPROM 大小：值 2 = 384 字节（覆盖当前约 280 字节镜像：固定区 + 5 个类别）。
+pub const SIM_EEPROM_SIZE: u16 = 2;
 /// 本镜像声明的 SII 版本（ETG.1000.6：固定为 1）。
 pub const SIM_SII_VERSION: u16 = 1;
+
+/// SII 类别类型（ETG.1000.6）。
+pub mod category {
+    /// 字符串类别。
+    pub const STRINGS: u16 = 0x000A;
+    /// 通用类别（固定 32 字节）。
+    pub const GENERAL: u16 = 0x001E;
+    /// Sync Manager 类别（每条 8 字节）。
+    pub const SYNC_MANAGER: u16 = 0x0029;
+    /// TxPDO 类别（从站 → 主站，输入方向）。
+    pub const TX_PDO: u16 = 0x0032;
+    /// RxPDO 类别（主站 → 从站，输出方向）。
+    pub const RX_PDO: u16 = 0x0033;
+    /// 类别链终止字。
+    pub const TERMINATOR: u16 = 0xFFFF;
+}
 
 /// SII CRC-8：多项式 `x^8 + x^2 + x + 1`（0x07）、初值 0xFF、MSB-first。
 ///
@@ -74,6 +106,198 @@ pub const SIM_SERIAL: u32 = 0x0000_0001;
 /// 字符串类别（0x000A）中的设备名（索引 0）与厂商名（索引 1）。
 pub const SIM_NAMES: [&str; 2] = ["EC-Sim SIMULATED slave", "SIMULATED"];
 
+/// 本镜像的 PDO 画像：**8 位输入 + 8 位输出**的最小数字 IO（通用占位，不绑定厂商设备）。
+pub const SIM_INPUT_BITS: u8 = 8;
+/// 输出位数。
+pub const SIM_OUTPUT_BITS: u8 = 8;
+/// 输入对象索引（占位；对象字典/CoE 属 B7）。
+pub const SIM_INPUT_OBJECT: u16 = 0x6000;
+/// 输出对象索引（占位；对象字典/CoE 属 B7）。
+pub const SIM_OUTPUT_OBJECT: u16 = 0x7000;
+/// 输入 PDO 索引（TxPDO，从站 → 主站）。
+pub const SIM_TX_PDO_INDEX: u16 = 0x1A00;
+/// 输出 PDO 索引（RxPDO，主站 → 从站）。
+pub const SIM_RX_PDO_INDEX: u16 = 0x1600;
+/// 输出 Sync Manager 通道（SM2）。
+pub const SIM_OUTPUT_SM_INDEX: u8 = 2;
+/// 输入 Sync Manager 通道（SM3）。
+pub const SIM_INPUT_SM_INDEX: u8 = 3;
+/// SM2（输出）的物理起始地址（DL 用户内存）。
+pub const SIM_OUTPUT_SM_START: u16 = 0x1100;
+/// SM3（输入）的物理起始地址（DL 用户内存）。
+pub const SIM_INPUT_SM_START: u16 = 0x1110;
+
+/// SII SM 类别（0x0029）中的一个 Sync Manager 条目，固定 8 字节。
+///
+/// 字段顺序按 IgH `ec_slave_fetch_sii_syncs()`：start u16、length u16、control u8、
+/// status u8、enable u8、pdi_control u8；SOEM `ecx_siiSM()` 读取相同布局（忽略 status/pdi）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SiiSyncManager {
+    /// 物理起始地址（DL 用户内存地址，如 0x1100）。
+    pub physical_start_address: u16,
+    /// 默认长度（字节）。
+    pub length: u16,
+    /// Control 字节（ETG.1000.4 table 58：bit0–1 模式、bit2–3 方向、bit4/5 事件、bit6 watchdog）。
+    pub control: u8,
+    /// Status 字节（SII 中通常为 0）。
+    pub status: u8,
+    /// Enable/Activate（bit0 使能）。
+    pub enable: u8,
+    /// PDI Control 字节（SII 中通常为 0）。
+    pub pdi_control: u8,
+}
+
+impl SiiSyncManager {
+    /// 条目字节数。
+    pub const BYTES: usize = 8;
+
+    /// 编码为 8 字节（小端多字节字段）。
+    #[must_use]
+    pub fn to_bytes(self) -> [u8; Self::BYTES] {
+        let mut bytes = [0u8; Self::BYTES];
+        bytes[0..2].copy_from_slice(&self.physical_start_address.to_le_bytes());
+        bytes[2..4].copy_from_slice(&self.length.to_le_bytes());
+        bytes[4] = self.control;
+        bytes[5] = self.status;
+        bytes[6] = self.enable;
+        bytes[7] = self.pdi_control;
+        bytes
+    }
+
+    /// 从 8 字节解码。
+    #[must_use]
+    pub fn from_bytes(bytes: &[u8; Self::BYTES]) -> Self {
+        Self {
+            physical_start_address: u16::from_le_bytes([bytes[0], bytes[1]]),
+            length: u16::from_le_bytes([bytes[2], bytes[3]]),
+            control: bytes[4],
+            status: bytes[5],
+            enable: bytes[6],
+            pdi_control: bytes[7],
+        }
+    }
+}
+
+/// 本镜像的 4 个 SM 条目。
+///
+/// SM0/SM1 全 0：**mailbox 未启用**（固定区 0x0014–0x001C 也为 0，主站不会协商 CoE/FoE/EoE/SoE，
+/// 属 B7 范围）。SM2 = 输出（buffered、方向 write = `0x04`），SM3 = 输入（buffered、方向 read = `0x00`）；
+/// 方向位编码见 `sm.rs` 模块文档（ETG.1000.4 table 58）。
+pub const SIM_SYNC_MANAGERS: [SiiSyncManager; 4] = [
+    SiiSyncManager {
+        physical_start_address: 0,
+        length: 0,
+        control: 0,
+        status: 0,
+        enable: 0,
+        pdi_control: 0,
+    },
+    SiiSyncManager {
+        physical_start_address: 0,
+        length: 0,
+        control: 0,
+        status: 0,
+        enable: 0,
+        pdi_control: 0,
+    },
+    SiiSyncManager {
+        physical_start_address: SIM_OUTPUT_SM_START,
+        length: 1,
+        control: 0x04,
+        status: 0,
+        enable: 1,
+        pdi_control: 0,
+    },
+    SiiSyncManager {
+        physical_start_address: SIM_INPUT_SM_START,
+        length: 1,
+        control: 0x00,
+        status: 0,
+        enable: 1,
+        pdi_control: 0,
+    },
+];
+
+/// TxPDO/RxPDO 类别中的一条映射项，固定 8 字节。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SiiPdoEntry {
+    /// 对象索引（如 0x6000）。
+    pub index: u16,
+    /// 子索引。
+    pub subindex: u8,
+    /// 位长度（如 8）。
+    pub bit_length: u8,
+}
+
+impl SiiPdoEntry {
+    /// 条目字节数。
+    pub const BYTES: usize = 8;
+
+    /// 编码为 8 字节：index u16、subindex u8、name_index（0）、保留、bit_length（+5）、保留。
+    #[must_use]
+    pub fn to_bytes(self) -> [u8; Self::BYTES] {
+        let mut bytes = [0u8; Self::BYTES];
+        bytes[0..2].copy_from_slice(&self.index.to_le_bytes());
+        bytes[2] = self.subindex;
+        bytes[5] = self.bit_length;
+        bytes
+    }
+}
+
+/// 一个 PDO 的默认映射（SII PDO 类别条目：8 字节头 + 映射项）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SiiPdo {
+    /// PDO 索引（如 0x1A00）。
+    pub index: u16,
+    /// 绑定的 Sync Manager 通道。
+    pub sync_manager: u8,
+    /// 默认映射项。
+    pub entries: &'static [SiiPdoEntry],
+}
+
+impl SiiPdo {
+    /// 编码为 SII PDO 类别数据（不包含类别头）。
+    #[must_use]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(8 + self.entries.len() * SiiPdoEntry::BYTES);
+        bytes.extend_from_slice(&self.index.to_le_bytes());
+        bytes.push(self.entries.len() as u8); // entry_count @+2
+        bytes.push(self.sync_manager); // sync_index @+3
+        bytes.push(0); // @+4 保留
+        bytes.push(0); // name_index @+5（0 = 无名称）
+        bytes.extend_from_slice(&[0, 0]); // @+6..+8 保留
+        for entry in self.entries {
+            bytes.extend_from_slice(&entry.to_bytes());
+        }
+        bytes
+    }
+}
+
+/// 输入方向默认映射（TxPDO 0x1A00 → SM3，8 位输入）。
+pub const SIM_TX_PDO_ENTRIES: [SiiPdoEntry; 1] = [SiiPdoEntry {
+    index: SIM_INPUT_OBJECT,
+    subindex: 0,
+    bit_length: SIM_INPUT_BITS,
+}];
+/// 输出方向默认映射（RxPDO 0x1600 → SM2，8 位输出）。
+pub const SIM_RX_PDO_ENTRIES: [SiiPdoEntry; 1] = [SiiPdoEntry {
+    index: SIM_OUTPUT_OBJECT,
+    subindex: 0,
+    bit_length: SIM_OUTPUT_BITS,
+}];
+/// 本镜像的 TxPDO 列表（输入方向）。
+pub const SIM_TX_PDOS: [SiiPdo; 1] = [SiiPdo {
+    index: SIM_TX_PDO_INDEX,
+    sync_manager: SIM_INPUT_SM_INDEX,
+    entries: &SIM_TX_PDO_ENTRIES,
+}];
+/// 本镜像的 RxPDO 列表（输出方向）。
+pub const SIM_RX_PDOS: [SiiPdo; 1] = [SiiPdo {
+    index: SIM_RX_PDO_INDEX,
+    sync_manager: SIM_OUTPUT_SM_INDEX,
+    entries: &SIM_RX_PDO_ENTRIES,
+}];
+
 /// 最小 SII 镜像（word 数组，1 word = 2 字节小端）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SiiImage {
@@ -81,10 +305,11 @@ pub struct SiiImage {
 }
 
 impl SiiImage {
-    /// 构造"1 个仿真从站"的最小 SII：固定区 + 字符串类别 + 通用类别 + 终止字。
+    /// 构造"1 个仿真从站"的最小 SII：固定区 + 字符串/通用/SM/TxPDO/RxPDO 类别 + 终止字。
     ///
-    /// 邮箱配置全为 0（不提供 mailbox），因此主站不会协商 CoE/FoE/EoE/SoE，
-    /// 扫描停在 INIT —— 这正是 B2b"看到 1 个从站、不要求进 OP"的目标。
+    /// 邮箱配置全为 0（不提供 mailbox），因此主站不会协商 CoE/FoE/EoE/SoE；SOEM 在
+    /// `ecx_map_sii()` 无 CoE 可用的分支里回退到本镜像的 PDO 类别，得到 **8 位输入 / 8 位输出**
+    /// 的默认映射。IgH 未获 mailbox protocol 时扫描结束在 PREOP。
     #[must_use]
     pub fn simulated_slave() -> Self {
         let mut words = vec![0u16; usize::from(SII_FIRST_CATEGORY_WORD)];
@@ -98,11 +323,14 @@ impl SiiImage {
         // 固定区 CRC-8 必须在 0x0000–0x0006 全部确定后计算，写入 word 0x0007。
         words[usize::from(SII_CHECKSUM_WORD)] = u16::from(Self::fixed_area_crc8(&words));
 
-        push_category(&mut words, 0x000A, &strings_category(&SIM_NAMES));
+        push_category(&mut words, category::STRINGS, &strings_category(&SIM_NAMES));
         // 通用类别固定 32 字节（IgH ec_slave_fetch_sii_general 要求 data_size == 32）。
         // data[0..3] 为 group/image/order/name 的字符串索引，全 0 → 名称字符串索引 0。
-        push_category(&mut words, 0x001E, &[0u8; 32]);
-        words.push(0xFFFF);
+        push_category(&mut words, category::GENERAL, &[0u8; 32]);
+        push_category(&mut words, category::SYNC_MANAGER, &sync_manager_category());
+        push_category(&mut words, category::TX_PDO, &pdo_category(&SIM_TX_PDOS));
+        push_category(&mut words, category::RX_PDO, &pdo_category(&SIM_RX_PDOS));
+        words.push(category::TERMINATOR);
         Self { words }
     }
 
@@ -181,6 +409,25 @@ fn put_u32(words: &mut [u16], word_offset: usize, value: u32) {
     words[word_offset + 1] = (value >> 16) as u16;
 }
 
+/// SM 类别（0x0029）数据：4 条 × 8 字节，无额外计数/长度 word
+/// （类别头已声明 size，两家主站都按 size 推导条数）。
+fn sync_manager_category() -> Vec<u8> {
+    let mut data = Vec::with_capacity(SIM_SYNC_MANAGERS.len() * SiiSyncManager::BYTES);
+    for entry in &SIM_SYNC_MANAGERS {
+        data.extend_from_slice(&entry.to_bytes());
+    }
+    data
+}
+
+/// PDO 类别（0x0032/0x0033）数据：逐个 PDO 的 8 字节头 + 映射项，无额外计数 word。
+fn pdo_category(pdos: &[SiiPdo]) -> Vec<u8> {
+    let mut data = Vec::new();
+    for pdo in pdos {
+        data.extend_from_slice(&pdo.to_bytes());
+    }
+    data
+}
+
 /// 按 ETG.1000.6 字符串类别格式编码：u8 条数 + 每条 (u8 长度 + 字节)，补齐偶数字节。
 fn strings_category(strings: &[&str]) -> Vec<u8> {
     let mut data = Vec::new();
@@ -241,7 +488,16 @@ mod tests {
             word += 2 + cat_size;
             assert!(word < sii.len_words(), "category chain must stay in range");
         }
-        assert_eq!(types, vec![0x000A, 0x001E]);
+        assert_eq!(
+            types,
+            vec![
+                category::STRINGS,
+                category::GENERAL,
+                category::SYNC_MANAGER,
+                category::TX_PDO,
+                category::RX_PDO,
+            ]
+        );
         // 终止字存在，且之后无多余 word
         assert_eq!(word + 1, sii.len_words());
     }
@@ -325,5 +581,130 @@ mod tests {
         let mut sii = SiiImage::simulated_slave();
         sii.words[0x0008] ^= 0x0001;
         assert!(sii.verify_checksum());
+    }
+
+    /// 按类别类型提取类别数据字节（不含类别头），并返回类别大小（word 数）。
+    /// 走法与 IgH `fsm_slave_scan.c` / SOEM `ecx_siifind` 一致：类别头 = type + size(word)。
+    fn category_data(sii: &SiiImage, cat: u16) -> Option<(Vec<u8>, u16)> {
+        let mut word = usize::from(SII_FIRST_CATEGORY_WORD);
+        loop {
+            let cat_type = sii.words()[word] & 0x7FFF;
+            if cat_type == category::TERMINATOR {
+                return None;
+            }
+            let size_words = sii.words()[word + 1];
+            let start = word + 2;
+            if cat_type == cat {
+                let mut bytes = Vec::with_capacity(usize::from(size_words) * 2);
+                for w in &sii.words()[start..start + usize::from(size_words)] {
+                    bytes.extend_from_slice(&w.to_le_bytes());
+                }
+                return Some((bytes, size_words));
+            }
+            word = start + usize::from(size_words);
+        }
+    }
+
+    #[test]
+    fn sync_manager_category_matches_both_master_parsers() {
+        let sii = SiiImage::simulated_slave();
+        let (data, size_words) = category_data(&sii, category::SYNC_MANAGER).expect("SM category");
+        // IgH `ec_slave_fetch_sii_syncs()`：data_size 必须是 8 的倍数，count = size/8。
+        assert_eq!(data.len() % 8, 0);
+        // SOEM `ecx_siiSM()`：nSM = size_words / 4（每条 4 word）。
+        assert_eq!(usize::from(size_words) / 4, SIM_SYNC_MANAGERS.len());
+        assert_eq!(data.len() / 8, SIM_SYNC_MANAGERS.len());
+
+        let mut parsed = Vec::new();
+        for chunk in data.chunks(8) {
+            let bytes: [u8; 8] = chunk.try_into().expect("8 bytes");
+            parsed.push(SiiSyncManager::from_bytes(&bytes));
+        }
+        assert_eq!(parsed, SIM_SYNC_MANAGERS.to_vec());
+
+        // SM0/SM1 未定义 mailbox（B7 再启用）。
+        assert_eq!(parsed[0].physical_start_address, 0);
+        assert_eq!(parsed[1].physical_start_address, 0);
+        // SM2 = 8 位输出：物理 0x1100、写方向（control bit2）、使能。
+        assert_eq!(parsed[2].physical_start_address, SIM_OUTPUT_SM_START);
+        assert_eq!(parsed[2].length, 1);
+        assert_eq!(parsed[2].control & 0x0C, 0x04, "direction = write");
+        assert_eq!(parsed[2].enable & 0x01, 0x01);
+        // SM3 = 8 位输入：物理 0x1110、读方向、使能。
+        assert_eq!(parsed[3].physical_start_address, SIM_INPUT_SM_START);
+        assert_eq!(parsed[3].length, 1);
+        assert_eq!(parsed[3].control & 0x0C, 0x00, "direction = read");
+        assert_eq!(parsed[3].enable & 0x01, 0x01);
+    }
+
+    #[test]
+    fn tx_and_rx_pdo_categories_match_both_master_parsers() {
+        let sii = SiiImage::simulated_slave();
+
+        // IgH `ec_slave_fetch_sii_pdos()`：PDO 头 8 字节 + 每条映射 8 字节。
+        let (tx, tx_words) = category_data(&sii, category::TX_PDO).expect("TxPDO category");
+        assert_eq!(tx.len(), 16);
+        assert_eq!(
+            u16::from_le_bytes([tx[0], tx[1]]),
+            SIM_TX_PDO_INDEX,
+            "PDO index"
+        );
+        assert_eq!(tx[2], 1, "entry_count");
+        assert_eq!(tx[3], SIM_INPUT_SM_INDEX, "sync_index");
+        assert_eq!(tx[5], 0, "name_index");
+        assert_eq!(u16::from_le_bytes([tx[8], tx[9]]), SIM_INPUT_OBJECT);
+        assert_eq!(tx[10], 0, "subindex");
+        assert_eq!(tx[13], SIM_INPUT_BITS, "bit_length");
+
+        // SOEM `ecx_siiPDO()`：Length = size_words；遍历 8 字节头 + 映射项，累加 bit_length。
+        let tx_bits = soem_pdo_bit_sizes(&tx, tx_words);
+        assert_eq!(tx_bits[SIM_INPUT_SM_INDEX as usize], 8, "输入 8 位 → SM3");
+
+        let (rx, rx_words) = category_data(&sii, category::RX_PDO).expect("RxPDO category");
+        assert_eq!(u16::from_le_bytes([rx[0], rx[1]]), SIM_RX_PDO_INDEX);
+        assert_eq!(rx[3], SIM_OUTPUT_SM_INDEX);
+        assert_eq!(u16::from_le_bytes([rx[8], rx[9]]), SIM_OUTPUT_OBJECT);
+        assert_eq!(rx[13], SIM_OUTPUT_BITS);
+        let rx_bits = soem_pdo_bit_sizes(&rx, rx_words);
+        assert_eq!(rx_bits[SIM_OUTPUT_SM_INDEX as usize], 8, "输出 8 位 → SM2");
+    }
+
+    /// 复刻 SOEM `ecx_siiPDO()` 的遍历（类别大小 word 数 + 8 字节头 + 8 字节映射项），
+    /// 返回每个 Sync Manager 的位总数（下标 = SM 通道）。
+    fn soem_pdo_bit_sizes(data: &[u8], size_words: u16) -> [u32; 8] {
+        let mut bits = [0u32; 8];
+        let length = usize::from(size_words);
+        let mut a = 0usize;
+        let mut c = 1usize; // SOEM 把类别大小 word 也计入遍历计数
+        while c < length {
+            // PDO 头：index u16、entry_count u8、sync_index u8、4 字节保留。
+            let entry_count = data[a + 2];
+            let sync_index = data[a + 3];
+            a += 8;
+            c += 3;
+            let mut pdo_bits = 0u32;
+            for _ in 0..entry_count {
+                pdo_bits += u32::from(data[a + 5]);
+                a += 8;
+                c += 4;
+            }
+            if usize::from(sync_index) < bits.len() {
+                bits[usize::from(sync_index)] += pdo_bits;
+            }
+            c += 1;
+        }
+        bits
+    }
+
+    #[test]
+    fn eeprom_size_declaration_covers_all_categories() {
+        let sii = SiiImage::simulated_slave();
+        // 固定区 word 0x003E 声明容量（单位 128 字节）：必须覆盖整个镜像。
+        let declared_bytes = usize::from(SIM_EEPROM_SIZE + 1) * 128;
+        assert!(
+            declared_bytes >= sii.len_words() * 2,
+            "声明 {declared_bytes} 字节 < 镜像 {} 字节",
+            sii.len_words() * 2
+        );
     }
 }
