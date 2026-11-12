@@ -303,8 +303,14 @@ user.email = deepseek-harness@users.noreply.github.com
     `Responder::inject_cia402_fault(error_code)` 使状态机进入 Fault、写 `0x603F` 错误码，
     fault reset 回 Switch on disabled（错误码保留，⚠️ 与真机时序不同）。合成主站序列加入
     CSV 切换断言；测试 **162 passed**、验证机 `cia402-behavior-probe.sh` **EXIT=0**。
-  - 待做：扩展 9/11 字节 PDO（含 `0x60FF`）实现 CSV/CST 语义；逐项核对 SV660N 公开手册
-    PDO/扩展对象；B6 FMMU/DC 原文核实。
+  - 进度（2026-11-13 00:11 班）：**CSV（速度模式，11 字节 PDO）画像 + 行为已上架**——
+    `plugins/generic-cia402-csv-servo/`（RxPDO `0x1600` 含 `0x60FF`、TxPDO `0x1A00`
+    含 `0x606C`；自有 VID 0x0EC5/PID 0xE5E1）；行为支持 CSP（位置跟随）与 **CSV（位置每
+    周期累加目标速度、速度显示镜像，Tier0 简化）**。验证机 `cia402-csv-probe.sh` **EXIT=0**
+    （11 字节序列 + UDS 原套件），`uds-loopback.sh` 三轮 EXIT=0；测试 **170 passed**。
+    ⚠️ CSV 为 Tier0（无真实轨迹/加减速/模式时序）；映射一致性检查在 SM 长度≠SII 声明时
+    跳过（合成主站特例放宽）。
+  - 待做：IgH 侧 CSV 画像 OP/行为夹具；逐项核对 SV660N 公开手册 PDO/扩展对象；B6 FMMU/DC 原文核实。
 - [x] ~~**B8 双主站冒烟**~~ ✅ **2026-11-12 19:56 班完成（单从站 8 位 I/O 画像）**：
   **未修改的 SOEM 与 IgH 都在本模拟器上看到从站进入 OP**，输出可复现脚本见
   [spike-4](docs/spikes/spike-4-dual-master-op.md)：

@@ -50,6 +50,15 @@ devices:
     why: "通用 CiA 402 伺服画像：先验证声明式画像 + 双主站闭环，再派生具体厂商兼容画像"
     need: "典型 DS402 默认 PDO（0x6040/0x6060/0x607A、0x6041/0x6061/0x6064）、CoE 邮箱、SM2/SM3 布局"
     deliverable: "plugins/generic-cia402-servo/（manifest + facts.md + README.md），验证记录 docs/plugins/generic-cia402-verification.md"
+  - id: generic-cia402-csv-servo
+    brand: Generic
+    model: CiA402-CSV
+    kind: servo
+    priority: P0
+    status: ready
+    why: "通用 CiA 402 CSV（速度模式）画像：11 字节 PDO，验证速度模式 Tier0 行为"
+    need: "0x60FF 目标速度 / 0x606C 实际速度、11 字节 RxPDO/TxPDO、CSV 模式行为"
+    deliverable: "plugins/generic-cia402-csv-servo/（manifest + facts.md + README.md），验证脚本 scripts/spikes/cia402-csv-probe.sh"
   - id: inovance-sv660n
     brand: Inovance
     model: SV660N

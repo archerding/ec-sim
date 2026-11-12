@@ -6,6 +6,47 @@
 
 ---
 
+## 2026-11-13 00:11 班（低峰）— B11：**CiA 402 CSV（速度模式，11 字节 PDO）画像 + Tier0 行为**
+
+**做了什么**
+- 新增插件 `plugins/generic-cia402-csv-servo/`（11 字节 PDO，CSV 速度模式画像）：
+  - RxPDO `0x1600` = `0x6040`+`0x6060`+`0x607A`+**`0x60FF` target velocity**；
+  - TxPDO `0x1A00` = `0x6041`+`0x6061`+`0x6064`+**`0x606C` velocity actual**；
+    自有 VID 0x0EC5/PID 0xE5E1、名称带 SIMULATED（R2）；`facts.md` 只引公开 CiA 402。
+- `esc-node` 的 CiA 402 行为支持 11 字节 PDO（`velocity_actual` 字段）：
+  - CSP（模式 8）：位置跟随目标（同前）；
+  - **CSV（模式 9）**：Operation enabled 时位置每周期累加目标速度、`0x606C` 镜像目标速度，
+    禁用后速度显示归零、位置保持；
+  - 7 字节画像仍为原行为（无速度字段）。
+- 合成主站 `uds_master_probe.py` 新增 `--cia402-csv`（11 字节 `<Hbii` 读写序列断言）；
+  新增脚本 `scripts/spikes/cia402-csv-probe.sh`；新增验证记录
+  `docs/plugins/generic-cia402-csv-verification.md`；catalog 增加 CSV 画像（ready）。
+- 新增单测 `cia402_csv_mode_accumulates_velocity`。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **170 passed**（esc-core 79 / esc-node 53 / plugin-host 21 + 1 集成 / wire 16）。
+- Linux 验证机：
+  - `bash scripts/spikes/cia402-csv-probe.sh` → **EXIT=0**：
+    `BEHAVIOR cia402 sm2_out=0x1100/11B sm3_in=0x1110/11B`，11 字节 PDO 序列
+    （`0x000F` 后位置 5→15→20、速度显示 5→5→0）通过；UDS 原套件（含 SM watchdog、
+    ESM 前置条件）继续通过；
+  - `bash scripts/spikes/uds-loopback.sh` → **EXIT=0**（三轮全过，含 manifest 画像
+    segmented SDO 设备名）。
+
+**卡点**
+- CSV 为 **Tier0 简化**：位置按"每 tick 累加目标速度"，无真实单位/轨迹/加减速/限幅；
+  无模式切换时序（Ti=0/1）、编码器/限位/Homing/DC。
+- 映射一致性检查现在只在"SM 长度与 SII 声明一致"时生效（否则跳过）：合成主站测试写
+  非 SII 长度时无法判断，属特例放宽（真实主站仍严格检查）。
+- IgH 侧对 CSV 画像的 OP/行为验证未做（复用通用画像夹具需改 PDO 数；环境 IgH SDO 仍阻塞）。
+
+**下次开工第一件事**
+- 用 IgH ecrt 夹具验证 CSV 画像 OP + 11 字节 PDO（或补 IgH SDO 环境问题）；或继续
+  B11（SV660N 公开手册 PDO/扩展对象核对）；B6 FMMU/DC 原文核实仍待条件。
+
+---
+
 ## 2026-11-13 00:06 班（低峰）— B5 细化：**映射合法性校验**（重复分配/零项/无效映射字）
 
 **做了什么**

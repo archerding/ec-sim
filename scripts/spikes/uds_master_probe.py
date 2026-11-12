@@ -216,6 +216,7 @@ def main():
     sdo_segmented_download = False
     expect_string = None
     cia402 = False
+    cia402_csv = False
     for arg in sys.argv[1:]:
         if arg.startswith("--timeout="):
             timeout = float(arg.split("=", 1)[1])
@@ -227,6 +228,8 @@ def main():
             sdo_segmented = True
         if arg == "--sdo-segmented-download":
             sdo_segmented_download = True
+        if arg == "--cia402-csv":
+            cia402_csv = True
         if arg == "--cia402":
             cia402 = True
         if arg.startswith("--expect-string="):
@@ -312,6 +315,37 @@ def main():
             value = sdo_upload_segmented(master, 0x2100, 0x00)
             check(value == payload, f"SDO 回读 {value!r} != {payload!r}")
             print("OK: segmented SDO download 写入 0x2100 并回读一致（20 字节）")
+
+        # 5e) 可选：CiA 402 CSV（11 字节 PDO，速度模式，Tier0 累加）。
+        if cia402_csv:
+            sequence = [
+                (0x0006, 9, 0, 5, 0x0221, 0, 0),
+                (0x0007, 9, 0, 5, 0x0223, 0, 0),
+                # 每个报文都会让行为 tick 一次：写帧 tick 用上一控制字、读帧 tick 用新控制字，
+                # 因此读到的位置按"写帧 + 读帧"各累加一次。
+                (0x000F, 9, 0, 5, 0x0237, 5, 5),
+                (0x000F, 9, 0, 5, 0x0237, 15, 5),
+                (0x0000, 9, 0, 5, 0x0240, 20, 0),
+            ]
+            for controlword, mode, target, velocity, expected_sw, expected_pos, expected_vel in sequence:
+                master.transact(
+                    [(CMD["APWR"], 0, 0x1100, struct.pack("<Hbii", controlword, mode, target, velocity))]
+                )
+                reply = master.transact([(CMD["APRD"], 0, 0x1110, bytes(11))])
+                sw, modes_display, position, velocity_actual = struct.unpack(
+                    "<Hbii", reply[0][3][:11]
+                )
+                check(sw == expected_sw, f"CiA402-CSV sw={sw:#06x} != {expected_sw:#06x}")
+                check(modes_display == mode, f"CiA402-CSV 模式显示 {modes_display} != {mode}")
+                check(
+                    position == expected_pos,
+                    f"CiA402-CSV 位置 {position} != {expected_pos}",
+                )
+                check(
+                    velocity_actual == expected_vel,
+                    f"CiA402-CSV 速度显示 {velocity_actual} != {expected_vel}",
+                )
+            print("OK: CiA 402 CSV：速度模式位置累加/速度显示通过（11 字节 PDO）")
 
         # 5c) 可选：CiA 402 状态机行为（完整 7 字节 RxPDO/TxPDO，Tier0）。
         if cia402:

@@ -1,0 +1,73 @@
+# EC-Sim 声明式设备插件：**通用 CiA 402 CSV 伺服（SIMULATED）**（B11：速度模式）
+#
+# 合规说明（docs/DEVICE-PLUGINS.md R1–R5）：只使用公开 CiA 402 对象/PDO 结构；
+# 未入库厂商 ESI/PDF/固件（R1）；自有 VID/PID（R2）；名称带 SIMULATED；不声称认证（R3）。
+#
+# 这是 11 字节 RxPDO/TxPDO 的 CSV（Cyclic Synchronous Velocity）画像：
+#   RxPDO 0x1600: 0x6040 controlword(16) + 0x6060 modes(8) + 0x607A target position(32)
+#                 + 0x60FF target velocity(32)      = 11 字节
+#   TxPDO 0x1A00: 0x6041 statusword(16)  + 0x6061 modes display(8) + 0x6064 position(32)
+#                 + 0x606C velocity actual(32)      = 11 字节
+schema: ecsim.plugin/v1
+id: com.ecsim.profile.cia402-csv-servo
+name: "Generic CiA 402 CSV servo (SIMULATED)"
+version: 0.1.0
+kind: device
+license: Apache-2.0 OR MIT
+pricing: {model: free, amount: 0, currency: CNY}
+
+compatibility:
+  brands: ["Generic"]
+  models: ["CiA402-CSV"]
+  disclaimer: "Independent re-implementation from the public CiA 402 profile. Not affiliated with, endorsed by, or certified by any vendor."
+
+identity:
+  vendor_id: 0x00000EC5
+  product_code: 0x0000E5E1
+  revision: 0x00010000
+  simulated: true
+
+profile: cia402
+mailbox:
+  coe: {sdo: true, sdo_info: true, complete_access: false}
+
+sm:
+  - {index: 0, dir: mbox-in,  start: 0x1000, len: 128}
+  - {index: 1, dir: mbox-out, start: 0x1080, len: 128}
+  - {index: 2, dir: out,      start: 0x1100, len: 11}
+  - {index: 3, dir: in,       start: 0x1110, len: 11}
+
+pdo:
+  rx:
+    - index: 0x1600
+      entries:
+        - {index: 0x6040, sub: 0, bits: 16}
+        - {index: 0x6060, sub: 0, bits: 8}
+        - {index: 0x607A, sub: 0, bits: 32}
+        - {index: 0x60FF, sub: 0, bits: 32}
+  tx:
+    - index: 0x1A00
+      entries:
+        - {index: 0x6041, sub: 0, bits: 16}
+        - {index: 0x6061, sub: 0, bits: 8}
+        - {index: 0x6064, sub: 0, bits: 32}
+        - {index: 0x606C, sub: 0, bits: 32}
+
+objects:
+  - {index: 0x1008, sub: 0, name: Device name, dtype: VISIBLE_STRING, access: ro, value: "Generic CiA 402 CSV servo (SIMULATED)"}
+  - {index: 0x2100, sub: 0, name: Config string, dtype: VISIBLE_STRING, access: rw, value: "EC-Sim SDO config (SIMULATED)"}
+  - {index: 0x6040, sub: 0, name: Controlword, dtype: UINT16, access: rw, value: 0x0000, pdo: rx}
+  - {index: 0x6041, sub: 0, name: Statusword, dtype: UINT16, access: ro, value: 0x0000, pdo: tx}
+  - {index: 0x603F, sub: 0, name: Error code, dtype: UINT16, access: ro, value: 0x0000}
+  - {index: 0x6060, sub: 0, name: Modes of operation, dtype: INT8, access: rw, value: 0, pdo: rx}
+  - {index: 0x6061, sub: 0, name: Modes of operation display, dtype: INT8, access: ro, value: 0, pdo: tx}
+  - {index: 0x6064, sub: 0, name: Position actual value, dtype: INT32, access: ro, value: 0, pdo: tx}
+  - {index: 0x606C, sub: 0, name: Velocity actual value, dtype: INT32, access: ro, value: 0, pdo: tx}
+  - {index: 0x607A, sub: 0, name: Target position, dtype: INT32, access: rw, value: 0, pdo: rx}
+  - {index: 0x60FF, sub: 0, name: Target velocity, dtype: INT32, access: rw, value: 0, pdo: rx}
+
+dc: {supported: false, sync0: false}
+
+sources:
+  - {title: "CiA — CiA 402 servo drive profile（公开规范摘要）", url: "https://www.can-cia.org/cia-402", accessed: "2026-11-12"}
+  - {title: "EtherCAT Technology Group — EtherCAT 规范/设备 profile（ETG.1000）", url: "https://www.ethercat.org/", accessed: "2026-11-12"}

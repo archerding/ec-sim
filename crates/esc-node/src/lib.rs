@@ -153,6 +153,8 @@ struct Cia402Behavior {
     position_actual: i32,
     /// 模式显示 `0x6061`（镜像最近一次 RxPDO 中的模式 `0x6060`）。
     modes_display: i8,
+    /// 速度实际值 `0x606C`（CSV 模式且 enabled 时镜像目标速度，否则 0）。
+    velocity_actual: i32,
 }
 
 /// 单从站最小 ESC 应答器。
@@ -279,6 +281,7 @@ impl Responder {
             in_len,
             position_actual: 0,
             modes_display: 0,
+            velocity_actual: 0,
         });
         self
     }
@@ -321,18 +324,31 @@ impl Responder {
         let controlword = u16::from_le_bytes([out_bytes[0], out_bytes[1]]);
         let mut modes = behavior.modes_display;
         let mut target = behavior.position_actual;
+        let mut target_velocity = behavior.velocity_actual;
         if out_bytes.len() >= 7 {
             modes = out_bytes[2] as i8;
             target = i32::from_le_bytes([out_bytes[3], out_bytes[4], out_bytes[5], out_bytes[6]]);
         }
+        if out_bytes.len() >= 11 {
+            target_velocity =
+                i32::from_le_bytes([out_bytes[7], out_bytes[8], out_bytes[9], out_bytes[10]]);
+        }
         let mut statusword = behavior.machine.update(controlword);
         let enabled = behavior.machine.state() == Cia402State::OperationEnabled;
-        // Tier0：只有 CSP（模式 8）在 Operation enabled 时让实际位置跟随目标；
-        // 其它模式（如 CSV/CST）位置保持不变（当前 PDO 布局不含速度/转矩目标）。
+        // Tier0：
+        // - CSP（模式 8）：Operation enabled 时实际位置跟随目标位置；
+        // - CSV（模式 9，需 11 字节 PDO）：Operation enabled 时位置每个周期累加目标速度
+        //   （模拟器把"速度目标"简化成每 tick 的增量，非真实单位/轨迹）；
+        // - 其它模式：位置冻结。
         let csp = modes == 8;
+        let csv = modes == 9 && out_bytes.len() >= 11;
         if enabled && csp {
             behavior.position_actual = target;
+        } else if enabled && csv {
+            behavior.position_actual = behavior.position_actual.saturating_add(target_velocity);
         }
+        let velocity_actual = if enabled && csv { target_velocity } else { 0 };
+        behavior.velocity_actual = velocity_actual;
         if out_bytes.len() >= 7
             && usize::from(behavior.in_len) >= 7
             && enabled
@@ -342,7 +358,14 @@ impl Responder {
             statusword |= TARGET_REACHED;
         }
         behavior.modes_display = modes;
-        if usize::from(behavior.in_len) >= 7 {
+        if usize::from(behavior.in_len) >= 11 {
+            let mut tx = [0u8; 11];
+            tx[0..2].copy_from_slice(&statusword.to_le_bytes());
+            tx[2] = modes as u8;
+            tx[3..7].copy_from_slice(&behavior.position_actual.to_le_bytes());
+            tx[7..11].copy_from_slice(&velocity_actual.to_le_bytes());
+            memory.write(behavior.in_offset, &tx);
+        } else if usize::from(behavior.in_len) >= 7 {
             let mut tx = [0u8; 7];
             tx[0..2].copy_from_slice(&statusword.to_le_bytes());
             tx[2] = modes as u8;
@@ -932,10 +955,24 @@ impl Responder {
             .category_bytes(esc_core::sii::category::TX_PDO)
             .is_some();
         let inputs_configured = Self::sync_manager_configured(&self.regs, 3);
-        let outputs_mapping_valid =
-            !outputs_declared || !outputs_configured || self.process_data_mapping_valid(0x1C12, 2);
-        let inputs_mapping_valid =
-            !inputs_declared || !inputs_configured || self.process_data_mapping_valid(0x1C13, 3);
+        // 映射一致性只在"SM 长度与 SII 声明一致"时检查：合成主站测试可能写入不同的
+        // SM 长度（非真实主站行为），此时无法判断映射是否有效，按"不检查"处理。
+        let sm2_declared = Self::sii_sync_manager_length(sii, 2);
+        let sm3_declared = Self::sii_sync_manager_length(sii, 3);
+        let sm2_length = SyncManager::read(&self.regs, 2).map(|sm| sm.length);
+        let sm3_length = SyncManager::read(&self.regs, 3).map(|sm| sm.length);
+        let check_outputs =
+            outputs_configured && sm2_declared.is_some() && sm2_length == sm2_declared;
+        let check_inputs =
+            inputs_configured && sm3_declared.is_some() && sm3_length == sm3_declared;
+        let outputs_mapping_valid = !outputs_declared
+            || !outputs_configured
+            || !check_outputs
+            || self.process_data_mapping_valid(0x1C12, 2);
+        let inputs_mapping_valid = !inputs_declared
+            || !inputs_configured
+            || !check_inputs
+            || self.process_data_mapping_valid(0x1C13, 3);
         EsmPreconditions {
             mailbox_declared: sii.mailbox_protocols() != 0,
             mailbox_out_configured: Self::sync_manager_configured(&self.regs, 0),
@@ -956,6 +993,16 @@ impl Responder {
     ///
     /// 读取分配对象（0x1C12/0x1C13 子 0 条目数 + 各子 PDO 索引），再读每个 PDO 映射对象
     /// （子 0 条目数 + 各映射字 `index<<16 | sub<<8 | bits`），累加最低字节的位长。
+    /// 从 SII 的 SM 类别读取第 index 个 SM 的声明长度（用于映射一致性检查的有效性判断）。
+    fn sii_sync_manager_length(sii: &SiiImage, index: usize) -> Option<u16> {
+        let bytes = sii.category_bytes(esc_core::sii::category::SYNC_MANAGER)?;
+        let offset = index * 8;
+        if bytes.len() < offset + 4 {
+            return None;
+        }
+        Some(u16::from_le_bytes([bytes[offset + 2], bytes[offset + 3]]))
+    }
+
     /// 判断过程数据的分配 + 映射是否**有效**（比只比总位长更细的检查）。
     ///
     /// 规则（Tier0，基于 `0x1C12`/`0x1C13` 分配与 PDO 映射对象内容）：
@@ -2578,6 +2625,84 @@ mod tests {
             0x04,
             "状态保持 SAFEOP"
         );
+    }
+
+    #[test]
+    fn cia402_csv_mode_accumulates_velocity() {
+        fn write_rx(
+            responder: &mut Responder,
+            controlword: u16,
+            mode: i8,
+            target: i32,
+            velocity: i32,
+        ) {
+            let mut data = vec![0u8; 11];
+            data[0..2].copy_from_slice(&controlword.to_le_bytes());
+            data[2] = mode as u8;
+            data[3..7].copy_from_slice(&target.to_le_bytes());
+            data[7..11].copy_from_slice(&velocity.to_le_bytes());
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Apwr,
+                1,
+                0,
+                0x1100,
+                data,
+            )]);
+            responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APWR reply");
+        }
+        fn read_tx(responder: &mut Responder) -> (u16, i8, i32, i32) {
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Aprd,
+                1,
+                0,
+                0x1110,
+                vec![0u8; 11],
+            )]);
+            let reply = responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APRD reply");
+            let start = ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10;
+            (
+                u16::from_le_bytes([reply[start], reply[start + 1]]),
+                reply[start + 2] as i8,
+                i32::from_le_bytes([
+                    reply[start + 3],
+                    reply[start + 4],
+                    reply[start + 5],
+                    reply[start + 6],
+                ]),
+                i32::from_le_bytes([
+                    reply[start + 7],
+                    reply[start + 8],
+                    reply[start + 9],
+                    reply[start + 10],
+                ]),
+            )
+        }
+
+        let mut responder = Responder::default().with_cia402_behavior(0x1100, 11, 0x1110, 11);
+        write_rx(&mut responder, 0x0006, 9, 0, 5); // Shutdown → Ready
+        responder.tick(1);
+        assert_eq!(read_tx(&mut responder), (0x0221, 9, 0, 0));
+        write_rx(&mut responder, 0x0007, 9, 0, 5); // Switch on
+        responder.tick(2);
+        assert_eq!(read_tx(&mut responder), (0x0223, 9, 0, 0));
+        write_rx(&mut responder, 0x000F, 9, 0, 5); // Enable operation
+        responder.tick(3);
+        assert_eq!(
+            read_tx(&mut responder),
+            (0x0237, 9, 5, 5),
+            "CSV：位置 +5/周期"
+        );
+        write_rx(&mut responder, 0x000F, 9, 0, 5);
+        responder.tick(4);
+        assert_eq!(read_tx(&mut responder), (0x0237, 9, 10, 5));
+        // 禁用后速度显示归零、位置保持。
+        write_rx(&mut responder, 0x0000, 9, 0, 5);
+        responder.tick(5);
+        assert_eq!(read_tx(&mut responder), (0x0240, 9, 10, 0));
     }
 
     #[test]
