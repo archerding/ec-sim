@@ -6,6 +6,52 @@
 
 ---
 
+## 2026-11-12 22:10 班（低峰）— B7 子项：CoE **分段 SDO 上传**（>4 字节对象）+ 设备名 `0x1008`
+
+**做了什么**
+- `esc-core::mailbox`：新增 **segmented upload** 协议支持——initiate 响应
+  （Command `0x41` + u32 长度 + 首段数据，偏移与 IgH `master/fsm_coe.c`、SOEM
+  `src/ec_coe.c` 逐字节对齐）、segment 请求解析（`0x60 | toggle<<4`）、segment 响应
+  （`toggle<<4 | unused<<1 | last` + 7 字节数据，末段补零/`unused` 标注）；
+  `obj_dict::data_type` 增加 VISIBLE_STRING / OCTET_STRING。
+- `esc-node`：`Responder` 增加分段上传状态机（≤4 字节仍 expedited；>4 字节自动分段，
+  单对象串行传输），新增 `segmented_upload_in_progress()`。
+- `plugin-host::dict_gen`：支持 manifest **字符串对象**（长度 = 字节数 × 8）；对象列表按
+  索引排序；数组对象补子索引 0（沿用上一班规则）。
+- EL2008 插件画像新增 `0x1008:00` 设备名（VISIBLE_STRING，42 字节，名称带 SIMULATED）；
+  `example-8do` 测试画像同步；README 更新「已模拟」清单。
+- 新脚本 `scripts/spikes/sdo-segmented-upload-probe.sh`（SOEM `slaveinfo -sdo`
+  断言设备名完整读出）。
+
+**验证结果**
+- 本机 Windows：`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets
+  -- -D warnings` exit 0；`cargo test --workspace` **146 passed**
+  （esc-core 76 / esc-node 38 / plugin-host 16 / wire 16）。
+- Linux 验证机：`bash scripts/spikes/sdo-segmented-upload-probe.sh` → **EXIT=0**；
+  SOEM `slaveinfo -sdo` 打印（真实主站经**分段上传**拼接）：
+  `0x1008 "Device name" [VAR]` / `0x00 "Device name" [VISIBLE_STR(336) R_R_R_]
+  "Beckhoff EL2008 compatible 8DO (SIMULATED)"`，共 20 个对象；同时 EL2008 画像的
+  `0x1C12`（maxsub 8）与 `0x7000..0x7070` 数组对象显示正常。
+- IgH `ethercat slaves` 复跑：PREOP + 身份 `0x00000ec5:0x0000e5d2` 正常。
+
+**卡点**
+- **IgH 侧分段上传未验证**：`ethercat upload` CLI 需要 SDO 类型信息（无应用上下文时报
+  `Failed to determine SDO entry data type`）；尝试的 ecrt `ecrt_master_sdo_upload` 夹具
+  在"未配置应用"场景下阻塞（已清理，未取到结果）→ ⚠️ 待验证：需在已配置/OP 的 ecrt
+  应用上下文里调用。
+- **B6 FMMU 寄存器空间映射仍未核实**：官方 ESC Sec.2 寄存器手册是 PDF（公开链接
+  `download.beckhoff.com/.../ethercat_esc_datasheet_sec2_registers_*.pdf`），本班未取到
+  可检索文本；SOEM `simple_ng` 的 mbxstatus expected WKC 差异继续标注 ⚠️。
+- 分段上传只覆盖单对象串行传输；未做并发、Complete Access、分段 Download。
+
+**下次开工第一件事**
+- 用**已配置的 ecrt 应用上下文**验证 IgH 分段上传（在现有 outputs-only/1O1I 夹具激活后
+  调用 `ecrt_master_sdo_upload()` 读 `0x1008`）；随后读 ESC Sec.2 PDF 原文核实
+  FMMU 能否映射寄存器空间。之后进入 **B11 CiA402 行为插件**（先 facts.md + 声明式画像，
+  行为 WASM 只做 Tier0 状态机骨架）。
+
+---
+
 ## 2026-11-12 21:41 班（低峰）— B10 缺口补齐：数组对象子索引 0 + IgH outputs-only **OP** 验证
 
 **做了什么**

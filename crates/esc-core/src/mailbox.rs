@@ -56,8 +56,94 @@ pub const COE_COMMAND_SDO_RESPONSE: u16 = 0x3;
 /// SDO 命令字节：Abort SDO transfer。
 pub const SDO_COMMAND_ABORT: u8 = 0x80;
 
-/// SDO 命令字节：initiate upload request（读对象）。
+/// SDO 命令字节：expedited upload request（读对象）。
 pub const SDO_COMMAND_INITIATE_UPLOAD_REQUEST: u8 = 0x40;
+
+/// SDO 命令字节：upload segment request（分段上传的后续段请求；低 4 位为 toggle）。
+pub const SDO_COMMAND_UPLOAD_SEGMENT_REQUEST: u8 = 0x60;
+
+/// SDO 命令字节：initiate upload 响应（非 expedited、带长度指示，随后可分段）。
+pub const SDO_COMMAND_UPLOAD_NORMAL_RESPONSE: u8 = 0x41;
+
+/// 分段上传响应中每段的固定数据字节数（CiA 301：7 字节，末段用 unused 位补齐）。
+pub const SDO_SEGMENT_DATA_LEN: usize = 7;
+
+/// 分段上传请求（[`parse_upload_segment_request`] 的返回值）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UploadSegmentRequest {
+    /// 对象索引。
+    pub index: u16,
+    /// 子索引。
+    pub subindex: u8,
+    /// toggle 位（0 或 1；主站每段翻转）。
+    pub toggle: u8,
+}
+
+/// 解析 SDO upload segment request（命令字节 `0x60 | toggle<<4`）。
+///
+/// 布局按两家未修改主站：CoE 头 2 字节 + Command + Index(2) + SubIndex(1) + 1 字节数据
+/// （SOEM `src/ec_coe.c: ecx_SDOread()` 分段循环；IgH `master/fsm_coe.c`
+/// `ec_fsm_coe_up_prepare_segment_request()`）。
+#[must_use]
+pub fn parse_upload_segment_request(service: &[u8]) -> Option<UploadSegmentRequest> {
+    if service.len() < 6 {
+        return None;
+    }
+    let coe = u16::from_le_bytes([service[0], service[1]]);
+    if coe >> 12 != COE_COMMAND_SDO_REQUEST {
+        return None;
+    }
+    let command = service[2];
+    // bit7..5 = 0b011（upload segment），bit1（download 方向）与 bit0（保留）必须为 0；
+    // 只有 bit4 是 toggle。
+    if command & 0xE3 != SDO_COMMAND_UPLOAD_SEGMENT_REQUEST {
+        return None;
+    }
+    Some(UploadSegmentRequest {
+        index: u16::from_le_bytes([service[3], service[4]]),
+        subindex: service[5],
+        toggle: (command >> 4) & 0x01,
+    })
+}
+
+/// 构造 **分段上传的 initiate 响应**（非 expedited、带 4 字节长度指示，随后跟首段数据）。
+///
+/// 布局（两家主站一致）：CoE 头 2 + Command 0x41 + Index 2 + SubIndex 1 + Size(u32) +
+/// 首段数据。IgH `fsm_coe.c` 从 `data + 10` 取首段；SOEM `ec_coe.c` 从 `ldata[1]` 取。
+#[must_use]
+pub fn sdo_upload_initiate_service(
+    index: u16,
+    subindex: u8,
+    total_size: usize,
+    first_chunk: &[u8],
+) -> Vec<u8> {
+    let mut service = Vec::with_capacity(10 + first_chunk.len());
+    service.extend_from_slice(&(COE_COMMAND_SDO_RESPONSE << 12).to_le_bytes());
+    service.push(SDO_COMMAND_UPLOAD_NORMAL_RESPONSE);
+    service.extend_from_slice(&index.to_le_bytes());
+    service.push(subindex);
+    let total = u32::try_from(total_size).unwrap_or(u32::MAX);
+    service.extend_from_slice(&total.to_le_bytes());
+    service.extend_from_slice(first_chunk);
+    service
+}
+
+/// 构造 **分段上传的 segment 响应**：`Command = toggle<<4 | unused<<1 | last` + 7 字节数据。
+///
+/// `chunk` 最多 [`SDO_SEGMENT_DATA_LEN`] 字节，末段不足时用 0 补齐并在 `unused` 位标出。
+#[must_use]
+pub fn sdo_upload_segment_service(toggle: u8, chunk: &[u8], last: bool) -> Vec<u8> {
+    let used = chunk.len().min(SDO_SEGMENT_DATA_LEN);
+    let unused = u8::try_from(SDO_SEGMENT_DATA_LEN - used).unwrap_or(0);
+    let command = ((toggle & 0x01) << 4) | (unused << 1) | u8::from(last);
+    let mut service = Vec::with_capacity(3 + SDO_SEGMENT_DATA_LEN);
+    service.extend_from_slice(&(COE_COMMAND_SDO_RESPONSE << 12).to_le_bytes());
+    service.push(command);
+    let mut payload = [0u8; SDO_SEGMENT_DATA_LEN];
+    payload[..used].copy_from_slice(&chunk[..used]);
+    service.extend_from_slice(&payload);
+    service
+}
 
 /// SDO Abort 码：对象不在对象字典中（ETG.1000.6 / CiA 301）。
 pub const SDO_ABORT_OBJECT_NOT_EXIST: u32 = 0x0602_0000;
@@ -67,6 +153,9 @@ pub const SDO_ABORT_UNSUPPORTED_ACCESS: u32 = 0x0601_0000;
 
 /// SDO Abort 码：尝试写只读对象（CiA 301）。
 pub const SDO_ABORT_READ_ONLY: u32 = 0x0601_0002;
+
+/// SDO Abort 码：SDO 协议超时（例如分段上传的段请求没有进行中的传输，CiA 301）。
+pub const SDO_ABORT_PROTOCOL_TIMEOUT: u32 = 0x0504_0000;
 
 /// SDO 命令字节：expedited download（1 字节数据）。
 const SDO_COMMAND_DOWNLOAD_1: u8 = 0x2F;
@@ -620,6 +709,56 @@ mod tests {
             None
         );
         assert_eq!(parse_sdo_info_request(&[0x00, 0x80, 0x01]), None);
+    }
+
+    #[test]
+    fn segmented_upload_request_and_responses_layout() {
+        // 段请求：CoE 0x2<<12 + Command 0x60|toggle + Index + SubIndex + 1 字节。
+        assert_eq!(
+            parse_upload_segment_request(&[0x00, 0x20, 0x70, 0x08, 0x10, 0x00, 0x00]),
+            Some(UploadSegmentRequest {
+                index: 0x1008,
+                subindex: 0x00,
+                toggle: 1
+            })
+        );
+        assert_eq!(
+            parse_upload_segment_request(&[0x00, 0x20, 0x60, 0x08, 0x10, 0x00, 0x00]),
+            Some(UploadSegmentRequest {
+                index: 0x1008,
+                subindex: 0x00,
+                toggle: 0
+            })
+        );
+        // segment download 响应（0x22/0x62 类）与过短请求不是 upload segment request。
+        assert_eq!(
+            parse_upload_segment_request(&[0x00, 0x20, 0x22, 0x08, 0x10, 0x00, 0x00]),
+            None
+        );
+        assert_eq!(parse_upload_segment_request(&[0x00, 0x20, 0x60]), None);
+
+        // initiate 响应（非 expedited）：Command 0x41 + index/subindex + u32 长度 + 首段数据。
+        let data = [1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let service = sdo_upload_initiate_service(0x1008, 0, data.len(), &data);
+        assert_eq!(&service[..2], &[0x00, 0x30], "CoE 服务 = SDO 响应");
+        assert_eq!(service[2], SDO_COMMAND_UPLOAD_NORMAL_RESPONSE);
+        assert_eq!(u16::from_le_bytes([service[3], service[4]]), 0x1008);
+        assert_eq!(service[5], 0x00);
+        assert_eq!(
+            u32::from_le_bytes([service[6], service[7], service[8], service[9]]),
+            10,
+            "长度字段在 +6（IgH 从 data+6 读；SOEM 从 ldata[0] 读）"
+        );
+        assert_eq!(&service[10..], &data, "首段数据从 +10 开始");
+
+        // 段响应：Command = toggle<<4 | unused<<1 | last；数据固定 7 字节（末段补零）。
+        let full = sdo_upload_segment_service(0, &[1, 2, 3, 4, 5, 6, 7], false);
+        assert_eq!(full[2], 0x00, "满 7 字节、非末段");
+        assert_eq!(&full[3..10], &[1, 2, 3, 4, 5, 6, 7]);
+        let last = sdo_upload_segment_service(1, &[8, 9, 10], true);
+        assert_eq!(last[2], 0x10 | (4 << 1) | 1, "toggle=1、unused=4、last=1");
+        assert_eq!(&last[3..6], &[8, 9, 10]);
+        assert_eq!(&last[6..10], &[0, 0, 0, 0]);
     }
 
     #[test]

@@ -172,8 +172,17 @@ user.email = deepseek-harness@users.noreply.github.com
     测试 **124 passed**；Linux 验证机 `scripts/spikes/sdo-info-probe.sh` →
     `slaveinfo -sdo` 打印 6 个对象及描述/访问权限；双主站回归默认/strict **6/6 全绿**。
     ⚠️ IgH `ethercat sdos` 无应用时无输出（需 ecrt 应用上下文），IgH 侧待验证。
-  - 待做：SDO Info 的 IgH 侧验证（ecrt 夹具）、Complete Access、分段传输；
-    IgH 进 OP 需 B8 的 ecrt 应用夹具（Download 已具备）。
+  - 进度（2026-11-12 22:10 班）：**分段 SDO 上传（segmented upload）已实现**——`mailbox`
+    支持 initiate 非 expedited 响应（`0x41` + u32 长度 + 首段）与 segment 请求/响应
+    （`toggle/unused/last` + 固定 7 字节）；`esc-node` 增加分段传输状态机（≤4 字节仍
+    expedited）；`dict_gen` 支持字符串对象（VISIBLE_STRING / OCTET_STRING），对象列表按索引
+    排序。EL2008 画像新增 `0x1008:00` 设备名（42 字节，名称带 SIMULATED）。测试 **146 passed**；
+    Linux 验证机 `scripts/spikes/sdo-segmented-upload-probe.sh` → SOEM `slaveinfo -sdo`
+    经**分段上传**完整读出 `0x1008 "Device name" ... "Beckhoff EL2008 compatible 8DO (SIMULATED)"`
+    （20 个对象）。
+    ⚠️ IgH 侧分段上传待验证（`ethercat upload` CLI 需要 SDO 类型上下文；ecrt
+    `ecrt_master_sdo_upload` 夹具在未配置应用场景下阻塞）；B6 FMMU 寄存器空间仍待原文核实。
+  - 待做：Complete Access、分段 Download、IgH 侧分段上传验证。
 - [x] ~~**B9 声明式插件加载器**~~ ✅ **2026-11-12 21:25 班完成**：`plugin-host` 零依赖解析
   `plugin.yaml`（YAML 子集 + R2/R5 校验）→ `sii_gen` 生成 SII 镜像、`dict_gen` 生成运行时
   对象字典（0x1018 身份 / 0x1C00 SM 类型 / 0x1C12+0x1C13 分配 / PDO 映射 / 用户对象）；

@@ -284,6 +284,55 @@ pub fn dictionary_from_manifest(manifest: &PluginManifest) -> Result<ObjectDicti
 
     // 5) manifest 用户对象（可覆盖上面生成条目的名称/访问权限）。
     for spec in &manifest.objects {
+        let upper = spec.data_type.trim().to_ascii_uppercase();
+        let string_kind = match upper.as_str() {
+            "STRING" | "VISIBLE_STRING" => Some(obj_dict::data_type::VISIBLE_STRING),
+            "OCTET_STRING" => Some(obj_dict::data_type::OCTET_STRING),
+            _ => None,
+        };
+        if let Some(type_code) = string_kind {
+            // 字符串对象：值必须是 manifest 里的字符串文本（长度 = 字节数 × 8）。
+            // 需分段 SDO 上传（>4 字节），由 esc-node 的 upload segment 支持。
+            let Some(text) = spec.value.as_deref() else {
+                return Err(format!(
+                    "对象 0x{:04X}:{:02X} 是字符串类型但没有 value",
+                    spec.index, spec.sub
+                ));
+            };
+            let bytes = text.as_bytes().to_vec();
+            let bit_length = u16::try_from(bytes.len() * 8)
+                .map_err(|_| format!("对象 0x{:04X}:{:02X} 字符串过长", spec.index, spec.sub))?;
+            let (access, _) = access_for(&spec.access);
+            let description = RuntimeEntry {
+                index: spec.index,
+                subindex: spec.sub,
+                value: bytes,
+                data_type: type_code,
+                bit_length,
+                access,
+                value_info: 0,
+                name: spec.name.clone(),
+                writable: access & 0x0038 != 0,
+            };
+            if let Some(existing) = entries.get_mut(&(spec.index, spec.sub)) {
+                existing.name = description.name;
+                existing.access = description.access;
+                existing.writable = description.writable;
+            } else {
+                entries.insert((spec.index, spec.sub), description);
+            }
+            if !objects.iter().any(|object| object.index == spec.index) {
+                objects.push(object(
+                    spec.index,
+                    0,
+                    obj_dict::object_code::VAR,
+                    type_code,
+                    &spec.name,
+                ));
+            }
+            continue;
+        }
+
         let (type_code, bits) = data_type_for(&spec.data_type)?;
         let (access, _) = access_for(&spec.access);
         let value = entry_value(spec, bits)?;
@@ -362,6 +411,9 @@ pub fn dictionary_from_manifest(manifest: &PluginManifest) -> Result<ObjectDicti
         }
     }
 
+    // 对象列表按索引排序（SDO Info 的 Get OD List 顺序更直观，且与真实设备习惯一致）。
+    objects.sort_by_key(|object| object.index);
+
     Ok(ObjectDictionary::new(
         objects,
         entries.into_values().collect(),
@@ -384,7 +436,7 @@ mod tests {
         let dict = dictionary_from_manifest(&manifest).expect("generate");
         assert_eq!(
             dict.object_indices(),
-            vec![0x1018, 0x1C00, 0x1C12, 0x1C13, 0x1600, 0x1A00, 0x2000]
+            vec![0x1008, 0x1018, 0x1600, 0x1A00, 0x1C00, 0x1C12, 0x1C13, 0x2000]
         );
 
         // 身份对象取自 manifest（自有 VID/PID，R2）。
@@ -445,6 +497,36 @@ mod tests {
         let manifest = PluginManifest::parse(template).expect("模板可解析");
         let error = dictionary_from_manifest(&manifest).expect_err("占位 VID/PID 应被拒绝");
         assert!(error.contains("vendor_id"), "{error}");
+    }
+
+    #[test]
+    fn string_objects_are_supported_with_segmented_lengths() {
+        let mut manifest = fixture_manifest();
+        manifest.objects.push(crate::manifest::ObjectConfig {
+            index: 0x100A,
+            sub: 0,
+            name: "Device name".to_string(),
+            data_type: "VISIBLE_STRING".to_string(),
+            access: "ro".to_string(),
+            pdo: None,
+            value: Some("EC-Sim sample (SIMULATED)".to_string()),
+        });
+        let dict = dictionary_from_manifest(&manifest).expect("generate");
+        let entry = dict.entry(0x100A, 0).expect("string entry");
+        assert_eq!(
+            entry.data_type,
+            obj_dict::data_type::VISIBLE_STRING,
+            "VISIBLE_STRING 类型码"
+        );
+        assert_eq!(
+            usize::from(entry.bit_length),
+            "EC-Sim sample (SIMULATED)".len() * 8
+        );
+        assert_eq!(entry.value, b"EC-Sim sample (SIMULATED)");
+        assert_eq!(
+            dict.object(0x100A).expect("object").object_code,
+            obj_dict::object_code::VAR
+        );
     }
 
     #[test]

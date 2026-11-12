@@ -55,17 +55,25 @@ Setting operational state... all slaves are now operational
 Iteration    1:   111 usec  WKC 2 wrong (expected 3)
 ```
 
-SOEM `slaveinfo -sdo`（对象字典，节选）：
+SOEM `slaveinfo -sdo`（对象字典，2026-11-12 21:45 班起含设备名，经**分段 SDO 上传**）：
 
 ```
-CoE Object Description found, ... entries.
+CoE Object Description found, 20 entries.
+0x1008      "Device name"                                 [VAR]
+    0x00      "Device name"                                 [VISIBLE_STR(336) R_R_R_]
+                "Beckhoff EL2008 compatible 8DO (SIMULATED)"
 0x1c12      "RxPDO assign"     [ARRAY  maxsub(0x08 / 8)]
     0x01      "RxPDO assign"    [UNSIGNED16  RW____]  0x1600 / 5632
 0x1600      "RxPDO mapping"    [ARRAY  maxsub(0x01 / 1)]
-    0x01      "RxPDO mapping"   [UNSIGNED32  RW____]  0x70000101 / 1879048449
-0x7000      "Output 1"         [VAR]
-0x7070      "Output 8"         [VAR]
+0x7000      "Output 1"         [ARRAY  maxsub(0x01 / 1)]
+0x7070      "Output 8"         [ARRAY  maxsub(0x01 / 1)]
 ```
+
+> 设备名对象 `0x1008:00`（VISIBLE_STRING，42 字节 > 4）必须通过 **segmented upload**
+> 才能读出；SOEM 打印出完整字符串，说明分段上传实现与真实主站兼容。
+> 复现：`sudo bash scripts/spikes/sdo-segmented-upload-probe.sh`
+> （⚠️ IgH `ethercat upload` CLI 在无 ecrt 应用配置时无法确定 SDO 类型，
+> 输出 `Failed to determine SDO entry data type`；IgH 侧分段上传 ⚠️ 待验证。）
 
 IgH `ethercat slaves`（扫描/拓扑）：
 

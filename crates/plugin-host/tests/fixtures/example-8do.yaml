@@ -40,6 +40,7 @@ pdo:
         - {index: 0x6000, sub: 0, bits: 8}
 
 objects:
+  - {index: 0x1008, sub: 0, name: Device name, dtype: VISIBLE_STRING, access: ro, value: "EC-Sim example 8DO (SIMULATED)"}
   - {index: 0x2000, sub: 0, name: Sample counter, dtype: UINT16, access: ro, value: 0x1234}
 
 dc: {supported: false, sync0: false}

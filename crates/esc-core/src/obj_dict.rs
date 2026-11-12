@@ -233,6 +233,10 @@ pub mod data_type {
     pub const UNSIGNED16: u16 = 0x0006;
     /// UNSIGNED32。
     pub const UNSIGNED32: u16 = 0x0007;
+    /// VISIBLE_STRING。
+    pub const VISIBLE_STRING: u16 = 0x0009;
+    /// OCTET_STRING。
+    pub const OCTET_STRING: u16 = 0x000A;
     /// 复合对象（ARRAY/RECORD）在对象描述中的 DataType 字段按惯例填 0。
     pub const NONE: u16 = 0x0000;
 }

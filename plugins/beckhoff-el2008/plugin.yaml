@@ -64,6 +64,8 @@ pdo:
         - {index: 0x7070, sub: 1, bits: 1}
 
 objects:
+  # CiA 301 标准设备名称对象（>4 字节，需 SDO 分段上传；名称带 SIMULATED，R2）。
+  - {index: 0x1008, sub: 0, name: Device name, dtype: VISIBLE_STRING, access: ro, value: "Beckhoff EL2008 compatible 8DO (SIMULATED)"}
   - {index: 0x7000, sub: 1, name: Output 1, dtype: BOOL, access: ro, pdo: rx}
   - {index: 0x7010, sub: 1, name: Output 2, dtype: BOOL, access: ro, pdo: rx}
   - {index: 0x7020, sub: 1, name: Output 3, dtype: BOOL, access: ro, pdo: rx}
