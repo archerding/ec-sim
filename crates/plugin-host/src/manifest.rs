@@ -654,6 +654,47 @@ impl PluginManifest {
                 ));
             }
         }
+        // PDO 映射项与 manifest 已声明对象的数据类型/位长一致性；同一 PDO 内不得重复映射
+        // 同一对象（对象未在 manifest 声明时跳过：PDO 数据对象可能在别处定义）。
+        let expected_bits = |object: &ObjectConfig| -> Option<u16> {
+            match object.data_type.trim().to_ascii_uppercase().as_str() {
+                "BOOL" | "BOOLEAN" => Some(1),
+                "INT8" | "UINT8" | "INTEGER8" | "UNSIGNED8" => Some(8),
+                "INT16" | "UINT16" | "INTEGER16" | "UNSIGNED16" => Some(16),
+                "INT32" | "UINT32" | "INTEGER32" | "UNSIGNED32" => Some(32),
+                "VISIBLE_STRING" | "OCTET_STRING" | "STRING" => object
+                    .value
+                    .as_deref()
+                    .and_then(|value| u16::try_from(value.len() * 8).ok()),
+                _ => None,
+            }
+        };
+        for pdo in self.rx_pdos.iter().chain(self.tx_pdos.iter()) {
+            let mut seen_entries = std::collections::BTreeSet::new();
+            for entry in &pdo.entries {
+                if !seen_entries.insert((entry.index, entry.sub)) {
+                    problems.push(format!(
+                        "PDO {:#06x} 重复映射对象 {:#06x}:{:02X}",
+                        pdo.index, entry.index, entry.sub
+                    ));
+                }
+                let Some(object) = self
+                    .objects
+                    .iter()
+                    .find(|object| object.index == entry.index && object.sub == entry.sub)
+                else {
+                    continue;
+                };
+                if let Some(bits) = expected_bits(object) {
+                    if bits != u16::from(entry.bits) {
+                        problems.push(format!(
+                            "PDO {:#06x} 映射对象 {:#06x}:{:02X} 声明 {}={}bit，但映射项为 {}bit",
+                            pdo.index, entry.index, entry.sub, object.data_type, bits, entry.bits
+                        ));
+                    }
+                }
+            }
+        }
         problems
     }
 }
@@ -869,6 +910,45 @@ sources:
                 .iter()
                 .any(|p| p.contains("不在对应 PDO 映射中")),
             "应报告对象 pdo 引用不在映射中"
+        );
+    }
+
+    #[test]
+    fn rejects_pdo_entry_datatype_mismatch_and_duplicates() {
+        const MISMATCH: &str = r#"
+schema: ecsim.plugin/v1
+id: com.ecsim.x
+name: "X (SIMULATED)"
+version: 0.1.0
+kind: device
+identity:
+  vendor_id: 0x00000EC5
+  product_code: 3
+  simulated: true
+sm:
+  - {index: 0, dir: mbox-in, start: 0x1000, len: 128}
+  - {index: 1, dir: mbox-out, start: 0x1080, len: 128}
+  - {index: 2, dir: out, start: 0x1100, len: 2}
+pdo:
+  rx:
+    - index: 0x1600
+      entries:
+        - {index: 0x7000, sub: 0, bits: 16}
+        - {index: 0x7000, sub: 0, bits: 16}
+objects:
+  - {index: 0x7000, sub: 0, name: Out, dtype: UINT8, access: ro, value: 0, pdo: rx}
+sources:
+  - {title: "t", url: "https://example.invalid", accessed: "2026-11-13"}
+"#;
+        let manifest = PluginManifest::parse(MISMATCH).expect("parse");
+        let problems = manifest.validate();
+        assert!(
+            problems.iter().any(|p| p.contains("位长")),
+            "应报告对象声明位长与映射项不一致：{problems:?}"
+        );
+        assert!(
+            problems.iter().any(|p| p.contains("重复映射")),
+            "应报告同一 PDO 内重复映射：{problems:?}"
         );
     }
 

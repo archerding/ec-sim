@@ -6,6 +6,35 @@
 
 ---
 
+## 2026-11-13 00:27 班（低峰）— B9 强化：**PDO 映射项的数据类型/位长 + 重复映射校验**
+
+**做了什么**
+- `plugin-host::PluginManifest::validate()` 继续加强加载期校验：
+  - **映射项 vs 对象声明**：若 PDO 映射项对应的对象在 manifest `objects` 中已声明，则校验
+    其数据类型/位长与映射项一致（BOOL=1、8/16/32 位整数、字符串=value 字节数×8），
+    不一致报错（例如把 `INT32` 对象映射成 16bit）；
+  - **同一 PDO 内重复映射同一对象**（index+subindex）→ 报错；
+  - 对象未在 manifest 声明时跳过（PDO 数据对象可能由运行时/别处定义）。
+- 新增单测 `rejects_pdo_entry_datatype_mismatch_and_duplicates`。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **172 passed**（esc-core 79 / esc-node 53 / plugin-host 23 + 1 集成 / wire 16）；
+  仓库内既有插件（EL2008/通用 CiA402/CSV/SV660N/示例）均通过新校验（无误报）。
+- Linux 验证机重建后：`generic-cia402-probe.sh` **EXIT=0**（通用 CiA 402 扫描/OP）、
+  `cia402-csv-probe.sh` **EXIT=0**（CSV 行为+UDS 套件）→ 加载期校验无回归。
+
+**卡点**
+- 仍只做"声明一致性"检查：不校验 SM 地址/区间重叠/类型方向等 ESC 级合法性（B5 待做）；
+  未声明对象的 PDO 映射项无法校验（有意跳过）。
+- manifest 校验是"插件作者期"保护，不能替代真实主站的 OP 期映射检查。
+
+**下次开工第一件事**
+- 扩展 SM 配置合法性校验（地址越界/区间重叠/类型方向）或继续 B11（SV660N 公开手册
+  PDO/扩展对象核对）；B6 FMMU/DC 原文核实仍待条件。
+
+---
+
 ## 2026-11-13 00:23 班（低峰）— B9 强化：**manifest 加载期 SM/PDO 一致性校验**
 
 **做了什么**

@@ -248,6 +248,11 @@ user.email = deepseek-harness@users.noreply.github.com
     `pdo: rx/tx` 引用必须真实存在于对应映射（悬空/非法值报错）；新增单测。测试 **171 passed**；
     验证机回归 `generic-cia402-probe.sh`/`cia402-csv-probe.sh`/`igh-el2008-op-probe.sh`
     全部 EXIT=0（既有插件无误报）。⚠️ 仍未校验映射字的数据类型/位长一致性与 SM 地址合法性。
+  - 进度（2026-11-13 00:27 班）：**PDO 映射项数据类型/位长 + 重复映射校验**——
+    `validate()` 对已声明对象校验 dtype 位长与映射项一致（BOOL/8/16/32/字符串），
+    同一 PDO 内重复映射同一对象报错；新增单测。测试 **172 passed**；验证机
+    `generic-cia402-probe.sh`/`cia402-csv-probe.sh` EXIT=0（无误报）。
+    ⚠️ 仍未校验 SM 地址/区间/类型方向合法性；未声明对象的映射项跳过校验。
 - [x] ~~**B10 首个 P0 设备插件**~~ ✅ **2026-11-12 21:33 班完成**：`plugins/beckhoff-el2008/`
   声明式画像（自有 VID/PID `0x00000EC5`/`0x0000E5D2`，名称带 SIMULATED；8 通道输出、
   0 输入、SM2 输出 1 字节、默认 RxPDO `0x1600`..`0x1607` 各映射 1 bit 输出对象
