@@ -82,9 +82,9 @@ pub mod category {
     pub const STRINGS: u16 = 0x000A;
     /// 通用类别（固定 32 字节）。
     pub const GENERAL: u16 = 0x001E;
-    /// FMMU 类别（FMMU 用途字节，见 [`SIM_FMMU_USAGE`]）。
+    /// FMMU 类别（FMMU 用途字节，见 `SIM_FMMU_USAGE`）。
     pub const FMMU: u16 = 0x0028;
-    /// 分布式时钟类别（DC，内容见 [`SiiDc`]）。
+    /// 分布式时钟类别（DC，内容见 `SiiDc`）。
     pub const DC: u16 = 0x003C;
     /// Sync Manager 类别（每条 8 字节）。
     pub const SYNC_MANAGER: u16 = 0x0029;

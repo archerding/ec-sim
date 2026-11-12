@@ -32,6 +32,28 @@
 
 ---
 
+## 2026-11-13 03:34 班（低峰）— CI：**rustdoc 警告视为错误 + 文档链接修复**
+
+**做了什么**
+- `.github/workflows/ci.yml` 新增 `cargo doc --workspace --no-deps` 步骤，并设
+  `RUSTDOCFLAGS: -D warnings`（三平台矩阵内执行）——把 rustdoc 警告变成 CI 失败条件。
+- 开启该检查后立即发现两处未解析 intra-doc 链接（`sii::category` 模块文档里的
+  `[SIM_FMMU_USAGE]`、`[SiiDc]`）；改为普通代码引用后 `cargo doc` 0 警告。
+
+**验证结果**
+- 本机：`RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps` **exit 0**；
+  `cargo fmt --check`、clippy 通过；`cargo test --workspace` **208 passed**
+  （esc-core 86 / esc-node 70 / plugin-host 27 + 2 集成 / wire 23）。
+- CI 工作流改动只加一步，本地等价命令已验证。
+
+**卡点**
+- 远程 CI 运行结果需 push 后在 GitHub 查看（本轮未等待远端结果）。
+
+**下次开工第一件事**
+- B11：继续找 SV660N 默认 PDO 条目；或评估真实 DC 同步（SYNC0 脉冲）。
+
+---
+
 ## 2026-11-13 03:32 班（低峰）— B11：**`0x6502`（Supported drive modes）与各画像布局一致**
 
 **做了什么**

@@ -36,3 +36,8 @@ jobs:
 
       - name: cargo test
         run: cargo test --workspace
+
+      - name: cargo doc（rustdoc 警告视为错误）
+        run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
