@@ -245,7 +245,7 @@ user.email = deepseek-harness@users.noreply.github.com
     ⚠️ 已支持"重发上一段"的幂等（2026-11-13 01:21 班：缓存最近一段响应/toggle；更早的段仍 Abort）。
   - 进度（2026-11-13 01:26 班）：**重发容错端到端验证**——合成主站 `--sdo-retransmit`：
     先 CA 多段写 140B，再分段上传并在首段重复同一 toggle 请求，断言响应逐字节相同、
-    回读一致；验证机 `sdo-ca-probe.sh` 四模式 **EXIT=0**。（同步验证记录���WORKLOG）
+    回读一致；验证机 `sdo-ca-probe.sh` 四模式 **EXIT=0**（详见 WORKLOG 同班条目）。
   - 进度（2026-11-13 00:50 班）：**CA 分段下载端到端验证通过**——UDS 合成主站新增
     `--sdo-ca-download-multi`（140 字节对象：0x31 首帧 112 + 0x20|toggle|last 4 段，
     再用 CA 分段上传回读比对）；`sdo-ca-probe.sh` 第三个模式用
