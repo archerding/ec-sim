@@ -338,6 +338,20 @@ fn serve_http(
 }
 
 #[cfg(target_os = "linux")]
+fn pdo_layout(
+    manifest: &Option<plugin_host::manifest::PluginManifest>,
+    dir: &str,
+    default_address: u16,
+    default_len: usize,
+) -> (u16, usize) {
+    manifest
+        .as_ref()
+        .and_then(|manifest| manifest.sm.iter().find(|sm| sm.dir == dir))
+        .map(|sm| (sm.start, usize::from(sm.len)))
+        .unwrap_or((default_address, default_len))
+}
+
+#[cfg(target_os = "linux")]
 fn serve_live_http(
     addr: String,
     manifest: Option<plugin_host::manifest::PluginManifest>,
@@ -422,7 +436,32 @@ fn serve_live_http(
                 None => "{\"schema\": \"ec-sim/state-v1\", \"live\": null}".to_string(),
             }
         };
-        let response = control_plane::handle_get(path, &state, dict_json.as_deref());
+        let pdo_response = if path.split('?').next() == Some("/pdo") {
+            let guard = responders.lock().unwrap();
+            guard.first().map(|responder| {
+                let (sm2_address, sm2_len) = pdo_layout(&manifest, "out", 0x1100, 2);
+                let (sm3_address, sm3_len) = pdo_layout(&manifest, "in", 0x1110, 2);
+                let pdo = control_plane::PdoSnapshot {
+                    station_address: responder.station_address(),
+                    al_status: responder.al_status(),
+                    sm2_address,
+                    sm2_bytes: responder.read_process_data(sm2_address, sm2_len),
+                    sm3_address,
+                    sm3_bytes: responder.read_process_data(sm3_address, sm3_len),
+                };
+                control_plane::pdo_json(&pdo)
+            })
+        } else {
+            None
+        };
+        let response = match pdo_response {
+            Some(body) => control_plane::HttpResponse {
+                status_line: "HTTP/1.1 200 OK",
+                content_type: "application/json; charset=utf-8",
+                body,
+            },
+            None => control_plane::handle_get(path, &state, dict_json.as_deref()),
+        };
         let headers = format!(
             "{}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: {}\r\nConnection: close\r\n\r\n",
             response.status_line,

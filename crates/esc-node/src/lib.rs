@@ -473,6 +473,14 @@ impl Responder {
         self.dc_time_ns
     }
 
+    /// 读取 DL 用户内存/过程数据（只读快照，供控制面/WebUI 使用；越界补 0）。
+    #[must_use]
+    pub fn read_process_data(&self, address: u16, len: usize) -> Vec<u8> {
+        self.memory
+            .read(address, len)
+            .unwrap_or_else(|| vec![0u8; len])
+    }
+
     /// 帧驱动时钟 tick：由线缆层每收到一帧调用一次（TAP/UDS 均如此）。
     ///
     /// 检查 SM 过程数据看门狗：任一过程数据 SM（SM2/SM3）已激活、control bit6 = 1 且

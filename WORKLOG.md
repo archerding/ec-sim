@@ -1,5 +1,34 @@
 ---
 
+## 2026-11-13 05:53 班（低峰）— **B23：`--serve` 实时 PDO 快照（/pdo）+ Web PDO 视图**
+
+**做了什么**
+- `--serve` 实时模式新增 **`GET /pdo`**（pdo-v1）：站地址/AL 状态/SM2、SM3 地址与原始字节/hex；
+  默认 0x1100/0x1110（2 字节），有 manifest 时按 `sm.dir=out/in` 的 start/len 读取。
+- `control-plane` 新增 `PdoSnapshot` + `pdo_json`（手写序列化，无依赖）+ 1 个单元测试（共 7 个）。
+- `Responder` 新增 `read_process_data(address, len)`（`DlUserMemory` 只读快照；越界补 0）。
+- `web/app.js` 重写为支持 state-v1 / dict-v1 / pdo-v1 三类输入：新增 PDO 表格（hex + u16 小端解码）；
+  API 载入与实时轮询同时拉取 `/pdo`。
+- 新增 `scripts/spikes/pdo-live-probe.sh`：初始 `/pdo` 全 0、AL=0x01；UDS APWR 写
+  0x1100=0xBEEF、0x1110=0x1234 后轮询 `/pdo` 断言 hex 变化。
+- 更新 `docs/VERIFICATION.md`、`docs/STATUS.md` 快速开始、AGENTS（B23 完成、新增 B24 TAP 实时模式）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **217 passed**
+  （control-plane 7 / esc-core 86 / esc-node 71 / plugin-host 27+3 / wire 23）；`node --check web/app.js` 通过。
+- 验证机：重建后 `pdo-live-probe.sh` **EXIT=0**（初始 sm2/sm3=`0000`；写后 `beef`/`1234`）；
+  `live-state-probe.sh` 仍 **EXIT=0**（AL 0x02、frames_in=1）。
+
+**卡点**
+- 实时 `--serve` 仍仅 UDS；TAP 实时模式未实现（B24）；PDO 为当前值，无历史缓冲/波形。
+
+**下次开工第一件事**
+- **B24**：TAP 实时 `--serve`（共享 `Arc<Mutex<Responder>>` + HTTP 线程），探针用 TAP + SOEM
+  流程后校验 `/state`/`/pdo` 实时值（TAP 需 root，在验证机执行）。
+
+---
+---
+
 ## 2026-11-13 05:46 班（低峰）— **B22：`--serve` 实时状态模式（UDS + HTTP 同进程）**
 
 **做了什么**

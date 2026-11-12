@@ -339,6 +339,44 @@ pub fn live_state_json(
     out
 }
 
+/// 过程数据（PDO）只读快照（SM2 输出 / SM3 输入）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PdoSnapshot {
+    /// 配置站地址。
+    pub station_address: u16,
+    /// AL Status（0x0130）。
+    pub al_status: u8,
+    /// SM2（RxPDO）物理地址。
+    pub sm2_address: u16,
+    /// SM2 原始字节。
+    pub sm2_bytes: Vec<u8>,
+    /// SM3（TxPDO）物理地址。
+    pub sm3_address: u16,
+    /// SM3 原始字节。
+    pub sm3_bytes: Vec<u8>,
+}
+
+fn hex_bytes(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// 生成 `pdo-v1` JSON：SM2/SM3 过程数据原始字节（含地址/长度/hex）。
+#[must_use]
+pub fn pdo_json(pdo: &PdoSnapshot) -> String {
+    format!(
+        "{{\n  \"schema\": \"ec-sim/pdo-v1\",\n  \"tool\": \"ec-sim-esc {}\",\n  \"station_address\": \"0x{:04X}\",\n  \"al_status\": \"0x{:02X}\",\n  \"sm2\": {{\"address\": \"0x{:04X}\", \"bytes\": {}, \"hex\": \"{}\"}},\n  \"sm3\": {{\"address\": \"0x{:04X}\", \"bytes\": {}, \"hex\": \"{}\"}}\n}}",
+        TOOL_VERSION,
+        pdo.station_address,
+        pdo.al_status,
+        pdo.sm2_address,
+        pdo.sm2_bytes.len(),
+        hex_bytes(&pdo.sm2_bytes),
+        pdo.sm3_address,
+        pdo.sm3_bytes.len(),
+        hex_bytes(&pdo.sm3_bytes)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -396,6 +434,27 @@ mod tests {
         assert!(json.contains("\"dc_reg_writes\": 4"));
         assert!(json.trim_end().ends_with('}'));
     }
+    #[test]
+    fn pdo_json_serializes_sm2_and_sm3() {
+        let pdo = PdoSnapshot {
+            station_address: 0x1001,
+            al_status: 0x02,
+            sm2_address: 0x1100,
+            sm2_bytes: vec![0xde, 0xad, 0xbe, 0xef],
+            sm3_address: 0x1110,
+            sm3_bytes: vec![0x00, 0x01],
+        };
+        let json = pdo_json(&pdo);
+        assert!(json.contains("\"schema\": \"ec-sim/pdo-v1\""));
+        assert!(json
+            .contains("\"sm2\": {\"address\": \"0x1100\", \"bytes\": 4, \"hex\": \"deadbeef\"}"));
+        assert!(
+            json.contains("\"sm3\": {\"address\": \"0x1110\", \"bytes\": 2, \"hex\": \"0001\"}")
+        );
+        assert!(json.contains("\"al_status\": \"0x02\""));
+        assert!(json.trim_end().ends_with('}'));
+    }
+
     #[test]
     fn routes_are_registered_and_dispatch() {
         assert_eq!(

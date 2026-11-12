@@ -1,7 +1,8 @@
-// EC-Sim 只读状态视图（M2 起点）：仅原生 JS，无第三方依赖。
-// 支持两类输入（也可同时载入，先状态后字典）：
-//   - `ec-sim-esc --dump-state` 的 state-v1 JSON；
-//   - `ec-sim-esc --dump-dict --json` 的 dict-v1 JSON。
+// EC-Sim 只读视图（M2 起点）：仅原生 JS，无第三方依赖。
+// 支持四类输入（可分别/同时载入）：
+//   - `ec-sim-esc --dump-state` 的 state-v1 JSON（实时模式下含 live 字段）；
+//   - `ec-sim-esc --dump-dict --json` 的 dict-v1 JSON；
+//   - `ec-sim-esc --serve` 实时模式的 `/pdo` 的 pdo-v1 JSON。
 "use strict";
 
 const app = document.getElementById("app");
@@ -9,6 +10,9 @@ const message = document.getElementById("message");
 
 let currentState = null;
 let currentDict = null;
+let currentPdo = null;
+let liveTimer = null;
+let liveBase = "";
 
 function el(tag, attrs, ...children) {
   const node = document.createElement(tag);
@@ -47,10 +51,7 @@ function kvGrid(pairs) {
 }
 
 function renderState(state) {
-  if (state.schema !== "ec-sim/state-v1") {
-    app.append(section("状态", el("div", { class: "error" }, `未知 schema：${state.schema}`)));
-    return;
-  }
+  if (state.schema !== "ec-sim/state-v1") return;
   const identity = state.identity || {};
   app.append(
     section(
@@ -81,6 +82,26 @@ function renderState(state) {
       ),
     ),
   );
+
+  if (state.live) {
+    const live = state.live;
+    app.append(
+      section(
+        "实时状态（--serve 实时模式）",
+        kvGrid([
+          ["站地址", live.station_address],
+          ["AL 状态", `${live.al_status}${live.al_status_code !== "0x0000" ? ` / ${live.al_status_code}` : ""}`],
+          ["DC 模拟时间", `${live.dc_time_ns} ns`],
+          ["收/发帧", `${live.stats.frames_in} / ${live.stats.frames_out}`],
+          ["丢弃帧", live.stats.frames_dropped],
+          ["datagram 命中", live.stats.datagrams_hit],
+          ["邮箱请求/响应", `${live.stats.mailbox_requests} / ${live.stats.mailbox_responses}`],
+          ["DC 寄存器读/写", `${live.stats.dc_reg_reads} / ${live.stats.dc_reg_writes}`],
+        ]),
+        el("p", { class: "sub" }, "只读快照；AL 状态码为 0x0000 时省略显示。"),
+      ),
+    );
+  }
 
   const smRows = (state.sync_managers || []).map((sm, index) => [
     index,
@@ -132,10 +153,7 @@ function hexToBigEndian(hex) {
 }
 
 function renderDict(dict) {
-  if (dict.schema !== "ec-sim/dict-v1") {
-    app.append(section("对象字典", el("div", { class: "error" }, `未知 schema：${dict.schema}`)));
-    return;
-  }
+  if (dict.schema !== "ec-sim/dict-v1") return;
   const rows = [];
   for (const object of dict.objects || []) {
     if (!object.entries || object.entries.length === 0) {
@@ -167,15 +185,53 @@ function renderDict(dict) {
   );
 }
 
+function decodeU16(hex) {
+  if (!hex) return "-";
+  const bytes = hex.match(/../g) || [];
+  const words = [];
+  for (let i = 0; i + 1 < bytes.length; i += 2) {
+    words.push("0x" + bytes[i + 1] + bytes[i]);
+  }
+  return words.join(" ") || "-";
+}
+
+function renderPdo(pdo) {
+  if (pdo.schema !== "ec-sim/pdo-v1") return;
+  const rows = [];
+  for (const [label, key] of [
+    ["SM2（RxPDO / 输出）", "sm2"],
+    ["SM3（TxPDO / 输入）", "sm3"],
+  ]) {
+    const item = pdo[key];
+    rows.push([label, item.address, String(item.bytes), item.hex || "-", decodeU16(item.hex)]);
+  }
+  app.append(
+    section(
+      "过程数据（PDO，只读快照）",
+      el(
+        "p",
+        { class: "sub" },
+        `站地址 ${pdo.station_address} / AL ${pdo.al_status}；hex 为小端原始字节，右侧为按 u16 小端解码。`,
+      ),
+      table(["方向", "地址", "字节数", "hex", "u16 解码"], rows),
+    ),
+  );
+}
+
 function renderAll() {
   app.replaceChildren();
   if (currentState) renderState(currentState);
+  if (currentPdo) renderPdo(currentPdo);
   if (currentDict) renderDict(currentDict);
-  if (!currentState && !currentDict) {
+  if (!currentState && !currentDict && !currentPdo) {
     app.append(
       section(
         "载入状态",
-        el("p", { class: "sub" }, "请选择 --dump-state / --dump-dict --json 生成的 JSON（可分别载入，先状态后字典）。"),
+        el(
+          "p",
+          { class: "sub" },
+          "请选择 --dump-state / --dump-dict --json 生成的 JSON，或使用上方只读 API（--serve）。",
+        ),
       ),
     );
   }
@@ -187,12 +243,35 @@ function loadJson(text, source) {
     const data = JSON.parse(text);
     if (data.schema === "ec-sim/state-v1") currentState = data;
     else if (data.schema === "ec-sim/dict-v1") currentDict = data;
+    else if (data.schema === "ec-sim/pdo-v1") currentPdo = data;
     else throw new Error(`未知 schema：${data.schema}`);
     message.textContent = `已载入：${source}`;
     renderAll();
   } catch (error) {
     message.textContent = `解析失败：${error.message}`;
   }
+}
+
+function stopLive() {
+  if (liveTimer) {
+    clearInterval(liveTimer);
+    liveTimer = null;
+  }
+}
+
+function startLive() {
+  stopLive();
+  if (!liveBase) return;
+  liveTimer = setInterval(async () => {
+    try {
+      const stateResponse = await fetch(`${liveBase}/state`);
+      if (stateResponse.ok) loadJson(await stateResponse.text(), `${liveBase}/state (live)`);
+      const pdoResponse = await fetch(`${liveBase}/pdo`);
+      if (pdoResponse.ok) loadJson(await pdoResponse.text(), `${liveBase}/pdo (live)`);
+    } catch (error) {
+      message.textContent = `实时刷新失败：${error.message}`;
+    }
+  }, 1000);
 }
 
 document.getElementById("file").addEventListener("change", async (event) => {
@@ -207,7 +286,7 @@ function tryFetchJson(name) {
     .catch(() => {});
 }
 
-// 从只读 HTTP API（`ec-sim-esc --serve`）载入 /state 与 /dict。
+// 从只读 HTTP API（`ec-sim-esc --serve`）载入 /state、/dict 与 /pdo。
 document.getElementById("load-api").addEventListener("click", async () => {
   const base = (document.getElementById("api").value || "").replace(/\/+$/, "");
   try {
@@ -216,6 +295,8 @@ document.getElementById("load-api").addEventListener("click", async () => {
     loadJson(await stateResponse.text(), `${base}/state`);
     const dictResponse = await fetch(`${base}/dict`);
     if (dictResponse.ok) loadJson(await dictResponse.text(), `${base}/dict`);
+    const pdoResponse = await fetch(`${base}/pdo`);
+    if (pdoResponse.ok) loadJson(await pdoResponse.text(), `${base}/pdo`);
     liveBase = base;
     if (document.getElementById("live").checked) startLive();
   } catch (error) {
@@ -223,11 +304,11 @@ document.getElementById("load-api").addEventListener("click", async () => {
   }
 });
 
-// 静态服务下尝试自动读取同目录 state.json / dict.json；file:// 下会失败，忽略即可。
-Promise.all([tryFetchJson("state.json"), tryFetchJson("dict.json")]).then(() => {
-  if (!currentState && !currentDict) {
+// 静态服务下尝试自动读取同目录 state.json / dict.json / pdo.json；file:// 下会失败，忽略即可。
+Promise.all([tryFetchJson("state.json"), tryFetchJson("dict.json"), tryFetchJson("pdo.json")]).then(() => {
+  if (!currentState && !currentDict && !currentPdo) {
     message.textContent =
-      "请选择 --dump-state（state-v1）或 --dump-dict --json（dict-v1）生成的 JSON，或放置 web/state.json、web/dict.json。";
+      "请选择 --dump-state / --dump-dict --json 生成的 JSON，或使用只读 API（--serve）。";
     renderAll();
   }
 });
