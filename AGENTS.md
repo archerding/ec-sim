@@ -253,8 +253,13 @@ user.email = deepseek-harness@users.noreply.github.com
     写状态字 `0x6041`）。验证机 `scripts/spikes/cia402-behavior-probe.sh` **EXIT=0**：
     合成主站断言 `0x0006→0x0221`、`0x0007→0x0223`、`0x000F→0x0237`、回 `0x0240`；
     同时 UDS 原套件继续通过。测试 **159 passed**。⚠️ 一帧延迟、只写状态字 2 字节。
-  - 待做：派生 Inovance SV660N 兼容画像（公开手册默认 PDO/对象）；行为扩展为完整
-    7 字节 TxPDO（状态字+modes display+position actual）；IgH ecrt OP 夹具。
+  - 进度（2026-11-12 23:26 班）：**行为扩展为完整 7 字节 RxPDO/TxPDO**——SM2 解析
+    `0x6040`+`0x6060`+`0x607A`，SM3 写 `0x6041`+`0x6061`+`0x6064`；Tier0 简化：Operation
+    enabled 时实际位置跟随目标并置 Target reached，禁用后保持；SM 长度 <7 退化为状态字。
+    验证机 `cia402-behavior-probe.sh` **EXIT=0**（`10/7B` 布局、`0x000F→0x0637`、模式显示 8、
+    位置 1000）；测试 **160 passed**。⚠️ 无运动环/模式切换/Ti 时序。
+  - 待做：派生 Inovance SV660N 兼容画像（公开手册默认 PDO/对象）；模式切换/错误码注入；
+    IgH ecrt OP 夹具。
 - [x] ~~**B8 双主站冒烟**~~ ✅ **2026-11-12 19:56 班完成（单从站 8 位 I/O 画像）**：
   **未修改的 SOEM 与 IgH 都在本模拟器上看到从站进入 OP**，输出可复现脚本见
   [spike-4](docs/spikes/spike-4-dual-master-op.md)：

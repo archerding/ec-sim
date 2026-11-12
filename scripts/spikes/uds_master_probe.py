@@ -272,24 +272,34 @@ def main():
                 check(text == expect_string, f"SDO 分段读取 {text!r} != 期望 {expect_string!r}")
             print(f"OK: segmented SDO 读到 0x1008 = {text!r}（{len(value)} 字节）")
 
-        # 5c) 可选：CiA 402 状态机行为（SM2 控制字 → SM3 状态字，Tier0）。
+        # 5c) 可选：CiA 402 状态机行为（完整 7 字节 RxPDO/TxPDO，Tier0）。
         if cia402:
+            # (controlword, mode, target, 期望状态字, 期望实际位置)
             sequence = [
-                (0x0000, 0x0240),  # 初始：Switch on disabled
-                (0x0006, 0x0221),  # Shutdown → Ready to switch on
-                (0x0007, 0x0223),  # Switch on → Switched on
-                (0x000F, 0x0237),  # Enable operation → Operation enabled
-                (0x0000, 0x0240),  # Disable voltage → Switch on disabled
+                (0x0000, 8, 1000, 0x0240, 0),      # Switch on disabled，位置 0
+                (0x0006, 8, 1000, 0x0221, 0),      # Shutdown → Ready
+                (0x0007, 8, 1000, 0x0223, 0),      # Switch on → Switched on
+                (0x000F, 8, 1000, 0x0237 | 0x0400, 1000),  # Enable op → Operation enabled + Target reached
+                (0x0000, 8, 1000, 0x0240, 1000),   # Disable voltage，位置保持
             ]
-            for controlword, expected in sequence:
-                master.transact([(CMD["APWR"], 0, 0x1100, struct.pack("<H", controlword))])
-                reply = master.transact([(CMD["APRD"], 0, 0x1110, b"\x00\x00")])
-                status = struct.unpack("<H", reply[0][3][:2])[0]
+            for controlword, mode, target, expected_sw, expected_pos in sequence:
+                rx = struct.pack("<Hbi", controlword, mode, target)
+                master.transact([(CMD["APWR"], 0, 0x1100, rx)])
+                reply = master.transact([(CMD["APRD"], 0, 0x1110, bytes(7))])
+                status, modes_display, position = struct.unpack("<Hbi", reply[0][3][:7])
                 check(
-                    status == expected,
-                    f"CiA402 cw={controlword:#06x} → sw={status:#06x}，期望 {expected:#06x}",
+                    status == expected_sw,
+                    f"CiA402 cw={controlword:#06x} → sw={status:#06x}，期望 {expected_sw:#06x}",
                 )
-            print("OK: CiA 402 行为：控制字→状态字序列通过（0x0006→0x0221、0x0007→0x0223、0x000F→0x0237）")
+                check(
+                    modes_display == mode,
+                    f"CiA402 模式显示 {modes_display} != 模式 {mode}",
+                )
+                check(
+                    position == expected_pos,
+                    f"CiA402 实际位置 {position} != 期望 {expected_pos}",
+                )
+            print("OK: CiA 402 行为：完整 7 字节 RxPDO/TxPDO 序列通过（状态字/模式显示/实际位置）")
 
         # 6) ESM 迁移 + SM 过程数据看门狗（B5 子项）。
         #    默认（模拟器默认开启前置条件检查）：先验证拒绝路径（SM 未配置 → 0x0015 / 0x0017），

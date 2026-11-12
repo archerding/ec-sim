@@ -130,8 +130,16 @@ struct Cia402Behavior {
     machine: crate::cia402::Cia402StateMachine,
     /// SM2（RxPDO）在 DL 用户内存中的起始地址；前 2 字节为控制字 `0x6040`。
     out_offset: u16,
+    /// SM2 长度（>=7 时按完整 RxPDO 解析：控制字 + 模式 + 目标位置）。
+    out_len: u16,
     /// SM3（TxPDO）在 DL 用户内存中的起始地址；前 2 字节为状态字 `0x6041`。
     in_offset: u16,
+    /// SM3 长度（>=7 时按完整 TxPDO 写入：状态字 + 模式显示 + 实际位置）。
+    in_len: u16,
+    /// Tier0 简化：Operation enabled 时实际位置直接跟随目标位置（无运动环）。
+    position_actual: i32,
+    /// 模式显示 `0x6061`（镜像最近一次 RxPDO 中的模式 `0x6060`）。
+    modes_display: i8,
 }
 
 /// 单从站最小 ESC 应答器。
@@ -240,11 +248,21 @@ impl Responder {
     /// [Responder::tick] 中执行（每收到一帧前），因此主站读到的是**上一帧**写入
     /// 控制字对应的状态字（一帧延迟，Tier0 简化）。
     #[must_use]
-    pub fn with_cia402_behavior(mut self, out_offset: u16, in_offset: u16) -> Self {
+    pub fn with_cia402_behavior(
+        mut self,
+        out_offset: u16,
+        out_len: u16,
+        in_offset: u16,
+        in_len: u16,
+    ) -> Self {
         self.cia402 = Some(Cia402Behavior {
             machine: crate::cia402::Cia402StateMachine::new(),
             out_offset,
+            out_len,
             in_offset,
+            in_len,
+            position_actual: 0,
+            modes_display: 0,
         });
         self
     }
@@ -257,18 +275,51 @@ impl Responder {
             .map(|behavior| behavior.machine.state())
     }
 
-    /// 执行 CiA 402 行为（如果启用）：读 SM2 控制字 → 状态机 → 写 SM3 状态字。
+    /// 执行 CiA 402 行为（如果启用）：读 SM2（控制字/模式/目标位置）→ 状态机 →
+    /// 写 SM3（状态字/模式显示/实际位置）。
+    ///
+    /// Tier0 简化：Operation enabled 时实际位置直接跟随目标位置（无运动环/限幅），
+    /// 并置状态字 bit10 Target reached；SM 长度不足 7 字节时只处理/写状态字 2 字节。
     fn step_cia402_behavior(&mut self) {
+        use crate::cia402::{statusword::TARGET_REACHED, Cia402State};
+
         let Responder { cia402, memory, .. } = self;
         let Some(behavior) = cia402.as_mut() else {
             return;
         };
-        let Some(out_bytes) = memory.read(behavior.out_offset, 2) else {
+        let out_len = usize::from(behavior.out_len.max(2));
+        let Some(out_bytes) = memory.read(behavior.out_offset, out_len) else {
             return;
         };
         let controlword = u16::from_le_bytes([out_bytes[0], out_bytes[1]]);
-        let statusword = behavior.machine.update(controlword);
-        memory.write(behavior.in_offset, &statusword.to_le_bytes());
+        let mut modes = behavior.modes_display;
+        let mut target = behavior.position_actual;
+        if out_bytes.len() >= 7 {
+            modes = out_bytes[2] as i8;
+            target = i32::from_le_bytes([out_bytes[3], out_bytes[4], out_bytes[5], out_bytes[6]]);
+        }
+        let mut statusword = behavior.machine.update(controlword);
+        let enabled = behavior.machine.state() == Cia402State::OperationEnabled;
+        if enabled {
+            behavior.position_actual = target;
+        }
+        if out_bytes.len() >= 7
+            && usize::from(behavior.in_len) >= 7
+            && enabled
+            && behavior.position_actual == target
+        {
+            statusword |= TARGET_REACHED;
+        }
+        behavior.modes_display = modes;
+        if usize::from(behavior.in_len) >= 7 {
+            let mut tx = [0u8; 7];
+            tx[0..2].copy_from_slice(&statusword.to_le_bytes());
+            tx[2] = modes as u8;
+            tx[3..7].copy_from_slice(&behavior.position_actual.to_le_bytes());
+            memory.write(behavior.in_offset, &tx);
+        } else {
+            memory.write(behavior.in_offset, &statusword.to_le_bytes());
+        }
     }
 
     /// 统计快照。
@@ -878,7 +929,7 @@ mod tests {
             u16::from_le_bytes([data[0], data[1]])
         }
 
-        let mut responder = Responder::default().with_cia402_behavior(0x1100, 0x1110);
+        let mut responder = Responder::default().with_cia402_behavior(0x1100, 2, 0x1110, 2);
         assert_eq!(
             responder.cia402_state(),
             Some(Cia402State::SwitchOnDisabled)
@@ -908,6 +959,79 @@ mod tests {
         write_controlword(&mut responder, 0x0000);
         responder.tick(5);
         assert_eq!(read_statusword(&mut responder), 0x0240);
+    }
+
+    #[test]
+    fn cia402_behavior_drives_full_txpdo_when_sms_are_long_enough() {
+        fn write_rx(responder: &mut Responder, controlword: u16, mode: i8, target: i32) {
+            let mut data = Vec::with_capacity(7);
+            data.extend_from_slice(&controlword.to_le_bytes());
+            data.push(mode as u8);
+            data.extend_from_slice(&target.to_le_bytes());
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Apwr,
+                1,
+                0,
+                0x1100,
+                data,
+            )]);
+            responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APWR reply");
+        }
+        fn read_tx(responder: &mut Responder) -> (u16, i8, i32) {
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Aprd,
+                1,
+                0,
+                0x1110,
+                vec![0u8; 7],
+            )]);
+            let reply = responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APRD reply");
+            let start = ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10;
+            let statusword = u16::from_le_bytes([reply[start], reply[start + 1]]);
+            let modes_display = reply[start + 2] as i8;
+            let position = i32::from_le_bytes([
+                reply[start + 3],
+                reply[start + 4],
+                reply[start + 5],
+                reply[start + 6],
+            ]);
+            (statusword, modes_display, position)
+        }
+
+        let mut responder = Responder::default().with_cia402_behavior(0x1100, 7, 0x1110, 7);
+        write_rx(&mut responder, 0x0000, 8, 1000);
+        responder.tick(1);
+        assert_eq!(read_tx(&mut responder), (0x0240, 8, 0), "初始位置为 0");
+
+        write_rx(&mut responder, 0x0006, 8, 1000);
+        responder.tick(2);
+        assert_eq!(read_tx(&mut responder), (0x0221, 8, 0));
+
+        write_rx(&mut responder, 0x0007, 8, 1000);
+        responder.tick(3);
+        assert_eq!(read_tx(&mut responder), (0x0223, 8, 0));
+
+        // Operation enabled + CSP 模式 8 + 目标 1000：位置跟随并置 Target reached(bit10)。
+        write_rx(&mut responder, 0x000F, 8, 1000);
+        responder.tick(4);
+        assert_eq!(
+            read_tx(&mut responder),
+            (0x0237 | 0x0400, 8, 1000),
+            "完整 TxPDO：状态字 + 模式显示 + 实际位置"
+        );
+        assert_eq!(
+            responder.cia402_state(),
+            Some(crate::cia402::Cia402State::OperationEnabled)
+        );
+
+        // Disable voltage：位置保持最后值。
+        write_rx(&mut responder, 0x0000, 8, 1000);
+        responder.tick(5);
+        assert_eq!(read_tx(&mut responder), (0x0240, 8, 1000));
     }
 
     #[test]

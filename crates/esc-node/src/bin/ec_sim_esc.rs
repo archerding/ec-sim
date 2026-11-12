@@ -200,25 +200,26 @@ fn build_responder(
         }
         (None, None) => esc_node::Responder::default(),
     };
-    // Tier0 行为插件：`--behavior cia402` 时启用控制字 → 状态字状态机。
+    // Tier0 行为插件：`--behavior cia402` 时启用控制字 → 状态字状态机（SM 长度 >=7
+    // 时同时处理完整 RxPDO/TxPDO：模式与目标/实际位置）。
     let responder = if behavior == Some("cia402") {
-        let (out_offset, in_offset) = match manifest {
-            Some(manifest) => (
-                manifest
-                    .sm
-                    .iter()
-                    .find(|sm| sm.dir == "out")
-                    .map_or(0x1100, |sm| sm.start),
-                manifest
-                    .sm
-                    .iter()
-                    .find(|sm| sm.dir == "in")
-                    .map_or(0x1110, |sm| sm.start),
-            ),
-            None => (0x1100, 0x1110),
+        let (out_offset, out_len, in_offset, in_len) = match manifest {
+            Some(manifest) => {
+                let out = manifest.sm.iter().find(|sm| sm.dir == "out");
+                let input = manifest.sm.iter().find(|sm| sm.dir == "in");
+                (
+                    out.map_or(0x1100, |sm| sm.start),
+                    out.map_or(2, |sm| sm.len),
+                    input.map_or(0x1110, |sm| sm.start),
+                    input.map_or(2, |sm| sm.len),
+                )
+            }
+            None => (0x1100, 2, 0x1110, 2),
         };
-        println!("BEHAVIOR cia402 sm2_out=0x{out_offset:04X} sm3_in=0x{in_offset:04X}");
-        responder.with_cia402_behavior(out_offset, in_offset)
+        println!(
+            "BEHAVIOR cia402 sm2_out=0x{out_offset:04X}/{out_len}B sm3_in=0x{in_offset:04X}/{in_len}B"
+        );
+        responder.with_cia402_behavior(out_offset, out_len, in_offset, in_len)
     } else {
         responder
     };

@@ -6,6 +6,43 @@
 
 ---
 
+## 2026-11-12 23:26 班（低峰）— B11 第四步：CiA 402 行为扩展为**完整 7 字节 RxPDO/TxPDO**
+
+**做了什么**
+- `esc-node` 的 CiA 402 行为从"只读写状态字 2 字节"扩展为完整 PDO（SM 长度 ≥7 时）：
+  - RxPDO（SM2）：`0x6040` 控制字（u16）+ `0x6060` 模式（i8）+ `0x607A` 目标位置（i32）；
+  - TxPDO（SM3）：`0x6041` 状态字（u16）+ `0x6061` 模式显示（i8，镜像 `0x6060`）+
+    `0x6064` 实际位置（i32）；
+  - Tier0 简化：`Operation enabled` 时实际位置直接跟随目标位置并置 bit10
+    `Target reached`；禁用电压后保持最后位置；SM 长度 <7 时退化为只读写状态字（兼容
+    8DO 等非伺服画像）。
+- `with_cia402_behavior(out_offset, out_len, in_offset, in_len)`（参数增加长度）；
+  `ec-sim-esc --behavior cia402` 按 manifest SM 长度打印
+  `BEHAVIOR cia402 sm2_out=0x1100/7B sm3_in=0x1110/7B`。
+- 合成主站 `--cia402` 断言升级为完整 7 字节序列（状态字/模式显示/实际位置）；
+  新增单测 `cia402_behavior_drives_full_txpdo_when_sms_are_long_enough`。
+- `docs/plugins/cia402-state-machine.md` 增加"完整 7 字节 PDO"说明。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **160 passed**（esc-core 76 / esc-node 46 / plugin-host 21 + 1 集成 / wire 16）。
+- Linux 验证机：`bash scripts/spikes/cia402-behavior-probe.sh` → **EXIT=0**：
+  - `BEHAVIOR cia402 sm2_out=0x1100/7B sm3_in=0x1110/7B`；
+  - 完整序列通过：`0x0006→0x0221`、`0x0007→0x0223`、`0x000F→0x0637`（含 Target
+    reached）、`0x0000→0x0240`；模式显示 8、实际位置 0→1000→保持 1000；
+  - 原 UDS 套件（BRD/APRD/APWR/FPRD/M 位、SM watchdog、ESM 前置条件）继续通过。
+
+**卡点**
+- 行为仍是 **Tier0 简化**：位置无运动环/限幅/编码器模型；未实现模式切换（CSP/CSV/CST）
+  与 Ti=0/1 时序；`0x603F` 错误码、fault reset 上升沿仍未触发；一帧延迟仍在。
+- 只处理 7 字节固定布局（未按 PDO 映射动态解析），扩展其它布局需后续工作。
+
+**下次开工第一件事**
+- 派生 **Inovance SV660N 兼容画像**（公开手册默认 PDO/对象，仍用我方 VID/PID），或在
+  行为里加入模式切换/错误码注入；IgH ecrt OP 夹具。
+
+---
+
 ## 2026-11-12 23:20 班（低峰）— B11 第三步：**CiA 402 状态机接入运行时过程数据**（`--behavior cia402`）
 
 **做了什么**
