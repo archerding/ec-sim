@@ -52,6 +52,7 @@
 | `igh-cia402-op-probe.sh` | IgH ecrt 7B CiA402：OP + 状态字/模式/位置 | **EXIT=0** |
 | `igh-cia402-csv-op-probe.sh` | IgH ecrt 11B CSV：OP + 速度模式位置累加/速度显示 | **EXIT=0** |
 | `uds-multi-slave-probe.sh` | `--slaves 8` 多从站链：广播 WKC=8、逐站地址分配、配置地址寻址 | **EXIT=0** |
+| `slave-select-probe.sh` | 逐站 `/state?slave=N`、`/pdo?slave=N`：N=1（站地址 0x0002/SM2=beef）、N=0（SM2=0000，默认同旧行为）、越界/非法 slave → 404 | **EXIT=0** |
 | `topology-probe.sh` | `/topology`：`--slaves 3` 时 count=3、初始 AL=0x01/地址 0；链上按位置配置地址 1/2/3 并写第 2 站 SM2=0xBEEF 后摘要正确（其余 0000） | **EXIT=0** |
 | `pdo-decode-probe.sh` | `/pdo` 具名解码：CST 5B 布局写入后 decoded 6 项（0x6040=15、0x6060=8、0x6071=300、0x6041=0x237、0x6061=8、0x6077=-100），名称来自字典 | **EXIT=0** |
 | `pdo-history-probe.sh` | `/pdo?history=1`：去重采样（无变化不增长）、写 0xBEEF→0x1234 后 count 递增且最后一条匹配、上限 256 | **EXIT=0** |

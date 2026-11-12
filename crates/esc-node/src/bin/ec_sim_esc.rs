@@ -342,6 +342,18 @@ fn serve_http(
 }
 
 #[cfg(target_os = "linux")]
+fn query_param<'a>(path: &'a str, name: &str) -> Option<&'a str> {
+    let query = path.split_once('?')?.1;
+    for pair in query.split('&') {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        if key == name {
+            return Some(value);
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "linux")]
 fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
@@ -400,8 +412,11 @@ fn serve_live_http(
         },
         None => (None, None, None, None),
     };
-    let mut history: std::collections::VecDeque<control_plane::PdoSnapshot> =
-        std::collections::VecDeque::with_capacity(PDO_HISTORY_CAPACITY);
+    let slave_count = responders.lock().unwrap().len();
+    let mut histories: Vec<std::collections::VecDeque<control_plane::PdoSnapshot>> = (0
+        ..slave_count)
+        .map(|_| std::collections::VecDeque::with_capacity(PDO_HISTORY_CAPACITY))
+        .collect();
     let listener = match TcpListener::bind(&addr) {
         Ok(listener) => listener,
         Err(err) => {
@@ -424,9 +439,21 @@ fn serve_live_http(
             .next()
             .and_then(|line| line.split_whitespace().nth(1))
             .unwrap_or("/");
+        let path_only = path.split('?').next().unwrap_or(path);
+        let slave_param = query_param(path, "slave");
+        let slave_count = responders.lock().unwrap().len();
+        let slave_index = match slave_param {
+            Some(value) => value
+                .parse::<usize>()
+                .ok()
+                .filter(|index| *index < slave_count),
+            None => Some(0),
+        };
+        let invalid_slave = matches!(path_only, "/state" | "/pdo") && slave_index.is_none();
+        let slave_index = slave_index.unwrap_or(0);
         let state = {
             let guard = responders.lock().unwrap();
-            match guard.first() {
+            match guard.get(slave_index) {
                 Some(responder) => {
                     let stats = responder.stats();
                     let live = control_plane::LiveState {
@@ -448,7 +475,6 @@ fn serve_live_http(
                 None => "{\"schema\": \"ec-sim/state-v1\", \"live\": null}".to_string(),
             }
         };
-        let path_only = path.split('?').next().unwrap_or(path);
         let want_history = path_only == "/pdo" && path.contains("history=1");
         let topology_body = if path_only == "/topology" {
             let (sm2_address, sm2_len) = pdo_layout(&manifest, "out", 0x1100, 2);
@@ -479,7 +505,7 @@ fn serve_live_http(
         };
         let pdo_snapshot = if path_only == "/pdo" {
             let guard = responders.lock().unwrap();
-            guard.first().map(|responder| {
+            guard.get(slave_index).map(|responder| {
                 let (sm2_address, sm2_len) = pdo_layout(&manifest, "out", 0x1100, 2);
                 let (sm3_address, sm3_len) = pdo_layout(&manifest, "in", 0x1110, 2);
                 control_plane::PdoSnapshot {
@@ -495,6 +521,7 @@ fn serve_live_http(
             None
         };
         let pdo_response = pdo_snapshot.map(|pdo| {
+            let history = &mut histories[slave_index];
             let changed = history.back().map_or(true, |last| {
                 last.sm2_bytes != pdo.sm2_bytes || last.sm3_bytes != pdo.sm3_bytes
             });
@@ -516,20 +543,27 @@ fn serve_live_http(
                 control_plane::pdo_json_decoded(&pdo, &decoded)
             }
         });
-        let response = match topology_body {
-            Some(body) => control_plane::HttpResponse {
-                status_line: "HTTP/1.1 200 OK",
-                content_type: "application/json; charset=utf-8",
-                body,
-            },
-            None => match pdo_response {
+        let response = if invalid_slave {
+            control_plane::not_found_json(&format!(
+                "slave {} 不存在（共 {slave_count} 个从站）",
+                slave_param.unwrap_or("")
+            ))
+        } else {
+            match topology_body {
                 Some(body) => control_plane::HttpResponse {
                     status_line: "HTTP/1.1 200 OK",
                     content_type: "application/json; charset=utf-8",
                     body,
                 },
-                None => control_plane::handle_get(path, &state, dict_json.as_deref()),
-            },
+                None => match pdo_response {
+                    Some(body) => control_plane::HttpResponse {
+                        status_line: "HTTP/1.1 200 OK",
+                        content_type: "application/json; charset=utf-8",
+                        body,
+                    },
+                    None => control_plane::handle_get(path, &state, dict_json.as_deref()),
+                },
+            }
         };
         let headers = format!(
             "{}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: {}\r\nConnection: close\r\n\r\n",

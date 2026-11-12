@@ -28,14 +28,27 @@ function el(tag, attrs, ...children) {
   return node;
 }
 
-function table(headers, rows) {
+function table(headers, rows, onRowClick) {
   const thead = el("thead", {}, el("tr", {}, ...headers.map((h) => el("th", {}, h))));
   const tbody = el(
     "tbody",
     {},
-    ...rows.map((row) => el("tr", {}, ...row.map((cell) => el("td", {}, cell)))),
+    ...rows.map((row) => {
+      const tr = el("tr", {}, ...row.map((cell) => el("td", {}, cell)));
+      if (onRowClick) {
+        tr.style.cursor = "pointer";
+        tr.addEventListener("click", () => onRowClick(row));
+      }
+      return tr;
+    }),
   );
   return el("table", {}, thead, tbody);
+}
+
+function selectedSlave() {
+  const input = document.getElementById("slave-index");
+  const value = Number.parseInt(input.value, 10);
+  return Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
 function section(title, ...children) {
@@ -313,6 +326,10 @@ function renderTopology(topology) {
       table(
         ["#", "站地址", "AL 状态", "AL 状态码", "收/发帧", "SM2（地址 hex）", "SM3（地址 hex）"],
         rows,
+        (row) => {
+          document.getElementById("slave-index").value = row[0];
+          document.getElementById("load-api").click();
+        },
       ),
     ),
   );
@@ -368,13 +385,19 @@ function startLive() {
   if (!liveBase) return;
   liveTimer = setInterval(async () => {
     try {
-      const stateResponse = await fetch(`${liveBase}/state`);
-      if (stateResponse.ok) loadJson(await stateResponse.text(), `${liveBase}/state (live)`);
-      const pdoResponse = await fetch(`${liveBase}/pdo`);
-      if (pdoResponse.ok) loadJson(await pdoResponse.text(), `${liveBase}/pdo (live)`);
-      const historyResponse = await fetch(`${liveBase}/pdo?history=1`);
+      const slave = selectedSlave();
+      const stateResponse = await fetch(`${liveBase}/state?slave=${slave}`);
+      if (stateResponse.ok)
+        loadJson(await stateResponse.text(), `${liveBase}/state?slave=${slave} (live)`);
+      const pdoResponse = await fetch(`${liveBase}/pdo?slave=${slave}`);
+      if (pdoResponse.ok)
+        loadJson(await pdoResponse.text(), `${liveBase}/pdo?slave=${slave} (live)`);
+      const historyResponse = await fetch(`${liveBase}/pdo?slave=${slave}&history=1`);
       if (historyResponse.ok)
-        loadJson(await historyResponse.text(), `${liveBase}/pdo?history=1 (live)`);
+        loadJson(
+          await historyResponse.text(),
+          `${liveBase}/pdo?slave=${slave}&history=1 (live)`,
+        );
       const topologyResponse = await fetch(`${liveBase}/topology`);
       if (topologyResponse.ok)
         loadJson(await topologyResponse.text(), `${liveBase}/topology (live)`);
@@ -400,15 +423,17 @@ function tryFetchJson(name) {
 document.getElementById("load-api").addEventListener("click", async () => {
   const base = (document.getElementById("api").value || "").replace(/\/+$/, "");
   try {
-    const stateResponse = await fetch(`${base}/state`);
+    const slave = selectedSlave();
+    const stateResponse = await fetch(`${base}/state?slave=${slave}`);
     if (!stateResponse.ok) throw new Error(`/state ${stateResponse.status}`);
-    loadJson(await stateResponse.text(), `${base}/state`);
+    loadJson(await stateResponse.text(), `${base}/state?slave=${slave}`);
     const dictResponse = await fetch(`${base}/dict`);
     if (dictResponse.ok) loadJson(await dictResponse.text(), `${base}/dict`);
-    const pdoResponse = await fetch(`${base}/pdo`);
-    if (pdoResponse.ok) loadJson(await pdoResponse.text(), `${base}/pdo`);
-    const historyResponse = await fetch(`${base}/pdo?history=1`);
-    if (historyResponse.ok) loadJson(await historyResponse.text(), `${base}/pdo?history=1`);
+    const pdoResponse = await fetch(`${base}/pdo?slave=${slave}`);
+    if (pdoResponse.ok) loadJson(await pdoResponse.text(), `${base}/pdo?slave=${slave}`);
+    const historyResponse = await fetch(`${base}/pdo?slave=${slave}&history=1`);
+    if (historyResponse.ok)
+      loadJson(await historyResponse.text(), `${base}/pdo?slave=${slave}&history=1`);
     const topologyResponse = await fetch(`${base}/topology`);
     if (topologyResponse.ok) loadJson(await topologyResponse.text(), `${base}/topology`);
     liveBase = base;

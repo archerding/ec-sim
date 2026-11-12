@@ -1,5 +1,33 @@
 ---
 
+## 2026-11-13 06:20 班（低峰）— **B28：逐从站查看（`?slave=N`）+ 拓扑行点击切换**
+
+**做了什么**
+- 实时模式 `/state?slave=N`、`/pdo?slave=N`（默认 `N=0`，保持旧行为）；越界或非法 `N`
+  返回 404 JSON（新增公共 `control_plane::not_found_json` 复用 404 结构）。
+- PDO 历史缓冲改为**按从站分开**（`Vec<VecDeque<PdoSnapshot>>`，每站上限 256）。
+- `web/` 增加“从站”数字输入；**拓扑表行点击**即切换并重新载入；API 载入与实时轮询
+  都带 `?slave=N`（`/dict`、`/topology` 不带）。
+- 新增 `scripts/spikes/slave-select-probe.sh`：`--slaves 3` + 配置地址 + 写第 2 站 SM2，
+  校验 N=1（0x0002/beef）、N=0（0000）、越界 99 与非法 abc → 404。
+- 更新 `docs/VERIFICATION.md`、`docs/STATUS.md`、AGENTS（B28 完成、新增 B29 `/metrics`）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **222 passed** 不变；
+  `node --check web/app.js` 通过。
+- 验证机：重建后 `slave-select-probe.sh` **EXIT=0**——`OK: 逐站查看（N=1 站地址 0x0002/SM2=beef；
+  N=0 SM2=0000；越界/非法 slave → 404）`；`topology-probe.sh` 仍 **EXIT=0**。
+
+**卡点**
+- 无指标导出（B29）；Web 仍为只读轮询。
+
+**下次开工第一件事**
+- **B29**：`GET /metrics` Prometheus 文本指标（frames/mailbox/dc/al，带从站标签），探针校验
+  格式与计数单调；`web/` 可选展示。
+
+---
+---
+
 ## 2026-11-13 06:15 班（低峰）— **B27：多从站拓扑 `/topology` + Web 拓扑表**
 
 **做了什么**

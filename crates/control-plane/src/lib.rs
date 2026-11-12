@@ -252,7 +252,9 @@ fn json_response(status_line: &'static str, body: String) -> HttpResponse {
     }
 }
 
-fn not_found(message: &str) -> HttpResponse {
+/// 生成 404 JSON 响应（未知路径/越界从站等）。
+#[must_use]
+pub fn not_found_json(message: &str) -> HttpResponse {
     let body = format!(
         "{{\"error\": \"{}\", \"routes\": [\"/state\", \"/dict\"]}}",
         json_escape(message)
@@ -270,14 +272,14 @@ pub fn handle_get(path: &str, state: &str, dict: Option<&str>) -> HttpResponse {
         "/state" => json_response("HTTP/1.1 200 OK", state.to_string()),
         "/dict" => match dict {
             Some(body) => json_response("HTTP/1.1 200 OK", body.to_string()),
-            None => not_found("dict 不可用（未加载 manifest）"),
+            None => not_found_json("dict 不可用（未加载 manifest）"),
         },
         "/" | "/health" => json_response(
             "HTTP/1.1 200 OK",
             "{\"service\": \"ec-sim-control-plane\", \"routes\": [\"/state\", \"/dict\"]}"
                 .to_string(),
         ),
-        _ => not_found("unknown path"),
+        _ => not_found_json("unknown path"),
     }
 }
 
