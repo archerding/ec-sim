@@ -123,3 +123,18 @@ sudo bash scripts/spikes/soem-dc-probe.sh
 - 应答器 `--verbose` 统计：`dc_rd=5300 dc_wr=5302`（SOEM 每周期读 0x0910 系统时间、
   DC 配置阶段写激活/启动/周期寄存器）；
 - ⚠️ 这是**路径验证**（DC 寄存器可读可写、主站不报错、仍进 OP），不是 DC 同步精度验证。
+## IgH ecrt 应用（CSP + DC，2026-11-13 02:57 班）
+
+```bash
+sudo bash scripts/spikes/igh-sv660n-op-probe.sh
+```
+
+ecrt 夹具（验证机本地、不入库）按 SV660N 画像的 Tier0 7 字节 PDO 配置，启用 DC
+（`ecrt_slave_config_dc(0x0300, 1ms)`）并跑 CSP（模式 8、目标位置 12345）：
+
+- 应用运行期间 `ethercat slaves`：`0  0:0  OP  +  0x00000ec5:0x0000e5f1`；
+- `RESULT al_states=0x08 slaves_responding=1 link_up=1`；
+- `STATUS sw=0x0637 modes_display=8 pos=12345`（Operation enabled + Target reached，
+  位置跟随正确）；
+- 应答器 `STATS ... dc_rd=3 dc_wr=7 al=0x08`。
+- ⚠️ 默认 PDO 具体条目仍是 Tier0 通用布局（非厂商默认映射）；DC 仅配置路径验证。

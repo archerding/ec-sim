@@ -32,6 +32,34 @@
 
 ---
 
+## 2026-11-13 02:57 班（低峰）— B11：**SV660N 画像 IgH ecrt OP + CSP + DC 验证**
+
+**做了什么**
+- 新增 `scripts/spikes/igh-sv660n-op-probe.sh`：用未修改 IgH 的 ecrt 夹具（验证机本地、
+  **不入库**）按 SV660N 兼容画像的 Tier0 7 字节 PDO 配置，启用 DC（`0x0300/1ms`），
+  跑 CSP（模式 8、目标位置 12345）验证：
+  - 应用运行期间 `ethercat slaves`：`0  0:0  OP  +  0x00000ec5:0x0000e5f1`；
+  - `RESULT al_states=0x08 slaves_responding=1 link_up=1`；
+  - `STATUS sw=0x0637 modes_display=8 pos=12345`（Operation enabled + Target reached，
+    位置跟随正确）；
+  - 应答器 `STATS ... dc_rd=3 dc_wr=7 al=0x08`。
+- ecrt 夹具源码 `/opt/ecsim/work/igh-op/ecrt-sv660n-op.c`、二进制均在验证机本地。
+- 更新 `docs/plugins/inovance-sv660n-verification.md`（IgH CSP+DC 节）、
+  `docs/VERIFICATION.md` 索引、AGENTS B11。
+
+**验证结果**
+- Linux 验证机：`igh-sv660n-op-probe.sh` → **EXIT=0**（数据见上）。
+- 本机无代码改动；`cargo test --workspace` **202 passed** 基线不变。
+
+**卡点**
+- 默认 PDO 具体条目仍是 Tier0 通用 7 字节布局（非厂商默认映射，⚠️ 待公开来源）。
+- DC 仅配置路径（IgH 配置后仍 OP），不是同步精度验证。
+
+**下次开工第一件事**
+- B11：继续找 SV660N 默认 PDO 条目；或评估真实 DC 同步（SYNC0 脉冲）实现价值。
+
+---
+
 ## 2026-11-13 02:52 班（低峰）— B6/B11：**IgH DC 配置路径验证（ecrt_slave_config_dc）**
 
 **做了什么**
