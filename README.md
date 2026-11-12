@@ -47,6 +47,7 @@ Read the decision record: [technology selection](ethercat-slave-simulator-tech-s
 - **Declarative first**: most device plugins are a `plugin.yaml` manifest (identity, SM, PDO, object dictionary) plus a `facts.md` with sources — no code required.
 - **Behavior when needed**: CiA402 state machines and vendor-specific protocols run as sandboxed WASM plugins.
 - **Marketplace-ready**: closed-source, paid plugins are first-class (Ed25519 signatures, entitlement, online revocation).
+- **Reproducible evidence**: every probe script and its last verified result is indexed in [docs/VERIFICATION.md](docs/VERIFICATION.md).
 - **Legal discipline**: plugins are *independent re-implementations from public documentation*. No vendor ESI/PDF/firmware is redistributed, identity uses our own Vendor ID, and nothing claims conformance or certification. See [docs/DEVICE-PLUGINS.md](docs/DEVICE-PLUGINS.md).
 
 Starter catalog: [plugins/catalog.yaml](plugins/catalog.yaml).
