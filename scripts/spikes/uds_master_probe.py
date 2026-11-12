@@ -322,6 +322,7 @@ def main():
     cia402_cst = False
     cia402_tq = False
     cia402_pv = False
+    cia402_ip = False
     dc_clock = False
     cia402_homing = False
     cia402_pp = False
@@ -357,6 +358,8 @@ def main():
             cia402_tq = True
         if arg == "--cia402-pv":
             cia402_pv = True
+        if arg == "--cia402-ip":
+            cia402_ip = True
         if arg == "--cia402-fault":
             cia402_fault = True
         if arg == "--cia402-csv":
@@ -703,6 +706,24 @@ def main():
                         f"PV/VL 速度显示 {velocity_actual} != {expected_vel}",
                     )
             print("OK: CiA 402 PV/VL（模式 3/2）：位置累加/速度显示通过（11 字节 PDO）")
+
+        # 5p) 可选：CiA 402 IP（模式 7，7 字节 PDO；Tier0 复用 CSP 位置跟随语义）。
+        if cia402_ip:
+            sequence = [
+                (0x0006, 7, 2000, 0x0221, 0),
+                (0x0007, 7, 2000, 0x0223, 0),
+                (0x000F, 7, 2000, 0x0237 | 0x0400, 2000),
+            ]
+            for controlword, mode, target, expected_sw, expected_pos in sequence:
+                master.transact(
+                    [(CMD["APWR"], 0, 0x1100, struct.pack("<HbI", controlword, mode, target))]
+                )
+                reply = master.transact([(CMD["APRD"], 0, 0x1110, bytes(7))])
+                sw, modes_display, position = struct.unpack("<HbI", reply[0][3][:7])
+                check(sw == expected_sw, f"IP sw={sw:#06x} != {expected_sw:#06x}")
+                check(modes_display == mode, f"IP 模式显示 {modes_display} != {mode}")
+                check(position == expected_pos, f"IP 位置 {position} != {expected_pos}")
+            print("OK: CiA 402 IP（模式 7，位置跟随）通过")
 
         # 5c) 可选：CiA 402 状态机行为（完整 7 字节 RxPDO/TxPDO，Tier0）。
         if cia402:

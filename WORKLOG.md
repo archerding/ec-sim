@@ -32,6 +32,34 @@
 
 ---
 
+## 2026-11-13 03:28 班（低峰）— B11：**IP（插补位置，模式 7）Tier0 — 常用模式全覆盖**
+
+**做了什么**
+- `--behavior cia402`：模式 7（IP）复用 CSP 的位置跟随语义（7 字节 PDO：位置跟随目标
+  并置 Target reached）。⚠️ Tier0：无插补缓冲/时间片。
+- 单测 `cia402_behavior_tracks_position_only_in_csp_mode` 追加 IP 断言（模式 7 → 位置
+  2000 并置 Target reached）；新增 `uds_master_probe.py --cia402-ip`、脚本
+  `scripts/spikes/cia402-ip-probe.sh`（7 字节 PDO）。
+- 文档：`docs/plugins/cia402-state-machine.md` 增补 IP 小节、`docs/VERIFICATION.md` 索引、
+  AGENTS B11。
+- 至此 **CiA 402 常用模式全覆盖（Tier0 简化）**：
+  PP(1) / VL(2) / PV(3) / TQ(4) / HM(6) / IP(7) / CSP(8) / CSV(9) / CST(10)。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **207 passed**
+  （esc-core 86 / esc-node 70 / plugin-host 27 + 1 集成 / wire 23）。
+- Linux 验证机（重建后）：`cia402-ip-probe.sh` → **EXIT=0**：`BEHAVIOR cia402
+  sm2_out=0x1100/7B sm3_in=0x1110/7B`；三步状态字/模式显示/位置符合预期。
+
+**卡点**
+- 全部模式均为 Tier0 简化（无轨迹/插补/转矩环/加减速/单位换算）；真实行为仍需硬件与
+  厂商手册核对。
+
+**下次开工第一件事**
+- B11：继续找 SV660N 默认 PDO 条目；或评估真实 DC 同步（SYNC0 脉冲）。
+
+---
+
 ## 2026-11-13 03:21 班（低峰）— B11：**VL（速度，模式 2）Tier0 + 修复探针可复现性缺口**
 
 **做了什么**

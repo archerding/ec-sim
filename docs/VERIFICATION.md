@@ -18,6 +18,7 @@
 | `igh-cia402-cst-op-probe.sh` | IgH ecrt 5B CST：OP、`al_states=0x08`、`sw=0x0237`、模式 10、`0x6077=300` | **EXIT=0** |
 | `cia402-cst-op-probe.sh` | CST 画像双主站：SOEM 40/40 bits、`0x6071`/`0x6077` 映射、`5O+5I` 进 OP；IgH PREOP+身份 `0xe5e2` | **EXIT=0** |
 | `cia402-cst-probe.sh` | 5 字节 PDO CST：状态机序列 + 实际转矩镜像 `0x6071`→`0x6077`、禁用后归零 | **EXIT=0** |
+| `cia402-ip-probe.sh` | 7B PDO IP（模式 7）：位置跟随 + Target reached | **EXIT=0** |
 | `cia402-tq-probe.sh` | 5B PDO TQ（模式 4）：实际转矩镜像目标转矩，禁用后归零 | **EXIT=0** |
 | `cia402-pv-probe.sh` | 11B PDO PV/VL（模式 3/2）：速度累加/速度显示，禁用后归零 | **EXIT=0** |
 | `cia402-pp-probe.sh` | 7B PDO PP（模式 1）：new set-point 位置跳变 + Target reached + Set-point acknowledge | **EXIT=0** |

@@ -371,7 +371,8 @@ impl Responder {
         // - CSV（模式 9，需 11 字节 PDO）：Operation enabled 时位置每个周期累加目标速度
         //   （模拟器把"速度目标"简化成每 tick 的增量，非真实单位/轨迹）；
         // - 其它模式：位置冻结。
-        let csp = modes == 8;
+        // CSP（模式 8）与 IP（模式 7，Tier0 复用位置跟随语义）都使用 7 字节布局。
+        let csp = (modes == 8 || modes == 7) && out_bytes.len() >= 7;
         // CSV（模式 9）与 PV（模式 3，Tier0 复用速度累加语义）都使用 11 字节布局。
         let csv = (modes == 9 || modes == 3 || modes == 2) && out_bytes.len() >= 11;
         // CST（模式 10）与 TQ（模式 4，Tier0 复用转矩镜像语义）都使用 5 字节布局。
@@ -1591,6 +1592,15 @@ mod tests {
             read_tx(&mut responder),
             (0x0237, 9, 1000),
             "非 CSP 模式位置冻结、无 Target reached"
+        );
+
+        // 切到 IP（模式 7）：Tier0 复用 CSP 位置跟随语义（位置跳到目标并置 Target reached）。
+        write_rx(&mut responder, 0x000F, 7, 2000);
+        responder.tick(5);
+        assert_eq!(
+            read_tx(&mut responder),
+            (0x0237 | 0x0400, 7, 2000),
+            "IP：位置跟随并置 Target reached"
         );
     }
 
