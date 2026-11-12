@@ -255,6 +255,9 @@ pub const SDO_ABORT_READ_ONLY: u32 = 0x0601_0002;
 /// SDO Abort 码：SDO 协议超时（例如分段上传的段请求没有进行中的传输，CiA 301）。
 pub const SDO_ABORT_PROTOCOL_TIMEOUT: u32 = 0x0504_0000;
 
+/// Toggle 位未按 CiA 301 交替（0x05030000，分段传输的 toggle 错误）。
+pub const SDO_ABORT_TOGGLE: u32 = 0x0503_0000;
+
 /// SDO 命令字节：expedited download（1 字节数据）。
 const SDO_COMMAND_DOWNLOAD_1: u8 = 0x2F;
 /// SDO 命令字节：expedited download（2 字节数据）。

@@ -237,6 +237,12 @@ user.email = deepseek-harness@users.noreply.github.com
     验证机 `scripts/spikes/cia402-sdo-download-probe.sh` **EXIT=0**。IgH 侧 SDO
     （上传/下载）在该验证机上仍**阻塞**（ecrt ioctl，已复现两次）→ ⚠️ 待验证。
   - 待做：CA 部分写/顺序语义细化（IgH 侧仍无法验证 CA）。
+  - 进度（2026-11-13 01:16 班）：**分段传输 toggle 校验**——`SegmentedUpload`/`SegmentedDownload`
+    增加期望 toggle（initiate 后 0，每成功一段取反），请求 toggle 不符回 Abort
+    `0x05030000` 并清状态；修复非末段未推进 toggle 的缺陷；新增单测
+    `out_of_order_segment_toggle_is_aborted`。验证机 `sdo-ca-probe.sh`/`uds-loopback.sh`/
+    `soem-process-data.sh` 全部 EXIT=0（正确 toggle 序列无回归）。测试 **186 passed**。
+    ⚠️ 未支持"主站重发上一段"的容错（当前按 Abort 处理）。
   - 进度（2026-11-13 00:50 班）：**CA 分段下载端到端验证通过**——UDS 合成主站新增
     `--sdo-ca-download-multi`（140 字节对象：0x31 首帧 112 + 0x20|toggle|last 4 段，
     再用 CA 分段上传回读比对）；`sdo-ca-probe.sh` 第三个模式用

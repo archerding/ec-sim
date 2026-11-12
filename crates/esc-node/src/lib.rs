@@ -121,6 +121,8 @@ struct SegmentedUpload {
     data: Vec<u8>,
     /// 已经发到主站的字节数（首帧之后的偏移）。
     offset: usize,
+    /// 下一段请求期望的 toggle 位（0/1；CiA 301 要求主站每段交替）。
+    toggle: u8,
 }
 
 /// 进行中的分段 SDO 下载（值 > 4 字节时使用，CiA 301 segmented download）。
@@ -132,6 +134,8 @@ struct SegmentedDownload {
     subindex: u8,
     /// 数据总长度。
     total_size: u32,
+    /// 下一段请求期望的 toggle 位（0/1；CiA 301 要求主站每段交替）。
+    toggle: u8,
     /// 已收到的数据。
     data: Vec<u8>,
     /// 是否为 Complete Access 下载（完成时按子索引长度拆分写入）。
@@ -867,6 +871,7 @@ impl Responder {
                 total_size: initiate.total_size,
                 complete_access: false,
                 data,
+                toggle: 0,
             });
         }
         mailbox::sdo_download_ok_service(initiate.index, initiate.subindex)
@@ -877,6 +882,13 @@ impl Responder {
         let Some(mut state) = self.download.take() else {
             return mailbox::sdo_abort_payload(0x0000, 0x00, mailbox::SDO_ABORT_PROTOCOL_TIMEOUT);
         };
+        if segment.toggle != state.toggle {
+            return mailbox::sdo_abort_payload(
+                state.index,
+                state.subindex,
+                mailbox::SDO_ABORT_TOGGLE,
+            );
+        }
         state.data.extend_from_slice(&segment.data);
         let total = usize::try_from(state.total_size).unwrap_or(usize::MAX);
         state.data.truncate(total);
@@ -898,6 +910,7 @@ impl Responder {
             self.download = None;
             return response;
         } else {
+            state.toggle ^= 1;
             self.download = Some(state);
         }
         mailbox::sdo_download_segment_ok_service(segment.toggle)
@@ -929,6 +942,7 @@ impl Responder {
                 subindex,
                 data: value,
                 offset: first,
+                toggle: 0,
             });
         }
         Some(service)
@@ -955,6 +969,7 @@ impl Responder {
             total_size,
             complete_access: true,
             data,
+            toggle: 0,
         });
         mailbox::sdo_download_ok_service(index, 0)
     }
@@ -1015,6 +1030,7 @@ impl Responder {
                 subindex: 0,
                 data,
                 offset: first,
+                toggle: 0,
             });
         }
         Some(service)
@@ -1029,12 +1045,20 @@ impl Responder {
         if state.index != request.index || state.subindex != request.subindex {
             return None;
         }
+        if request.toggle != state.toggle {
+            return Some(mailbox::sdo_abort_payload(
+                state.index,
+                state.subindex,
+                mailbox::SDO_ABORT_TOGGLE,
+            ));
+        }
         let take = (state.data.len() - state.offset).min(mailbox::SDO_SEGMENT_DATA_LEN);
         let chunk = state.data[state.offset..state.offset + take].to_vec();
         let last = state.offset + take >= state.data.len();
         let service = mailbox::sdo_upload_segment_service(request.toggle, &chunk, last);
         if !last {
             state.offset += take;
+            state.toggle ^= 1;
             self.upload = Some(state);
         }
         Some(service)
@@ -2213,6 +2237,89 @@ mod tests {
         assert!(!mailbox::mailbox_full(read_sm1_status(&mut responder)));
         assert_eq!(responder.stats().mailbox_requests, 1);
         assert_eq!(responder.stats().mailbox_responses, 1);
+    }
+
+    #[test]
+    fn out_of_order_segment_toggle_is_aborted() {
+        use esc_core::obj_dict::{RuntimeEntry, RuntimeObject};
+
+        fn write_mailbox(responder: &mut Responder, service: &[u8]) {
+            let mut payload = vec![0u8; mailbox::MAILBOX_SIZE];
+            payload[0..2].copy_from_slice(&(service.len() as u16).to_le_bytes());
+            payload[2..4].copy_from_slice(&0x1001u16.to_le_bytes());
+            payload[5] = mailbox::MAILBOX_TYPE_COE;
+            payload[6..6 + service.len()].copy_from_slice(service);
+            let write = request(&[DatagramData::auto_increment(
+                Command::Apwr,
+                1,
+                0,
+                mailbox::MAILBOX_RX_OFFSET,
+                payload,
+            )]);
+            responder
+                .handle_frame(&write, DEFAULT_SIM_MAC)
+                .expect("reply");
+        }
+        fn coe_request(command: u8, index: u16, subindex: u8, tail: &[u8]) -> Vec<u8> {
+            let mut service = vec![0u8; 6];
+            service[0..2].copy_from_slice(&(mailbox::COE_COMMAND_SDO_REQUEST << 12).to_le_bytes());
+            service[2] = command;
+            service[3..5].copy_from_slice(&index.to_le_bytes());
+            service[5] = subindex;
+            service.extend_from_slice(tail);
+            service
+        }
+
+        let value = vec![b'Z'; 130];
+        let dict = ObjectDictionary::new(
+            vec![RuntimeObject {
+                index: 0x2000,
+                max_subindex: 0,
+                object_code: esc_core::obj_dict::object_code::VAR,
+                data_type: esc_core::obj_dict::data_type::VISIBLE_STRING,
+                name: "Blob".to_string(),
+            }],
+            vec![RuntimeEntry {
+                index: 0x2000,
+                subindex: 0,
+                value: value.clone(),
+                data_type: esc_core::obj_dict::data_type::VISIBLE_STRING,
+                bit_length: 130 * 8,
+                access: esc_core::obj_dict::access::READ_WRITE_PREOP,
+                value_info: 0,
+                name: "Blob".to_string(),
+                writable: true,
+            }],
+        );
+        let mut responder = Responder::default().with_dictionary(dict);
+
+        // 上传：initiate 后第一段请求用 toggle=1（期望 0）→ Abort 0x05030000。
+        write_mailbox(&mut responder, &coe_request(0x40, 0x2000, 0, &[]));
+        assert!(responder.upload.is_some(), "130B 对象应进入分段上传");
+        write_mailbox(&mut responder, &coe_request(0x70, 0x2000, 0, &[]));
+        let response = read_tx_mailbox(&mut responder);
+        assert_eq!(response[8], 0x80, "toggle 错误应回 Abort");
+        assert_eq!(
+            u32::from_le_bytes([response[12], response[13], response[14], response[15]]),
+            mailbox::SDO_ABORT_TOGGLE
+        );
+        assert!(responder.upload.is_none(), "Abort 后清空分段上传状态");
+
+        // 下载：initiate 后第一段请求用 toggle=1（期望 0）→ Abort 0x05030000。
+        let mut initiate = coe_request(0x21, 0x2000, 0, &[0u8; 6]);
+        initiate[6..10].copy_from_slice(&130u32.to_le_bytes());
+        write_mailbox(&mut responder, &initiate);
+        assert!(responder.download.is_some(), "未收完数据应进入分段下载");
+        let mut segment = coe_request(0x31, 0x2000, 0, &[b'x'; 7]);
+        segment[2] = 0x31; // 0x20 | toggle=1 <<4 | unused=0 | last=0
+        write_mailbox(&mut responder, &segment);
+        let response = read_tx_mailbox(&mut responder);
+        assert_eq!(response[8], 0x80, "下载 toggle 错误应回 Abort");
+        assert_eq!(
+            u32::from_le_bytes([response[12], response[13], response[14], response[15]]),
+            mailbox::SDO_ABORT_TOGGLE
+        );
+        assert!(responder.download.is_none(), "Abort 后清空分段下载状态");
     }
 
     #[test]

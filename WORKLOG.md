@@ -32,6 +32,36 @@
 
 ---
 
+## 2026-11-13 01:16 班（低峰）— B7：**分段传输 toggle 校验**（Abort 0x05030000）
+
+**做了什么**
+- `esc-core::mailbox` 新增 `SDO_ABORT_TOGGLE = 0x05030000`（CiA 301 "toggle bit 未交替"）。
+- `esc-node` 的 `SegmentedUpload` / `SegmentedDownload` 增加期望 `toggle` 字段：
+  initiate 后从 0 开始，每成功一段（非末段）取反；**请求 toggle 与期望不一致**时回
+  Abort `0x05030000` 并清空分段状态（此前忽略 toggle，主站重传/乱序不会报错）。
+- 新增单测 `out_of_order_segment_toggle_is_aborted`：130B 对象的分段上传/下载各注入
+  toggle=1 的首段请求，断言 Abort 0x05030000 且分段状态清零。
+- 顺带修复 `handle_download_segment` 非末段未推进 toggle 的问题（否则正确序列也会误报）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **186 passed**（esc-core 80 / esc-node 58 / plugin-host 25 + 1 集成 / wire 22）。
+- Linux 验证机（重建后）：
+  - `sdo-ca-probe.sh` **EXIT=0**（CA 上传/单帧/分段下载，内含多段 toggle 交替）；
+  - `uds-loopback.sh` **EXIT=0**（三轮；含 52 字节 segmented SDO 上传）；
+  - `soem-process-data.sh` **EXIT=0**（SOEM OP、1055 轮 WKC=3）→ 正确 toggle 序列无回归。
+
+**卡点**
+- 只在段请求层校验 toggle；**未持久跟踪跨请求的重复段/重传去重**（CiA 301 允许主站重发
+  上一段，当前会按 Abort 处理，⚠️ 与部分主站重试行为可能不完全一致）。
+- Abort 后不保留"可重同步"状态（主站需重新 initiate）。
+
+**下次开工第一件事**
+- 评估"主站重发上一段"的容错（可选：toggle 回退时重发上一段而非 Abort）；或继续
+  B11 SV660N 手册核对（HTML 在线文档）与 B6 FMMU/DC 类别。
+
+---
+
 ## 2026-11-13 01:12 班（低峰）— 文档真实性修正 + **B11 手册访问再次受阻记录**
 
 **做了什么**
