@@ -6,6 +6,43 @@
 
 ---
 
+## 2026-11-12 12:30 班（低峰）— B1 Rust workspace 骨架
+
+**做了什么**
+- 新建 Cargo workspace（`resolver = "2"`，edition 2021，MSRV 1.75），按 AGENTS §7 落地 6 个成员：
+  `crates/esc-core`、`crates/wire`、`crates/coe`、`crates/plugin-host`、`crates/control-plane`、
+  `crates/cli`（二进制名 `ec-sim`）。
+- `esc-core`：`AlState`（INIT/PRE-OP/SAFE-OP/BOOT/OP，编码 1/2/3/4/8，可往返）+ `EscError`。
+  寄存器地址、FMMU/SM、AL 握手留 B5，**不凭记忆写地址**。
+- `wire`：EtherType `0x88A4`、以太网头 14 字节、最小 EtherCAT 帧 16 字节、
+  `is_ethercat_frame()` 按 EtherType 过滤（对应 Spike 1 踩坑 #2：TAP 会混入 IPv6 等内核帧，
+  必须过滤）。datagram 编解码/WKC 语义留 B4。
+- `plugin-host`：`DevicePlugin` 最小契约（R2：名称须带 `SIMULATED`）。
+- `coe`/`control-plane`：只落模块边界与依赖方向（coe→esc-core/wire；控制面单向依赖），
+  不写空壳实现。
+- CI `.github/workflows/ci.yml`：ubuntu/windows/macos 三平台跑 `fmt --check`、
+  `clippy -D warnings`、`test`。
+
+**验证结果**
+- 本机（Windows，rustc 1.97.1）：
+  - `cargo fmt --all -- --check` → exit 0
+  - `cargo clippy --workspace --all-targets -- -D warnings` → exit 0
+  - `cargo test --workspace` → exit 0（3 个单测：AL 状态码往返/未知码、wire 过滤/短帧）
+- 三平台 CI 首跑结果：见 pushed commit 的 Actions（本条写作时尚未开跑）。
+
+**卡点**
+- 本班起始时 DSH 文件策略为 workspace-write，仓库写探针 `.write-probe` 被拒
+  （ACL 显示用户有 Modify，是沙箱限制）；人工把会话切到 danger-full-access 后探针通过。
+  **后续班次若再遇写探针失败**：按 prompt 直接 `BLOCKED: 沙箱未继承 full access` 退出，
+  不要尝试用审批升级绕过（一次审批只放行一次操作）。
+- 无代码/网络卡点。
+
+**下次开工第一件事**
+- 看 B1 的三平台 CI 是否全绿（`gh run list` 或 GitHub Actions 页面）；全绿后把 §6 B1
+  移入"已完成"，随后进入 **B2b 最小 ESC 应答器**（BRD `0x0000`、APWR `0x0010`、APRD `0x0130`）。
+
+---
+
 ## 2026-11-12（人工会话）— 修正班次起始日
 
 **做了什么**

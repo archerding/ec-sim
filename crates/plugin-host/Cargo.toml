@@ -1,0 +1,9 @@
+[package]
+name = "plugin-host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "EC-Sim 插件宿主：声明式插件加载与 WASM 行为沙箱（插件永不进实时环）"
+
+[dependencies]

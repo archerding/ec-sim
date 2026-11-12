@@ -1,0 +1,9 @@
+[package]
+name = "coe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "EC-Sim CoE：SDO/PDO、对象字典与邮箱协议（B7 实现最小闭环）"
+
+[dependencies]

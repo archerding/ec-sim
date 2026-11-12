@@ -1,0 +1,9 @@
+[package]
+name = "wire"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "EC-Sim 线缆层：EtherCAT 帧/datagram 编解码、严格 WKC 语义、地址匹配"
+
+[dependencies]

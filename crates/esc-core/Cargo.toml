@@ -1,0 +1,9 @@
+[package]
+name = "esc-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "EC-Sim ESC 内核：寄存器阵列、FMMU/SM、AL 状态机、EEPROM-SII、邮箱、DC、watchdog"
+
+[dependencies]

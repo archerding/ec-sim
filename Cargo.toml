@@ -1,0 +1,29 @@
+# EC-Sim Rust workspace（B1：骨架）
+#
+# 目录与职责见 AGENTS.md §7 与 docs/ 选型文档：
+#   esc-core      ESC 内核（寄存器/FMMU/SM/AL/EEPROM-SII/邮箱/DC/watchdog），核心内置
+#   wire          线缆层：EtherCAT 帧/datagram 编解码与 WKC 语义
+#   coe           CoE：SDO/PDO 对象字典与邮箱协议
+#   plugin-host   插件宿主（插件永不进实时环）
+#   control-plane 控制面（REST/gRPC/MCP 入口，后续）
+#   cli           `ec-sim` 可执行入口
+[workspace]
+resolver = "2"
+members = [
+    "crates/esc-core",
+    "crates/wire",
+    "crates/coe",
+    "crates/plugin-host",
+    "crates/control-plane",
+    "crates/cli",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/archerding/ec-sim"
+
+[workspace.dependencies]
+# 目前无第三方依赖；新增依赖仅允许 Apache-2.0 / MIT / BSD / ISC / Zlib（AGENTS §3）。

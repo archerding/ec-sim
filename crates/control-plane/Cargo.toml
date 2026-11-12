@@ -1,0 +1,9 @@
+[package]
+name = "control-plane"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "EC-Sim 控制面：REST/gRPC/MCP 与 Web 后端的统一入口（M2 起）"
+
+[dependencies]
