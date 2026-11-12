@@ -1,5 +1,31 @@
 ---
 
+## 2026-11-13 06:37 班（低峰）— **B32：Web 拓扑链式 SVG 图**
+
+**做了什么**
+- `web/app.js` 新增 `renderTopologyGraph`：按 `/topology` 渲染链式 SVG（圆点 + 连线 +
+  站地址/AL 文本）；AL 状态色 INIT 橙 / PREOP 蓝 / SAFEOP 紫 / OP 绿；点击节点切换到该从站
+  （复用“从站 N”输入 + 从 API 载入）。
+- `web/README.md` 重写为当前能力说明（dump/API 两种用法、state/dict/pdo/pdo-history/topology、
+  实时轮询、波形、拓扑 SVG），并标注 **⚠️ 无自动化 DOM 测试**（仅 `node --check` + 人工浏览器验收）。
+- AGENTS：B32 完成、新增 B33（`--serve` 同源托管 `web/`）。
+
+**验证结果**
+- 本机：`node --check web/app.js` 通过；`cargo fmt --check`、clippy 通过；
+  `cargo test --workspace` **223 passed** 不变。
+- 本班为纯前端改动，未跑 VM；控制面契约由既有探针覆盖。
+
+**卡点**
+- Web 仍需单独起静态服务器（跨源依赖 CORS）；B33 将让 `--serve` 直接托管 `web/`。
+- ⚠️ 拓扑 SVG 为人工浏览器验收，无自动化 DOM 测试。
+
+**下次开工第一件事**
+- **B33**：`--serve [--web-root <dir>]` 同源托管 `web/` 静态文件（`/`、`/index.html`、`/app.js`），
+  其余路由仍为 API；探针校验 HTML/JS 内容类型与 API 不受影响。
+
+---
+---
+
 ## 2026-11-13 06:34 班（低峰）— **B31：控制面文档 `docs/CONTROL-PLANE.md` + 文档/代码一致性检查**
 
 **做了什么**

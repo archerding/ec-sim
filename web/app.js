@@ -305,6 +305,69 @@ function renderPdoHistory(history) {
 }
 
 
+
+function alColor(statusHex) {
+  const status = Number.parseInt(statusHex, 16) & 0x0f;
+  if (status === 8) return "#8fe3a8";
+  if (status === 4) return "#b98efc";
+  if (status === 2) return "#6ea8fe";
+  return "#f0b45a";
+}
+
+function renderTopologyGraph(topology) {
+  const slaves = topology.slaves || [];
+  const svgNs = "http://www.w3.org/2000/svg";
+  const width = Math.max(240, slaves.length * 160 + 40);
+  const svg = document.createElementNS(svgNs, "svg");
+  svg.setAttribute("viewBox", `0 0 ${width} 130`);
+  svg.style.width = "100%";
+  svg.style.maxWidth = `${width}px`;
+  svg.style.background = "#0f1115";
+  svg.style.borderRadius = "8px";
+  svg.style.marginBottom = "12px";
+  const label = (x, y, content, options) => {
+    const node = document.createElementNS(svgNs, "text");
+    node.setAttribute("x", String(x));
+    node.setAttribute("y", String(y));
+    node.setAttribute("fill", (options && options.fill) || "#cfd6e4");
+    node.setAttribute("font-size", (options && options.size) || "12");
+    node.setAttribute("text-anchor", "middle");
+    node.textContent = content;
+    svg.append(node);
+  };
+  slaves.forEach((slave, index) => {
+    const cx = 60 + index * 160;
+    const color = alColor(slave.al_status);
+    if (index > 0) {
+      const line = document.createElementNS(svgNs, "line");
+      line.setAttribute("x1", String(cx - 140));
+      line.setAttribute("y1", "60");
+      line.setAttribute("x2", String(cx - 18));
+      line.setAttribute("y2", "60");
+      line.setAttribute("stroke", "#3a4254");
+      line.setAttribute("stroke-width", "2");
+      svg.append(line);
+    }
+    const circle = document.createElementNS(svgNs, "circle");
+    circle.setAttribute("cx", String(cx));
+    circle.setAttribute("cy", "60");
+    circle.setAttribute("r", "18");
+    circle.setAttribute("fill", color);
+    circle.setAttribute("stroke", "#0f1115");
+    circle.setAttribute("stroke-width", "2");
+    circle.style.cursor = "pointer";
+    circle.addEventListener("click", () => {
+      document.getElementById("slave-index").value = String(slave.index);
+      document.getElementById("load-api").click();
+    });
+    svg.append(circle);
+    label(cx, 64, String(slave.index), { fill: "#0f1115" });
+    label(cx, 96, slave.station_address, {});
+    label(cx, 112, slave.al_status, { fill: color });
+  });
+  return svg;
+}
+
 function renderTopology(topology) {
   if (topology.schema !== "ec-sim/topology-v1") return;
   const rows = (topology.slaves || []).map((slave) => [
@@ -322,8 +385,9 @@ function renderTopology(topology) {
       el(
         "p",
         { class: "sub" },
-        "按链上顺序；站地址为配置站地址（未配置显示 0x0000），SM2/SM3 为当前原始字节。",
+        "节点色 = AL 状态（INIT 橙 / PREOP 蓝 / SAFEOP 紫 / OP 绿），点击节点切换到该从站；站地址未配置显示 0x0000。",
       ),
+      renderTopologyGraph(topology),
       table(
         ["#", "站地址", "AL 状态", "AL 状态码", "收/发帧", "SM2（地址 hex）", "SM3（地址 hex）"],
         rows,

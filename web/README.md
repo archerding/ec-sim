@@ -1,31 +1,40 @@
-# EC-Sim Web 只读状态视图（M2 起点）
+# EC-Sim Web 只读视图（M2）
 
-最小、零依赖的只读页面：把 `ec-sim-esc --dump-state` 输出的 JSON 渲染为
-身份 / Sync Manager / PDO 映射 / DC 摘要。**不是**完整 WebUI（无实时波形、无编辑），
-也不构成一致性或认证结论。
+最小、零第三方依赖的只读页面（`index.html` + `app.js`），把 EC-Sim 的只读数据渲染为
+身份 / SM / PDO（原始 + 具名解码 + Canvas 波形）/ 对象字典 / 总线拓扑（链式 SVG + 表）/
+指标卡片。**只读**，不构成一致性或认证结论。
 
 ## 用法
 
 ```bash
-# 1) 生成状态 JSON（任选一个画像；不带 --manifest 为内置画像）
+# 方式 A：文件/静态服务 + dump JSON
 cargo run -q -p esc-node --bin ec-sim-esc -- \
   --dump-state --manifest plugins/generic-cia402-cst-servo/plugin.yaml > web/state.json
+cargo run -q -p esc-node --bin ec-sim-esc -- \
+  --dump-dict --json --manifest plugins/generic-cia402-cst-servo/plugin.yaml > web/dict.json
+python3 -m http.server 8080 --directory web   # 打开 http://127.0.0.1:8080/
 
-# 2) 静态服务（Python 标准库即可）
-python3 -m http.server 8080 --directory web
-# 打开 http://127.0.0.1:8080/
+# 方式 B：控制面只读 API（实时模式）
+cargo run -q -p esc-node --bin ec-sim-esc -- \
+  --uds /tmp/ecsim.sock --esm-lax --serve 127.0.0.1:8090 --slaves 3
+# 打开 http://127.0.0.1:8080/（页面填 API 地址后“从 API 载入”），或直接双击 index.html
 ```
 
-也可以直接双击 `web/index.html` 打开，再选择 JSON 文件载入（`file://` 下不会自动读取
-`state.json`，页面会提示选择文件）。
+页面支持：
+- 选择/多选 dump JSON 文件（state-v1 / dict-v1 / pdo-v1 / pdo-history-v1 / topology-v1）；
+- 填 API 地址后拉取 `/state`、`/dict`、`/pdo`、`/pdo?history=1`、`/topology`、`/metrics`；
+- “从站 N”切换与拓扑节点/行点击切换（对应 API 的 `?slave=N`）；
+- “实时刷新（1s）”轮询；
+- PDO Canvas 波形（SM2/SM3 前 2 字节）与 AL 状态色（INIT 橙 / PREOP 蓝 / SAFEOP 紫 / OP 绿）。
 
 ## 数据格式
 
-`state-v1`：见 `ec-sim-esc --dump-state` 输出与 `docs/DEVICE-PLUGINS.md`。
-字段：`identity`、`names`、`mailbox_declared`、`coe_details`、`general_flags`、
-`ebus_current_ma`、`sync_managers[]`、`pdo_tx[]`/`pdo_rx[]`、`dc`（可空）、
-`profile`（manifest 时）、`dict_objects`（manifest 时）。
+schema 与字段说明见 **[docs/CONTROL-PLANE.md](../docs/CONTROL-PLANE.md)**：
+`ec-sim/state-v1`、`ec-sim/dict-v1`、`ec-sim/pdo-v1`、`ec-sim/pdo-history-v1`、
+`ec-sim/topology-v1` 与 `/metrics` 文本指标。
 
-## 后续（M2）
+## 验证
 
-- 实时拓扑/PDO 波形/SDO 编辑器需要控制面与 WebSocket/HTTP API（见路线图 M2，未实现）。
+- `node --check web/app.js`（语法）；
+- 浏览器人工验收（本班起含链式 SVG 拓扑图；⚠️ 无自动化 DOM 测试）；
+- 若需回归控制面契约，用 `scripts/spikes/*-probe.sh` 与 `control-plane-doc-check.py`。
