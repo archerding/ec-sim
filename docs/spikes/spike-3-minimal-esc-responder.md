@@ -119,6 +119,34 @@ Time:... PACKET slave:1 index:1c00.00 error:3     # SOEM 收到 SDO Abort 后的
   首次写成 0x0001 时 SOEM 显示 `MBX protocols : 01` 且**完全不发 CoE 请求**。
 - 过程数据与双主站扫描无回归（§3.1 仍 OP/WKC3；IgH 仍 PREOP）。
 
+### 3.3 对象字典 / SDO 上传：两家未修改主站都读到对象（2026-11-12 19:44 班）
+
+最小只读对象字典（`0x1018`、`0x1C00`、`0x1C12/0x1C13`、`0x1600/0x1A00`，与 SII 类别一致）后，
+未修改主站可经 CoE 读到 PDO 映射所需对象：
+
+```
+# SOEM: slaveinfo <tap> -map
+PDO mapping according to CoE :
+  SM2 outputs ... [0x0000.0] 0x7000:0x00 0x08
+  SM3 inputs  ... [0x0001.0] 0x6000:0x00 0x08
+```
+
+```
+# IgH: ethercat upload -p 0 -t uint16 0x1c12 0x01
+0x1600 5632
+# ethercat upload -p 0 -t uint32 0x1600 0x01
+0x70000008 1879048200
+# ethercat upload -p 0 -t uint8 0x1c00 0x00
+0x04 4
+```
+
+- 复现脚本：[sdo-upload-probe.sh](../../scripts/spikes/sdo-upload-probe.sh)
+  （SOEM CoE 映射 + IgH `ethercat upload` 三对象断言）。
+- IgH 仍显示 PREOP：`ethercat slaves` 不包含应用程序，IgH 需要 ecrt 应用配置 domain
+  才会把从站推进 OP（B8 的应用夹具）。
+- 仍在 `slaveinfo` 旧的 Abort 路径上：字典外对象（如 0x1C33 等）回 Abort `0x06020000`；
+  SDO Info（0x8）不应答，`ethercat sdos`/`slaveinfo -sdo` 会超时（⚠️ 后续）。
+
 ## 4. 过程中发现并修正的四个真问题
 
 1. **以太网填充**：IgH 主站把短 EtherCAT 帧补零到 60 字节（`Tx bytes / Tx frames = 60`），
@@ -162,10 +190,10 @@ Time:... PACKET slave:1 index:1c00.00 error:3     # SOEM 收到 SDO Abort 后的
   同时 `slaveinfo` 与 IgH `ethercat slaves` 无回归。仍属"预回归"，**不构成**一致性测试/认证结论。
 - ~~**未进 OP**~~ ✅ **SOEM 已进 OP（2026-11-12 19:26 班）**：SII SM/TxPDO/RxPDO 类别 + FMMU
   逻辑寻址 + LRW WKC 修正后，未修改 SOEM `simple_ng` 进入 OP 并做 8 位 PDO 交换（§3.1）。
-  **IgH 仍停在 PREOP**：19:36 班已声明 mailbox/CoE 并实现 SDO Abort 应答（§3.2），但 IgH 配置
-  PDO 域需要 SDO **上传成功**（对象字典），属 B7 后续。
-- **邮箱只回 Abort**：没有对象字典，SOEM 的 PDO 映射读取会失败并回退 SII 映射；
-  SDO Info（0x8）未实现，`ethercat sdos` 这类请求会超时。
+  **IgH 仍停在 PREOP**：19:36 班已通邮箱、19:44 班已能经 CoE 读对象字典（§3.2/§3.3），
+  但 IgH 需要 ecrt 应用配置 domain 才会推从站进 OP（B8 下一步）。
+- **SDO 只读且不完整**：只支持 expedited upload（≤4 字节对象）；SDO Info、Complete Access、
+  分段传输与 Download 未实现；字典外对象回 Abort。
 - **输入/输出数据是静态的**：模拟器没有 PDI/应用层，输入恒 0；SM2/SM3 的 buffered/SM 握手语义、
   邮箱、watchdog 均未实现。
 - **SII 暂无 FMMU 类别 0x0028 与 DC 类别**：SOEM `FMMUfunc` 仍显示 `0:0`；
@@ -175,9 +203,10 @@ Time:... PACKET slave:1 index:1c00.00 error:3     # SOEM 收到 SDO Abort 后的
 
 ## 6. 下一步
 
-- **B7 子项 2：对象字典 + SDO 上传**（0x1C12/0x1C13/0x1600/0x1A00/0x1018）：把 Abort-only 响应
-  扩展为按索引查表应答（expedited upload），让 **IgH** 也能配置 PDO 域并进 OP；邮箱链路已在
-  19:36 班打通（§3.2，断言脚本 `soem-mailbox-probe.sh`）；
+- **B8 IgH 应用夹具**：用 IgH 自带示例或最小 ecrt 应用（独立进程夹具，不入库）在 TAP 上
+  发起 domain（按本字典 0x1C12/0x1A00 映射），观察 IgH 把从站推进 **OP** 并得到 WKC 3/周期；
+  邮箱与 SDO 上传已通（§3.2/§3.3，断言脚本 `soem-mailbox-probe.sh`、`sdo-upload-probe.sh`）；
+- 之后可补 SDO Info（0x8）与对象字典扩展（0x1C32/0x1C33 等），以及 SII FMMU/DC 类别；
 - **B8 双主站冒烟**：SOEM 已零补丁进 OP（§3.1，断言脚本 `soem-process-data.sh`）；待 IgH 进 OP 后
   把两主站证据合并为最终冒烟记录；
 - DL Status 将在**多从站**场景下按实际拓扑继续验证（单从站已 ✅）。

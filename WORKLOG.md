@@ -6,6 +6,59 @@
 
 ---
 
+## 2026-11-12 19:44 班（低峰）— B7 子项 2：最小对象字典 + SDO expedited upload（两家未修改主站都读到对象）
+
+**做了什么**
+- `esc-core` 新增 `obj_dict` 模块：只读最小对象字典
+  - `0x1018` Identity（vendor/product/revision/serial，与 SII 固定区一致）；
+  - `0x1C00` Sync Manager 通信类型（`:00` = 4，`:01..04` = 1/2/3/4 = mailbox out/in、outputs、inputs）；
+  - `0x1C12`/`0x1C13` PDO assign（各 1 个 → `0x1600`/`0x1A00`）；
+  - `0x1600`/`0x1A00` PDO 映射（`0x7000:00` 8 位 / `0x6000:00` 8 位），与 SII SM/PDO 类别一致。
+- `mailbox` 模块把 Abort-only 响应扩展为 **SDO 响应分发**：
+  - `0x40`（initiate upload）且字典命中 → **expedited upload**（按数据长度 0x4F/0x4B/0x47/0x43，
+    不足 4 字节补零）；
+  - 字典未命中 → Abort `0x06020000`；Download/其他 → Abort `0x06010000`（本实现只读）；
+  - SDO Info（CoE 命令 0x8）仍不应答（⚠️ 留后续）。
+- `esc-node` 邮箱处理改用 `mailbox::sdo_response`。
+- 测试新增 **8 条**：`obj_dict`（SM 类型、PDO assign/映射一致性、Identity 与 SII 一致、
+  expedited 命令与补零、未知对象）+ `mailbox`（已知对象上传响应、未知对象 Abort、
+  Download 只读 Abort）+ `esc-node`（邮箱集成：字典命中回 `0x1600`、未知对象回 Abort）。
+- 新增断言脚本 `scripts/spikes/sdo-upload-probe.sh`：SOEM `slaveinfo -map` 与 IgH
+  `ethercat upload` 双主站读对象字典。
+
+**验证结果**
+- 本机 Windows（rustc 1.97.1）：fmt/clippy(-D warnings) exit 0；`cargo test --workspace`
+  **98 passed**（esc-core 56 / esc-node 26 / wire 16）。
+- Linux 验证机（两家**未修改**主站，零补丁）：
+  - SOEM `slaveinfo <tap> -map`：
+    ```
+    PDO mapping according to CoE :
+      SM2 outputs ... [0x0000.0] 0x7000:0x00 0x08
+      SM3 inputs  ... [0x0001.0] 0x6000:0x00 0x08
+    ```
+    同时仍 `Output size: 8bits / Input size: 8bits / State: 4`；应答器 `mbox=24 mboxresp=22`。
+  - **IgH**（未修改的 `ec_master`/`ec_generic`，TAP 上 `ethercat upload -p 0`）：
+    `0x1C12:01 = 0x1600`、`0x1600:01 = 0x70000008`、`0x1C00:00 = 0x04` —— IgH 的 CoE/SDO
+    邮箱链路与对象字典读取已通。
+  - 新脚本 `sdo-upload-probe.sh` → `OK: SOEM CoE 映射 0x7000/0x6000（8bit）；
+    IgH SDO upload 0x1C12:01=0x1600、0x1600:01=0x70000008、0x1C00:00=0x04`。
+  - 回归：`soem-process-data.sh` 仍 **OP / 1055 轮 WKC 3**；`soem-mailbox-probe.sh` 通过；
+    `minimal-esc-responder.sh` 双主站扫描 OK（IgH 仍 PREOP）。
+- IgH 仍 PREOP 的原因**不再是缺 SDO**：`ethercat slaves` 没有应用程序，IgH 需要 ecrt 应用
+  配置 PDO 域（domain）才会把从站推入 OP —— 属 B8 的 IgH 应用夹具。
+
+**卡点**
+- SDO Info（0x8）未实现：`ethercat sdos` 会超时；Complete Access、分段传输、Download 不支持。
+- PDO 数据对象 `0x6000`/`0x7000` 未进字典（PDO 走 FMMU 逻辑寻址，不走 SDO）；输入数据仍恒 0。
+- ⚠️ 待验证：IgH 应用（ecrt domain）能否用本字典完成 0x1C12/0x1A00 配置并进 OP（B8 下一步）。
+
+**下次开工第一件事**
+- **B8 IgH 应用夹具**：用 IgH 自带的示例（如 `examples/` 或 `ec_sample`）或最小 ecrt 应用
+  （独立进程夹具，不入库）在 TAP 上发起 domain（按本字典 0x1C12/0x1A00 映射），观察 IgH 把
+  从站推进 **OP**、过程数据 WKC 3/周期；并补 `scripts/spikes/igh-op-probe.sh` 作为可复现证据。
+
+---
+
 ## 2026-11-12 19:36 班（低峰）— B7 子项 1：邮箱数据链路（SII mailbox 声明 + SM0/SM1 + CoE SDO Abort 应答）
 
 **做了什么**

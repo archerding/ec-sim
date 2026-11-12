@@ -100,7 +100,7 @@ pub struct Stats {
     pub datagrams_hit: u64,
     /// 收到的邮箱请求数（写入 SM0 缓冲的邮箱报文）。
     pub mailbox_requests: u64,
-    /// 已回 SDO Abort 的邮箱响应数。
+    /// 已回 SDO 响应的邮箱响应数（expedited upload 或 Abort）。
     pub mailbox_responses: u64,
 }
 
@@ -380,8 +380,9 @@ impl Responder {
 
     /// 处理主站写入 SM0 缓冲的一条邮箱报文（[`esc_core::mailbox`]）。
     ///
-    /// 目前只实现 **CoE SDO 请求 → SDO Abort 响应**：证明邮箱数据链路可用，
-    /// 对象字典（SDO 上传成功路径）与 SDO Info 留到 B7 后续子步骤。
+    /// **CoE SDO**：`initiate upload` 请求从 [`esc_core::obj_dict`] 查表回 expedited upload
+    /// 响应；对象不存在回 Abort（0x06020000）；写请求回 Abort（0x06010000，只读）。
+    /// SDO Info 与分段传输留到 B7 后续。
     fn handle_mailbox_request(&mut self, message: &[u8]) {
         let Some(header) = MailboxHeader::parse(message) else {
             return;
@@ -394,7 +395,7 @@ impl Responder {
         let service_len = usize::from(header.length).min(available);
         let service =
             &message[mailbox::MAILBOX_HEADER_LEN..mailbox::MAILBOX_HEADER_LEN + service_len];
-        let Some(response_service) = mailbox::sdo_abort_response(service) else {
+        let Some(response_service) = mailbox::sdo_response(service) else {
             return;
         };
         let response_header = MailboxHeader {
@@ -1127,15 +1128,15 @@ mod tests {
     }
 
     #[test]
-    fn mailbox_sdo_request_gets_abort_response() {
-        // SOEM/IgH 发起 SDO 上传（0x1C12:00）：邮箱数据链路应答 Abort（对象不存在）。
+    fn mailbox_sdo_upload_returns_dictionary_value() {
+        // SOEM/IgH 发起 SDO 上传（0x1C12:01 = RxPDO assign）：应答 0x1600（2 字节 expedited）。
         let mut responder = Responder::default();
         let payload = mailbox_request_payload(
             mailbox::MAILBOX_TYPE_COE,
             mailbox::COE_COMMAND_SDO_REQUEST,
             0x40, // initiate upload request
             0x1C12,
-            0x00,
+            0x01,
         );
         let write = request(&[DatagramData::auto_increment(
             Command::Apwr,
@@ -1156,27 +1157,54 @@ mod tests {
             "响应就绪后 SM1 status bit3 必须置位"
         );
 
-        // 读 SM1 缓冲：邮箱头 + CoE SDO Abort 响应。
+        // 读 SM1 缓冲：邮箱头 + CoE SDO upload response。
         let response = read_tx_mailbox(&mut responder);
         let header = MailboxHeader::parse(&response).expect("mailbox header");
         assert_eq!(header.protocol(), mailbox::MAILBOX_TYPE_COE);
-        assert_eq!(header.length, 10, "CoE 头 2 + Abort 8 字节");
+        assert_eq!(header.length, 10);
         assert_eq!(
             u16::from_le_bytes([response[6], response[7]]),
             mailbox::COE_COMMAND_SDO_RESPONSE << 12,
             "CoE 命令 = SDO response"
         );
-        assert_eq!(response[8], mailbox::SDO_COMMAND_ABORT);
+        assert_eq!(response[8], 0x4B, "2 字节对象 → expedited upload 0x4B");
         assert_eq!(u16::from_le_bytes([response[9], response[10]]), 0x1C12);
-        assert_eq!(response[11], 0x00);
-        assert_eq!(
-            u32::from_le_bytes([response[12], response[13], response[14], response[15]]),
-            mailbox::SDO_ABORT_OBJECT_NOT_EXIST
-        );
+        assert_eq!(response[11], 0x01);
+        assert_eq!(u16::from_le_bytes([response[12], response[13]]), 0x1600);
 
         // 主站取走数据后 mailbox full 清除。
         assert!(!mailbox::mailbox_full(read_sm1_status(&mut responder)));
         assert_eq!(responder.stats().mailbox_requests, 1);
+        assert_eq!(responder.stats().mailbox_responses, 1);
+    }
+
+    #[test]
+    fn mailbox_unknown_sdo_object_gets_abort() {
+        // 0x2000:00 不在字典中：回 Abort 0x06020000。
+        let mut responder = Responder::default();
+        let payload = mailbox_request_payload(
+            mailbox::MAILBOX_TYPE_COE,
+            mailbox::COE_COMMAND_SDO_REQUEST,
+            0x40,
+            0x2000,
+            0x00,
+        );
+        let write = request(&[DatagramData::auto_increment(
+            Command::Apwr,
+            1,
+            0,
+            mailbox::MAILBOX_RX_OFFSET,
+            payload,
+        )]);
+        responder
+            .handle_frame(&write, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let response = read_tx_mailbox(&mut responder);
+        assert_eq!(response[8], mailbox::SDO_COMMAND_ABORT);
+        assert_eq!(
+            u32::from_le_bytes([response[12], response[13], response[14], response[15]]),
+            mailbox::SDO_ABORT_OBJECT_NOT_EXIST
+        );
         assert_eq!(responder.stats().mailbox_responses, 1);
     }
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 邮箱数据链路预回归（B7 子项 1）：未修改的 SOEM 通过 CoE 邮箱向本仓库模拟器发 SDO 请求，
-# 模拟器回 SDO Abort（对象不存在）。断言链路可用（不要求对象字典）。
+# 模拟器回 SDO 响应（`0x1C00` 等对象来自最小对象字典）。
 #
 # 前置（Linux 验证机上，环境相关路径见本地 .local/ops.md，不入库）：
 #   - 已构建本仓库：`cargo build --release -p esc-node`
@@ -11,7 +11,7 @@
 #   1. SII 声明 mailbox：`MBX length wr: 128 rd: 128 MBX protocols : 04`（04 = CoE）；
 #   2. 主站仍能找到 1 个从站并映射 8 位 I/O（邮箱启用不破坏扫描/过程数据）；
 #   3. 应答器统计出现 `mbox=N`（N > 0，即真实收到了 SDO 邮箱请求）；
-#   4. 应答器统计出现 `mboxresp=N`（N > 0，即回了 SDO Abort 响应）。
+#   4. 应答器统计出现 `mboxresp=N`（N > 0，即回了 SDO 响应）。
 #
 # 用法：sudo TAP=escsim0 ./soem-mailbox-probe.sh
 set -euo pipefail
@@ -34,7 +34,7 @@ sleep 0.6
 ip link set "$TAP" up
 sleep 0.3
 
-# -map 会触发 SOEM 的 CoE SDO 读取（0x1C00 等）；对象不存在 → 从站回 SDO Abort。
+# -map 会触发 SOEM 的 CoE SDO 读取（0x1C00 等）；对字典内对象回 expedited upload，字典外回 SDO Abort。
 timeout 60 "$SOEM_SLAVEINFO" "$TAP" -map >"$OUT" 2>&1 || true
 tr '\r' '\n' <"$OUT" >"$OUT.lines"
 
@@ -53,9 +53,9 @@ if ! grep -qE "mbox=[1-9][0-9]*" "$LOG"; then
   exit 1
 fi
 if ! grep -qE "mboxresp=[1-9][0-9]*" "$LOG"; then
-  echo "FAIL: 应答器没有回 SDO Abort 响应"
+  echo "FAIL: 应答器没有回 SDO 响应"
   tail -n 5 "$LOG"
   exit 1
 fi
 
-echo "OK: SOEM 通过 CoE 邮箱发出 SDO 请求并收到 SDO Abort（$(grep -aoE 'mbox=[0-9]+ mboxresp=[0-9]+' "$LOG" | tail -n1)）"
+echo "OK: SOEM 通过 CoE 邮箱发出 SDO 请求并收到 SDO 响应（$(grep -aoE 'mbox=[0-9]+ mboxresp=[0-9]+' "$LOG" | tail -n1)）"

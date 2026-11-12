@@ -120,8 +120,14 @@ user.email = deepseek-harness@users.noreply.github.com
     `esc-node` 对 CoE SDO 请求回 **SDO Abort**（0x06020000）并置 SM1 Status bit3，主站读走后清除。
     证据：`crates/esc-core/src/mailbox.rs`、`scripts/spikes/soem-mailbox-probe.sh`
     （SOEM `slaveinfo -map` 断言 mbox>0）；未修改 SOEM 侧 `mbox=1 mboxresp=1`，过程数据 OP/WKC3 无回归。
-  - 待做：**对象字典 + SDO 上传**（0x1C12/0x1C13/0x1600/0x1A00/0x1018）、Abort 码表、SDO Info、
-    Complete Access（IgH 进 OP 需要主站能配置 PDO 域）。
+  - 进度（2026-11-12 19:44 班）：**最小对象字典 + SDO expedited upload 已实现**——`obj_dict`
+    （0x1018、0x1C00、0x1C12/0x1C13、0x1600/0x1A00，与 SII SM/PDO 一致），`mailbox` 对
+    initiate upload 按字典回 expedited response（0x4F/0x4B/0x47/0x43），未知对象回 Abort。
+    证据：`crates/esc-core/src/obj_dict.rs`、`scripts/spikes/sdo-upload-probe.sh`；
+    未修改 SOEM `slaveinfo -map` 打印 `0x7000:0x00 0x08 / 0x6000:0x00 0x08`，
+    未修改 IgH `ethercat upload` 读到 `0x1C12:01=0x1600`、`0x1600:01=0x70000008`，测试 98 passed。
+  - 待做：SDO Info（0x8，`ethercat sdos`/`slaveinfo -sdo` 需要）、Complete Access、分段传输、
+    Download（本实现只读）；IgH 进 OP 需 B8 的 ecrt 应用夹具。
 - [ ] **B9 声明式插件加载器**：读取 `plugins/<id>/plugin.yaml` → 生成 SII + 对象字典 + 默认 PDO 分配 + SM/FMMU 布局（不依赖行为代码），并在 IgH/SOEM 上扫描到该从站。
 - [ ] **B10 首个 P0 设备插件**：Beckhoff EL2008 兼容 8DO（声明式），完成 `facts.md`（含来源 URL）、manifest、双主站扫描验证记录（`docs/plugins/`）。
 - [ ] **B11 CiA402 行为插件**：以 Inovance SV660N 兼容画像为第一个目标，实现 CSP 状态机（Tier0/内置 profile 起步）。
@@ -130,7 +136,8 @@ user.email = deepseek-harness@users.noreply.github.com
     SAFEOP → `all slaves are now operational`，每轮 **WKC 3**（1055 轮、0 次 wrong）；
     `slaveinfo`：`Output size: 8bits / Input size: 8bits / State: 4`。断言脚本：
     [soem-process-data.sh](scripts/spikes/soem-process-data.sh)。
-  - 待做：IgH 进 OP（需 B7 mailbox/CoE 配置 PDO 域）、双主站合并冒烟记录与截图。
+  - 待做：IgH 进 OP（19:44 班起 IgH 已能经 CoE 读对象字典，但 `ethercat slaves` 无应用；
+    需 ecrt 应用夹具配置 domain 才能进 OP）、双主站合并冒烟记录与截图。
 
 ## 7. 目录约定
 
