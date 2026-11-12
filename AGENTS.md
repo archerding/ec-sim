@@ -142,9 +142,13 @@ user.email = deepseek-harness@users.noreply.github.com
     对象 0x6000:00/0x7000:00）。字节布局按 IgH `slave.c` 与 SOEM `ec_main.c` 的解析代码逐字节复核；
     EEPROM 大小 word 0x003E 改为 2（384 字节）。证据：`crates/esc-core/src/sii.rs`，测试 90 passed；
     SOEM `slaveinfo` 显示 `Output size: 8bits / Input size: 8bits`、`MBX protocols : 04`。
-  - 待做：FMMU 类别 0x0028（⚠️ 字段语义待核实，不凭记忆猜）、DC 类别、ESI XML → SII 生成器。
+  - 待做：DC 类别、ESI XML → SII 生成器。**FMMU 类别 0x0028 暂缓**（2026-11-12 21:11 班：
+    IgH `fsm_slave_scan.c` 直接跳过该类别、SOEM 仅显示 `FMMUfunc`；公开资料无字段权威语义，
+    按"不凭记忆写规范细节"红线暂停，等 ESC Sec.II / IEC 61158 原文）。
   ⚠️ 旧文档把 CRC 写成 word 0x003F，经 SOEM `eepromtool`/IgH `tool/sii_crc.cpp` 复核已更正（0x003F 是 SII 版本 = 1）。
-- [ ] **B7 CoE 最小闭环**：加速 SDO 上传/下载 + 0x1C12/0x1C13/0x1600/0x1A00 + Abort 码；先**不做** SDO Info 与 Complete Access（SII 对应位清 0）。
+- [ ] **B7 CoE 最小闭环**：加速 SDO 上传/下载 + 0x1C12/0x1C13/0x1600/0x1A00 + Abort 码；
+  **SDO Info 已实现**（SII 通用类别 CoE details = `0x0F`，声明 SDO/Info/PDO assign/config）；
+  仍**不做** Complete Access（SII 对应位保持 0，CA 未实现）。
   - 进度（2026-11-12 19:36 班）：**邮箱数据链路已通**——SII 声明 CoE mailbox（固定区 0x0014–0x001C，
     SM0 0x1000 / SM1 0x1080 各 128 字节；协议位 = `0x0004` CoE，注意不是 0x0001=AoE），
     `esc-node` 对 CoE SDO 请求回 **SDO Abort**（0x06020000）并置 SM1 Status bit3，主站读走后清除。
@@ -161,7 +165,14 @@ user.email = deepseek-harness@users.noreply.github.com
     0x1A00/0x1C32/0x1C33，写入值保存在 `Responder.object_writes` 并可被 Upload 回读；只读对象回
     Abort `0x06010002`。证据：扩展后的 `scripts/spikes/sdo-upload-probe.sh`；未修改 IgH
     `ethercat download 0x1C13:01=0x1a01` 成功后 `upload` 回读 `0x1a01`，只读/未知对象被拒绝；测试 100 passed。
-  - 待做：SDO Info（0x8，`ethercat sdos`/`slaveinfo -sdo` 需要）、Complete Access、分段传输；
+  - 进度（2026-11-12 21:11 班）：**CoE SDO Information 已实现**——`mailbox` 解析/构造
+    SDO Info 服务（Get OD List `0x01/0x02`、Get OD `0x03/0x04`、Get Entry Description
+    `0x05/0x06`、错误 `0x07`；偏移按 IgH `fsm_coe.c` / SOEM `ec_coe.c` 复核），`obj_dict`
+    增加 6 对象/18 条目的描述表（类型/位长/访问权限/名称），SII 通用类别 CoE details = `0x0F`。
+    测试 **124 passed**；Linux 验证机 `scripts/spikes/sdo-info-probe.sh` →
+    `slaveinfo -sdo` 打印 6 个对象及描述/访问权限；双主站回归默认/strict **6/6 全绿**。
+    ⚠️ IgH `ethercat sdos` 无应用时无输出（需 ecrt 应用上下文），IgH 侧待验证。
+  - 待做：SDO Info 的 IgH 侧验证（ecrt 夹具）、Complete Access、分段传输；
     IgH 进 OP 需 B8 的 ecrt 应用夹具（Download 已具备）。
 - [ ] **B9 声明式插件加载器**：读取 `plugins/<id>/plugin.yaml` → 生成 SII + 对象字典 + 默认 PDO 分配 + SM/FMMU 布局（不依赖行为代码），并在 IgH/SOEM 上扫描到该从站。
 - [ ] **B10 首个 P0 设备插件**：Beckhoff EL2008 兼容 8DO（声明式），完成 `facts.md`（含来源 URL）、manifest、双主站扫描验证记录（`docs/plugins/`）。

@@ -6,6 +6,59 @@
 
 ---
 
+## 2026-11-12 21:11 班（低峰）— B7 子项：CoE SDO Information（SOEM `slaveinfo -sdo` 读到 6 个对象）
+
+**做了什么**
+- **B6 剩余 FMMU 类别 0x0028 暂缓**（原因见卡点：公开资料未给出字段权威语义，按红线
+  不凭记忆猜），改做 backlog 下一项 **B7 SDO Info**。
+- `esc-core::mailbox`：新增 CoE SDO Information（服务 `0x8`）请求解析与响应构造
+  （Get OD List `0x01/0x02`、Get OD `0x03/0x04`、Get Entry Description `0x05/0x06`、
+  错误 `0x07`）。字段偏移按两家**未修改**主站的解析代码逐字节复核：
+  IgH `master/fsm_coe.c`（首帧索引表 +8、Get OD 名称 +12、Get Entry 名称 +16、
+  abort code +6）与 SOEM `src/ec_coe.c` + `include/soem/ec_type.h`。
+- `esc-core::obj_dict`：新增对象/条目描述表（6 个对象、18 个条目：数据类型、位长、
+  访问权限、名称；值与既有 `SIM_OBJECTS` 一致）。访问权限位按 IgH 解析语义
+  （bit0–2 = R-preop/safeop/op，bit3–5 = W-preop/safeop/op）。
+- `esc-core::sii`：通用类别（0x001E）的 CoE details 字节改为 `0x0F`
+  （SDO + SDO Info + PDO assign + PDO configuration；**不置 Complete Access 位**），
+  `ethercat sdos` / `slaveinfo -sdo` 需要该能力位；固定区 CRC 不受影响。
+- `esc-node`：`handle_mailbox_request()` 先尝试 SDO Info 服务、再走 SDO 请求；SM1 回包
+  与 mailbox full 语义不变。
+- 新脚本 `scripts/spikes/sdo-info-probe.sh`：SOEM `slaveinfo -sdo` 断言 6 个对象、
+  对象码/子索引数、访问权限，以及映射仍为 8 位 I/O。
+
+**验证结果**
+- 本机 Windows：`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets
+  -- -D warnings` exit 0；`cargo test --workspace` **124 passed**（esc-core 72 /
+  esc-node 36 / wire 16）。
+- Linux 验证机：`bash scripts/spikes/sdo-info-probe.sh` →
+  `OK: SOEM slaveinfo -sdo 经 CoE SDO Info 读到 6 个对象（0x1018/0x1C00/0x1C12/0x1C13/
+  0x1600/0x1A00，含描述与访问权限）`。`slaveinfo -sdo` 实际打印
+  `CoE Object Description found, 6 entries.`、`0x1018 "Identity" [RECORD maxsub(0x04 / 4)]`、
+  `0x1018:01 "Vendor ID" [UNSIGNED32 R_R_R_] 0x00000ec5`、
+  `0x1c12:01 "RxPDO assign" [UNSIGNED16 RW____] 0x1600`。
+- 双主站回归（默认/strict 两种模式 **6/6 EXIT=0**）：`minimal-esc-responder.sh`、
+  `soem-process-data.sh`（1055 轮 WKC=3）、`igh-op-probe.sh`（IgH ecrt OP
+  `al_states=0x08 wc=3`）——新增邮箱服务与 SII 能力位未影响扫描/映射/OP。
+
+**卡点**
+- **B6 FMMU 类别 0x0028 暂缓**：IgH 直接跳过该类别（`fsm_slave_scan.c: case 0x0028: break`），
+  SOEM 只把它显示为 `FMMUfunc` 提示；公开资料没有该类别字段的权威语义，
+  按"不凭记忆写规范细节"红线不做，等 ESC Sec.II / IEC 61158 原文。
+- IgH `ethercat sdos` 在无应用时输出为空（同 B8 已记录的 IgH 工具行为），
+  SDO Info 的 IgH 侧读取 ⚠️ 待验证（需要 ecrt 应用夹具）。
+- Get OD List 首帧索引表前的 2 字节字段未被两家主站读取；其 ETG.1000.6 语义
+  ⚠️ 待核实（本实现填 0，IgH/SOEM 都按偏移 8 读索引表）。
+- 未实现 Complete Access / 分段 SDO / SDO Info 多帧响应（本对象字典小，单帧足够）。
+
+**下次开工第一件事**
+- 补 IgH 侧 SDO Info 验证：在 ecrt 应用夹具（`/opt/ecsim/work/igh-op/ecrt-op-probe`）
+  里触发 SDO 字典读取并断言 `ethercat sdos` 输出，扩展 `sdo-info-probe.sh` 的 IgH 段。
+  之后：B6 剩余（DC 类别、ESI XML → SII 生成器；FMMU 类别需原文暂缓）或
+  B9 声明式插件加载器骨架。
+
+---
+
 ## 2026-11-12 21:07 班（低峰）— B5 收尾：ESM 前置条件检查改为默认开启（新增 `--esm-lax`）
 
 **做了什么**

@@ -229,8 +229,175 @@ pub fn sdo_abort_payload(index: u16, subindex: u8, abort_code: u32) -> Vec<u8> {
     service
 }
 
-/// 把服务数据封装成完整邮箱报文（头 + 数据）；超过 [`MAILBOX_SIZE`] 返回 [`None`]。
+// ---------------------------------------------------------------------------
+// CoE SDO Information 服务（B7 子项：`ethercat sdos` / `slaveinfo -sdo` 所需）
+// ---------------------------------------------------------------------------
+//
+// 线格式按两家**未修改**主站的实现逐字节复核（只读参考、未复制代码）：
+// - IgH `master/fsm_coe.c`：服务字 `0x8 << 12`（SDO Info），请求布局
+//   `[CoE 2][Opcode 1][Reserved 1][Fragments 2][payload]`；
+//   Get OD List 响应首帧索引表偏移 8（后帧 6，见 `index_list_offset`）、
+//   Get OD 响应名称在 +12、Get Entry Description 响应名称在 +16；
+// - SOEM `src/ec_coe.c` + `include/soem/ec_type.h`：`ECT_COES_SDOINFO = 0x08`、
+//   `ECT_GET_ODLIST_REQ/RES = 0x01/0x02`、`ECT_GET_OD_REQ/RES = 0x03/0x04`、
+//   `ECT_GET_OE_REQ/RES = 0x05/0x06`、`ECT_SDOINFO_ERROR = 0x07`；
+//   `ecx_readODlist/ecx_readODdescription/ecx_readOEsingle` 的字段偏移与上面一致。
+
+/// CoE 服务命令（CoE 头 u16 的 bit12–15）：SDO Information。
+pub const COE_COMMAND_SDO_INFO: u16 = 0x8;
+
+/// SDO Info 操作码：Get OD List 请求。
+pub const SDO_INFO_GET_OD_LIST_REQUEST: u8 = 0x01;
+/// SDO Info 操作码：Get OD List 响应。
+pub const SDO_INFO_GET_OD_LIST_RESPONSE: u8 = 0x02;
+/// SDO Info 操作码：Get OD（对象描述）请求。
+pub const SDO_INFO_GET_OD_REQUEST: u8 = 0x03;
+/// SDO Info 操作码：Get OD 响应。
+pub const SDO_INFO_GET_OD_RESPONSE: u8 = 0x04;
+/// SDO Info 操作码：Get Entry Description 请求。
+pub const SDO_INFO_GET_ENTRY_REQUEST: u8 = 0x05;
+/// SDO Info 操作码：Get Entry Description 响应。
+pub const SDO_INFO_GET_ENTRY_RESPONSE: u8 = 0x06;
+/// SDO Info 操作码：错误响应。
+pub const SDO_INFO_ERROR_RESPONSE: u8 = 0x07;
+
+/// SDO Info 首个响应帧在索引表前多出的 2 字节字段。
+///
+/// IgH `ec_fsm_coe_dict_response()`（`index_list_offset = first_segment ? 8 : 6`）
+/// 与 SOEM `ecx_readODlist()`（首帧 `n = (length - (6 + 2)) / 2`）都**跳过**它、
+/// 直接按偏移 8 读索引；ETG.1000.6 对该字段的定义未从公开资料核实（⚠️ 待验证），
+/// 本实现填 0 并保持两家主站解析一致。
+pub const SDO_INFO_OD_LIST_FIRST_FRAME_PAD: [u8; 2] = [0x00, 0x00];
+
+/// 解析后的 CoE SDO Info 请求。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SdoInfoRequest {
+    /// Get OD List（`deliver_all` 来自请求第 6–7 字节，两家主站都发 1）。
+    OdList {
+        /// 请求中的对象筛选参数（1 = 全部对象）。
+        deliver_all: u16,
+    },
+    /// Get OD：读某个索引的对象描述。
+    ObjectDescription {
+        /// 对象索引。
+        index: u16,
+    },
+    /// Get Entry Description：读某索引/子索引的条目描述。
+    EntryDescription {
+        /// 对象索引。
+        index: u16,
+        /// 子索引。
+        subindex: u8,
+        /// 请求要返回的附加信息位（访问权限/对象类别/PDO，SOEM 发 0x07）。
+        value_info: u8,
+    },
+}
+
+/// 构造 SDO Info 响应的公共头（CoE 服务字 + 操作码 + 保留 + 分段计数）。
+fn sdo_info_response_header(opcode: u8) -> Vec<u8> {
+    let mut service = Vec::with_capacity(6);
+    service.extend_from_slice(&(COE_COMMAND_SDO_INFO << 12).to_le_bytes());
+    service.push(opcode);
+    service.push(0x00); // Reserved
+    service.extend_from_slice(&[0x00, 0x00]); // Fragments left（单帧响应 = 0）
+    service
+}
+
+/// 解析 CoE SDO Info 请求服务数据；非 SDO Info 或未知操作码返回 [`None`]。
 #[must_use]
+pub fn parse_sdo_info_request(service: &[u8]) -> Option<SdoInfoRequest> {
+    if service.len() < 6 {
+        return None;
+    }
+    let coe = u16::from_le_bytes([service[0], service[1]]);
+    if coe >> 12 != COE_COMMAND_SDO_INFO {
+        return None;
+    }
+    let opcode = service[2] & 0x7F;
+    match opcode {
+        SDO_INFO_GET_OD_LIST_REQUEST => {
+            if service.len() < 8 {
+                return None;
+            }
+            Some(SdoInfoRequest::OdList {
+                deliver_all: u16::from_le_bytes([service[6], service[7]]),
+            })
+        }
+        SDO_INFO_GET_OD_REQUEST => {
+            if service.len() < 8 {
+                return None;
+            }
+            Some(SdoInfoRequest::ObjectDescription {
+                index: u16::from_le_bytes([service[6], service[7]]),
+            })
+        }
+        SDO_INFO_GET_ENTRY_REQUEST => {
+            if service.len() < 10 {
+                return None;
+            }
+            Some(SdoInfoRequest::EntryDescription {
+                index: u16::from_le_bytes([service[6], service[7]]),
+                subindex: service[8],
+                value_info: service[9],
+            })
+        }
+        _ => None,
+    }
+}
+
+/// 构造 **Get OD List 响应**服务数据（索引列表，单帧；两家主站按偏移 8 读）。
+#[must_use]
+pub fn build_sdo_info_od_list(indices: &[u16]) -> Vec<u8> {
+    let mut service = sdo_info_response_header(SDO_INFO_GET_OD_LIST_RESPONSE);
+    service.extend_from_slice(&SDO_INFO_OD_LIST_FIRST_FRAME_PAD);
+    for index in indices {
+        service.extend_from_slice(&index.to_le_bytes());
+    }
+    service
+}
+
+/// 构造 **Get OD 响应**服务数据（对象描述 + 名称）。
+#[must_use]
+pub fn build_sdo_info_object_description(
+    description: &crate::obj_dict::ObjectDescription,
+) -> Vec<u8> {
+    let mut service = sdo_info_response_header(SDO_INFO_GET_OD_RESPONSE);
+    service.extend_from_slice(&description.index.to_le_bytes());
+    service.extend_from_slice(&description.data_type.to_le_bytes());
+    service.push(description.max_subindex);
+    service.push(description.object_code);
+    service.extend_from_slice(description.name.as_bytes());
+    service
+}
+
+/// 构造 **Get Entry Description 响应**服务数据（条目描述 + 名称）。
+#[must_use]
+pub fn build_sdo_info_entry_description(
+    description: &crate::obj_dict::EntryDescription,
+) -> Vec<u8> {
+    let mut service = sdo_info_response_header(SDO_INFO_GET_ENTRY_RESPONSE);
+    service.extend_from_slice(&description.index.to_le_bytes());
+    service.push(description.subindex);
+    service.push(description.value_info);
+    service.extend_from_slice(&description.data_type.to_le_bytes());
+    service.extend_from_slice(&description.bit_length.to_le_bytes());
+    service.extend_from_slice(&description.access.to_le_bytes());
+    service.extend_from_slice(description.name.as_bytes());
+    service
+}
+
+/// 构造 **SDO Info 错误响应**（Get OD/Entry 请求了不存在的对象或条目）。
+///
+/// 布局按两家主站的错误判断：`0x8<<12` + 操作码 0x07，abort code 从 +6 开始
+/// （IgH `fsm_coe.c` 读 `data + 6`；SOEM `ecx_SDOinfoerror` 读 `ldata[0]` = 服务数据 +6）。
+#[must_use]
+pub fn build_sdo_info_error(abort_code: u32) -> Vec<u8> {
+    let mut service = sdo_info_response_header(SDO_INFO_ERROR_RESPONSE);
+    service.extend_from_slice(&abort_code.to_le_bytes());
+    service
+}
+
+/// 把服务数据封装成完整邮箱报文（头 + 数据）；超过 [`MAILBOX_SIZE`] 返回 [`None`]。#[must_use]
 pub fn build_mailbox(header: MailboxHeader, service: &[u8]) -> Option<Vec<u8>> {
     if MAILBOX_HEADER_LEN + service.len() > MAILBOX_SIZE {
         return None;
@@ -397,5 +564,99 @@ mod tests {
         assert!(mailbox_full(status));
         clear_mailbox_full(&mut registers);
         assert_eq!(registers.read_u8(SM1_STATUS_ADDRESS), Some(0));
+    }
+
+    #[test]
+    fn sdo_info_requests_are_parsed_like_both_masters_send_them() {
+        // IgH `fsm_coe.c: ec_fsm_coe_prepare_dict()`：0x8<<12、opcode 0x01、deliver all = 1。
+        let od_list = [0x00, 0x80, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00];
+        assert_eq!(
+            parse_sdo_info_request(&od_list),
+            Some(SdoInfoRequest::OdList { deliver_all: 1 })
+        );
+
+        // IgH `ec_fsm_coe_dict_prepare_desc()`：opcode 0x03，index 在 +6。
+        let od = [0x00, 0x80, 0x03, 0x00, 0x00, 0x00, 0x12, 0x1C];
+        assert_eq!(
+            parse_sdo_info_request(&od),
+            Some(SdoInfoRequest::ObjectDescription { index: 0x1C12 })
+        );
+
+        // SOEM `ecx_readOEsingle()`：opcode 0x05，index +6、subindex +8、value_info +9。
+        let entry = [0x00, 0x80, 0x05, 0x00, 0x00, 0x00, 0x12, 0x1C, 0x01, 0x07];
+        assert_eq!(
+            parse_sdo_info_request(&entry),
+            Some(SdoInfoRequest::EntryDescription {
+                index: 0x1C12,
+                subindex: 0x01,
+                value_info: 0x07
+            })
+        );
+
+        // 非 SDO Info（SDO 请求 0x2<<12）、未知操作码、过短 → None。
+        assert_eq!(
+            parse_sdo_info_request(&[0x00, 0x20, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            None
+        );
+        assert_eq!(
+            parse_sdo_info_request(&[0x00, 0x80, 0x7F, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            None
+        );
+        assert_eq!(parse_sdo_info_request(&[0x00, 0x80, 0x01]), None);
+    }
+
+    #[test]
+    fn sdo_info_responses_match_master_field_offsets() {
+        // Get OD List：索引从 +8 开始（IgH index_list_offset = 8 / SOEM 首帧 (len-8)/2）。
+        let response = build_sdo_info_od_list(&[0x1018, 0x1C00, 0x1600]);
+        assert_eq!(&response[..2], &[0x00, 0x80], "CoE 服务 = SDO Info");
+        assert_eq!(response[2], SDO_INFO_GET_OD_LIST_RESPONSE);
+        assert_eq!(&response[4..6], &[0, 0], "fragments left = 0");
+        assert_eq!(&response[6..8], &SDO_INFO_OD_LIST_FIRST_FRAME_PAD);
+        assert_eq!(response.len(), 8 + 3 * 2);
+        assert_eq!(
+            u16::from_le_bytes([response[8], response[9]]),
+            0x1018,
+            "首帧第一个索引在 +8"
+        );
+
+        // Get OD：index +6、data_type +8、max_subindex +10、object_code +11、名称 +12。
+        let description = crate::obj_dict::object_description(0x1C12).expect("object");
+        let response = build_sdo_info_object_description(&description);
+        assert_eq!(response[2], SDO_INFO_GET_OD_RESPONSE);
+        assert_eq!(u16::from_le_bytes([response[6], response[7]]), 0x1C12);
+        assert_eq!(response[10], 1, "max_subindex");
+        assert_eq!(
+            response[11],
+            crate::obj_dict::object_code::ARRAY,
+            "object_code"
+        );
+        assert_eq!(&response[12..], b"RxPDO assign".as_slice());
+
+        // Get Entry Description：index +6、subindex +8、value_info +9、data_type +10、
+        // bit_length +12、access +14、名称 +16。
+        let entry = crate::obj_dict::entry_description(0x1C12, 1).expect("entry");
+        let response = build_sdo_info_entry_description(&entry);
+        assert_eq!(response[2], SDO_INFO_GET_ENTRY_RESPONSE);
+        assert_eq!(u16::from_le_bytes([response[6], response[7]]), 0x1C12);
+        assert_eq!(response[8], 1);
+        assert_eq!(
+            u16::from_le_bytes([response[10], response[11]]),
+            crate::obj_dict::data_type::UNSIGNED16
+        );
+        assert_eq!(u16::from_le_bytes([response[12], response[13]]), 16);
+        assert_eq!(
+            u16::from_le_bytes([response[14], response[15]]),
+            crate::obj_dict::access::READ_WRITE_PREOP
+        );
+        assert_eq!(&response[16..], b"RxPDO assign".as_slice());
+
+        // 错误响应：opcode 0x07，abort code 从 +6 开始（IgH 读 data+6 / SOEM 读 ldata[0]）。
+        let error = build_sdo_info_error(SDO_ABORT_OBJECT_NOT_EXIST);
+        assert_eq!(error[2], SDO_INFO_ERROR_RESPONSE);
+        assert_eq!(
+            u32::from_le_bytes([error[6], error[7], error[8], error[9]]),
+            SDO_ABORT_OBJECT_NOT_EXIST
+        );
     }
 }

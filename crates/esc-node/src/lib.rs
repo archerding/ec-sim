@@ -25,7 +25,7 @@ use std::collections::BTreeMap;
 
 use esc_core::eeprom::EepromInterface;
 use esc_core::fmmu::{Fmmu, FMMU_MAX};
-use esc_core::mailbox::{self, MailboxHeader, SdoRequest};
+use esc_core::mailbox::{self, MailboxHeader, SdoInfoRequest, SdoRequest};
 use esc_core::memory::DlUserMemory;
 use esc_core::obj_dict;
 use esc_core::sii::SiiImage;
@@ -522,36 +522,60 @@ impl Responder {
         let service_len = usize::from(header.length).min(available);
         let service =
             &message[mailbox::MAILBOX_HEADER_LEN..mailbox::MAILBOX_HEADER_LEN + service_len];
-        let response_service = match mailbox::parse_sdo_request(service) {
-            Some(SdoRequest::Upload { index, subindex }) => {
-                match self.object_value(index, subindex) {
-                    Some(value) => mailbox::sdo_upload_service(index, subindex, value),
-                    None => mailbox::sdo_abort_payload(
-                        index,
-                        subindex,
-                        mailbox::SDO_ABORT_OBJECT_NOT_EXIST,
-                    ),
+        let response_service = if let Some(info_request) = mailbox::parse_sdo_info_request(service)
+        {
+            // CoE SDO Information 服务（`ethercat sdos` / SOEM `slaveinfo -sdo`）。
+            match info_request {
+                SdoInfoRequest::OdList { .. } => {
+                    mailbox::build_sdo_info_od_list(&obj_dict::object_index_list())
                 }
+                SdoInfoRequest::ObjectDescription { index } => {
+                    match obj_dict::object_description(index) {
+                        Some(description) => {
+                            mailbox::build_sdo_info_object_description(&description)
+                        }
+                        None => mailbox::build_sdo_info_error(mailbox::SDO_ABORT_OBJECT_NOT_EXIST),
+                    }
+                }
+                SdoInfoRequest::EntryDescription {
+                    index, subindex, ..
+                } => match obj_dict::entry_description(index, subindex) {
+                    Some(description) => mailbox::build_sdo_info_entry_description(&description),
+                    None => mailbox::build_sdo_info_error(mailbox::SDO_ABORT_OBJECT_NOT_EXIST),
+                },
             }
-            Some(SdoRequest::Download {
-                index,
-                subindex,
-                data,
-            }) => {
-                if obj_dict::is_writable(index) {
-                    self.object_writes.insert((index, subindex), data.to_vec());
-                    mailbox::sdo_download_ok_service(index, subindex)
-                } else {
-                    let abort_code = if obj_dict::read_object(index, subindex).is_some() {
-                        mailbox::SDO_ABORT_READ_ONLY
+        } else {
+            match mailbox::parse_sdo_request(service) {
+                Some(SdoRequest::Upload { index, subindex }) => {
+                    match self.object_value(index, subindex) {
+                        Some(value) => mailbox::sdo_upload_service(index, subindex, value),
+                        None => mailbox::sdo_abort_payload(
+                            index,
+                            subindex,
+                            mailbox::SDO_ABORT_OBJECT_NOT_EXIST,
+                        ),
+                    }
+                }
+                Some(SdoRequest::Download {
+                    index,
+                    subindex,
+                    data,
+                }) => {
+                    if obj_dict::is_writable(index) {
+                        self.object_writes.insert((index, subindex), data.to_vec());
+                        mailbox::sdo_download_ok_service(index, subindex)
                     } else {
-                        mailbox::SDO_ABORT_OBJECT_NOT_EXIST
-                    };
-                    mailbox::sdo_abort_payload(index, subindex, abort_code)
+                        let abort_code = if obj_dict::read_object(index, subindex).is_some() {
+                            mailbox::SDO_ABORT_READ_ONLY
+                        } else {
+                            mailbox::SDO_ABORT_OBJECT_NOT_EXIST
+                        };
+                        mailbox::sdo_abort_payload(index, subindex, abort_code)
+                    }
                 }
+                // master 发起的 Abort / 分段传输 / SDO Info：暂不应答。
+                Some(SdoRequest::Other) | None => return,
             }
-            // master 发起的 Abort / 分段传输 / SDO Info：暂不应答。
-            Some(SdoRequest::Other) | None => return,
         };
         let response_header = MailboxHeader {
             length: 0,
@@ -1414,11 +1438,12 @@ mod tests {
         assert_eq!(responder.stats().mailbox_responses, 0);
         assert!(!mailbox::mailbox_full(read_sm1_status(&mut responder)));
 
-        // CoE SDO Info（0x8）暂不实现：也不应答。
+        // 未知 SDO Info 操作码（0x7F）：不应答（SDO Info 已实现，见
+        // `sdo_info_od_list_and_descriptions_are_answered`）。
         let payload = mailbox_request_payload(
             mailbox::MAILBOX_TYPE_COE,
             0x8, // SDO information
-            0x01,
+            0x7F,
             0,
             0,
         );
@@ -1769,6 +1794,94 @@ mod tests {
         assert_eq!(
             al_status_code(&mut responder),
             esc_core::al_status::UNKNOWN_REQUESTED_STATE
+        );
+    }
+
+    /// 把完整 CoE 服务数据（含 CoE 头与操作码）写成一条 SM0 邮箱报文。
+    fn mailbox_service_payload(service: &[u8]) -> Vec<u8> {
+        let mut payload = vec![0u8; mailbox::MAILBOX_SIZE];
+        payload[0..2].copy_from_slice(&(service.len() as u16).to_le_bytes());
+        payload[2..4].copy_from_slice(&0x1001u16.to_le_bytes());
+        payload[4] = 0;
+        payload[5] = mailbox::MAILBOX_TYPE_COE;
+        payload[6..6 + service.len()].copy_from_slice(service);
+        payload
+    }
+
+    /// 把 CoE 服务数据（含 CoE 头）写成一条 SM0 邮箱报文（长度 = 服务数据长度）。
+    fn mailbox_sdo_info_payload(service: &[u8]) -> Vec<u8> {
+        mailbox_service_payload(service)
+    }
+
+    /// 从 SM1 邮箱读回 CoE 服务数据（含 CoE 头）。
+    fn read_tx_service(responder: &mut Responder) -> Vec<u8> {
+        let response = read_tx_mailbox(responder);
+        let header = MailboxHeader::parse(&response).expect("mailbox header");
+        let len = usize::from(header.length);
+        response[6..6 + len].to_vec()
+    }
+
+    #[test]
+    fn sdo_info_od_list_and_descriptions_are_answered() {
+        let mut responder = Responder::default();
+
+        // 1) Get OD List：opcode 0x01，deliver all = 1；响应索引表从 +8 开始。
+        let od_list_request = [0x00, 0x80, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00];
+        write_mailbox(&mut responder, mailbox_sdo_info_payload(&od_list_request));
+        assert!(mailbox::mailbox_full(read_sm1_status(&mut responder)));
+        let response = read_tx_service(&mut responder);
+        assert_eq!(&response[..2], &[0x00, 0x80], "CoE 服务 = SDO Info");
+        assert_eq!(response[2], mailbox::SDO_INFO_GET_OD_LIST_RESPONSE);
+        assert_eq!(&response[4..6], &[0, 0], "单帧：fragments left = 0");
+        let indices: Vec<u16> = response[8..]
+            .chunks_exact(2)
+            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect();
+        assert_eq!(
+            indices,
+            vec![0x1018, 0x1C00, 0x1C12, 0x1C13, 0x1600, 0x1A00]
+        );
+
+        // 2) Get OD（0x1C12）：opcode 0x04，index +6、名称 +12。
+        let od_request = [0x00, 0x80, 0x03, 0x00, 0x00, 0x00, 0x12, 0x1C];
+        write_mailbox(&mut responder, mailbox_sdo_info_payload(&od_request));
+        let response = read_tx_service(&mut responder);
+        assert_eq!(response[2], mailbox::SDO_INFO_GET_OD_RESPONSE);
+        assert_eq!(u16::from_le_bytes([response[6], response[7]]), 0x1C12);
+        assert_eq!(response[10], 1, "max_subindex");
+        assert_eq!(
+            response[11],
+            esc_core::obj_dict::object_code::ARRAY,
+            "object_code"
+        );
+        assert_eq!(&response[12..], b"RxPDO assign".as_slice());
+
+        // 3) Get Entry Description（0x1C12:01）：opcode 0x06，名称 +16。
+        let entry_request = [0x00, 0x80, 0x05, 0x00, 0x00, 0x00, 0x12, 0x1C, 0x01, 0x07];
+        write_mailbox(&mut responder, mailbox_sdo_info_payload(&entry_request));
+        let response = read_tx_service(&mut responder);
+        assert_eq!(response[2], mailbox::SDO_INFO_GET_ENTRY_RESPONSE);
+        assert_eq!(u16::from_le_bytes([response[6], response[7]]), 0x1C12);
+        assert_eq!(response[8], 0x01);
+        assert_eq!(
+            u16::from_le_bytes([response[10], response[11]]),
+            esc_core::obj_dict::data_type::UNSIGNED16
+        );
+        assert_eq!(u16::from_le_bytes([response[12], response[13]]), 16);
+        assert_eq!(
+            u16::from_le_bytes([response[14], response[15]]),
+            esc_core::obj_dict::access::READ_WRITE_PREOP
+        );
+        assert_eq!(&response[16..], b"RxPDO assign".as_slice());
+
+        // 4) 未知对象 → SDO Info 错误响应（opcode 0x07，abort code 从 +6 开始）。
+        let unknown_request = [0x00, 0x80, 0x03, 0x00, 0x00, 0x00, 0x00, 0x20];
+        write_mailbox(&mut responder, mailbox_sdo_info_payload(&unknown_request));
+        let response = read_tx_service(&mut responder);
+        assert_eq!(response[2], mailbox::SDO_INFO_ERROR_RESPONSE);
+        assert_eq!(
+            u32::from_le_bytes([response[6], response[7], response[8], response[9]]),
+            mailbox::SDO_ABORT_OBJECT_NOT_EXIST
         );
     }
 }

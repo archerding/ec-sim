@@ -323,6 +323,25 @@ pub const SIM_RX_PDOS: [SiiPdo; 1] = [SiiPdo {
     entries: &SIM_RX_PDO_ENTRIES,
 }];
 
+/// SII 通用类别（0x001E）里的 CoE 能力位（IgH `slave.c: ec_slave_fetch_sii_general()`
+/// 的 `coe_details`：bit0 enable SDO、bit1 enable SDO Info、bit2 enable PDO assign、
+/// bit3 enable PDO configuration）。
+///
+/// 本模拟器支持 SDO 上传/下载、SDO Info（`0x8` 服务）与 PDO 分配/映射对象读写 → `0x0F`。
+/// ⚠️ 未置 bit5（Complete Access）；SII 中声明 CA 会让 SOEM 走 `ecx_readPDOmapCA()`，
+/// 而本模拟器尚未实现 CA 传输。
+pub const SIM_COE_DETAILS: u8 = 0x0F;
+
+/// 构造通用类别（0x001E）的 32 字节数据：名称索引 0 + 物理层 + CoE 能力位。
+///
+/// 布局按 IgH `ec_slave_fetch_sii_general()`：data[4] = 物理层（每端口 2 位）、
+/// data[5] = CoE details、data[0x0B] = general flags、data[0x0C..0x0E] = Ebus 电流。
+fn general_category() -> Vec<u8> {
+    let mut data = vec![0u8; 32];
+    data[5] = SIM_COE_DETAILS;
+    data
+}
+
 /// 最小 SII 镜像（word 数组，1 word = 2 字节小端）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SiiImage {
@@ -360,8 +379,9 @@ impl SiiImage {
 
         push_category(&mut words, category::STRINGS, &strings_category(&SIM_NAMES));
         // 通用类别固定 32 字节（IgH ec_slave_fetch_sii_general 要求 data_size == 32）。
-        // data[0..3] 为 group/image/order/name 的字符串索引，全 0 → 名称字符串索引 0。
-        push_category(&mut words, category::GENERAL, &[0u8; 32]);
+        // data[0..3] 为 group/image/order/name 的字符串索引（全 0 → 名称字符串索引 0）；
+        // data[5] 声明 CoE 能力（含 SDO Info 位，`ethercat sdos`/`slaveinfo -sdo` 需要）。
+        push_category(&mut words, category::GENERAL, &general_category());
         push_category(&mut words, category::SYNC_MANAGER, &sync_manager_category());
         push_category(&mut words, category::TX_PDO, &pdo_category(&SIM_TX_PDOS));
         push_category(&mut words, category::RX_PDO, &pdo_category(&SIM_RX_PDOS));
@@ -849,5 +869,21 @@ mod tests {
         assert_eq!(empty.sync_manager_count(), 0);
         assert!(!empty.declares_process_data_sync_managers());
         assert!(empty.category_bytes(category::SYNC_MANAGER).is_none());
+    }
+
+    #[test]
+    fn general_category_declares_coe_capabilities_including_sdo_info() {
+        let sii = SiiImage::simulated_slave();
+        let (data, size_words) = category_data(&sii, category::GENERAL).expect("general category");
+        assert_eq!(size_words * 2, 32, "IgH 要求通用类别正好 32 字节");
+        // IgH `slave.c: ec_slave_fetch_sii_general()`：data[5] = CoE details。
+        assert_eq!(data[5], SIM_COE_DETAILS);
+        assert_eq!(data[5] & 0x01, 0x01, "enable SDO");
+        assert_eq!(
+            data[5] & 0x02,
+            0x02,
+            "enable SDO Info（ethercat sdos 需要）"
+        );
+        assert_eq!(data[5] & 0x20, 0x00, "不声明 Complete Access（尚未实现）");
     }
 }

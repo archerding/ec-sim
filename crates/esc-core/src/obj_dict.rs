@@ -207,6 +207,318 @@ pub fn is_writable(index: u16) -> bool {
     matches!(index, 0x1C12 | 0x1C13 | 0x1600 | 0x1A00 | 0x1C32 | 0x1C33)
 }
 
+/// 对象代码（ETG.1000.6 对象描述：Get OD 响应中的 ObjectCode 字段）。
+pub mod object_code {
+    /// 变量对象。
+    pub const VAR: u8 = 0x07;
+    /// 数组对象。
+    pub const ARRAY: u8 = 0x08;
+    /// 记录对象。
+    pub const RECORD: u8 = 0x09;
+}
+
+/// 数据类型编码（ETG.1000.6 / `SOEM include/soem/ec_type.h: ec_datatype`）。
+pub mod data_type {
+    /// BOOLEAN。
+    pub const BOOLEAN: u16 = 0x0001;
+    /// INTEGER8。
+    pub const INTEGER8: u16 = 0x0002;
+    /// INTEGER16。
+    pub const INTEGER16: u16 = 0x0003;
+    /// INTEGER32。
+    pub const INTEGER32: u16 = 0x0004;
+    /// UNSIGNED8。
+    pub const UNSIGNED8: u16 = 0x0005;
+    /// UNSIGNED16。
+    pub const UNSIGNED16: u16 = 0x0006;
+    /// UNSIGNED32。
+    pub const UNSIGNED32: u16 = 0x0007;
+    /// 复合对象（ARRAY/RECORD）在对象描述中的 DataType 字段按惯例填 0。
+    pub const NONE: u16 = 0x0000;
+}
+
+/// 对象条目访问权限位（ETG.1000.6；IgH `fsm_coe.c: ec_fsm_coe_dict_entry_response()`
+/// 的位解析：bit0 R-preop、bit1 R-safeop、bit2 R-op、bit3 W-preop、bit4 W-safeop、bit5 W-op）。
+pub mod access {
+    /// 只读（三个状态都可读）。
+    pub const READ_ONLY: u16 = 0x0007;
+    /// PREOP 可读可写（PDO 配置对象）。
+    pub const READ_WRITE_PREOP: u16 = 0x0009;
+}
+
+/// 对象描述（SDO Info **Get OD** 响应用）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ObjectDescription {
+    /// 对象索引。
+    pub index: u16,
+    /// 最大子索引（0 表示只有子索引 0）。
+    pub max_subindex: u8,
+    /// 对象代码，见 [`object_code`]。
+    pub object_code: u8,
+    /// 对象数据类型，见 [`data_type`]。
+    pub data_type: u16,
+    /// 对象名（GET OD 响应中的名称字符串）。
+    pub name: &'static str,
+}
+
+/// 对象条目描述（SDO Info **Get Entry Description** 响应用）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntryDescription {
+    /// 对象索引。
+    pub index: u16,
+    /// 子索引。
+    pub subindex: u8,
+    /// 数据类型，见 [`data_type`]。
+    pub data_type: u16,
+    /// 位长度。
+    pub bit_length: u16,
+    /// 访问权限位，见 [`access`]。
+    pub access: u16,
+    /// ValueInfo：0 = 普通值（ETG.1000.6 SDO Info）。
+    pub value_info: u8,
+    /// 条目名。
+    pub name: &'static str,
+}
+
+/// 本镜像的对象描述表（顺序即 Get OD List 返回的索引顺序）。
+pub const SIM_OBJECT_DESCRIPTIONS: &[ObjectDescription] = &[
+    ObjectDescription {
+        index: 0x1018,
+        max_subindex: 4,
+        object_code: object_code::RECORD,
+        data_type: data_type::NONE,
+        name: "Identity",
+    },
+    ObjectDescription {
+        index: 0x1C00,
+        max_subindex: 4,
+        object_code: object_code::ARRAY,
+        data_type: data_type::UNSIGNED8,
+        name: "Sync manager communication type",
+    },
+    ObjectDescription {
+        index: 0x1C12,
+        max_subindex: 1,
+        object_code: object_code::ARRAY,
+        data_type: data_type::UNSIGNED16,
+        name: "RxPDO assign",
+    },
+    ObjectDescription {
+        index: 0x1C13,
+        max_subindex: 1,
+        object_code: object_code::ARRAY,
+        data_type: data_type::UNSIGNED16,
+        name: "TxPDO assign",
+    },
+    ObjectDescription {
+        index: 0x1600,
+        max_subindex: 1,
+        object_code: object_code::ARRAY,
+        data_type: data_type::UNSIGNED32,
+        name: "RxPDO mapping",
+    },
+    ObjectDescription {
+        index: 0x1A00,
+        max_subindex: 1,
+        object_code: object_code::ARRAY,
+        data_type: data_type::UNSIGNED32,
+        name: "TxPDO mapping",
+    },
+];
+
+/// 本镜像的条目描述表（顺序与 [`SIM_OBJECTS`] 一致）。
+pub const SIM_ENTRY_DESCRIPTIONS: &[EntryDescription] = &[
+    EntryDescription {
+        index: 0x1018,
+        subindex: 0,
+        data_type: data_type::UNSIGNED8,
+        bit_length: 8,
+        access: access::READ_ONLY,
+        value_info: 0,
+        name: "Number of entries",
+    },
+    EntryDescription {
+        index: 0x1018,
+        subindex: 1,
+        data_type: data_type::UNSIGNED32,
+        bit_length: 32,
+        access: access::READ_ONLY,
+        value_info: 0,
+        name: "Vendor ID",
+    },
+    EntryDescription {
+        index: 0x1018,
+        subindex: 2,
+        data_type: data_type::UNSIGNED32,
+        bit_length: 32,
+        access: access::READ_ONLY,
+        value_info: 0,
+        name: "Product code",
+    },
+    EntryDescription {
+        index: 0x1018,
+        subindex: 3,
+        data_type: data_type::UNSIGNED32,
+        bit_length: 32,
+        access: access::READ_ONLY,
+        value_info: 0,
+        name: "Revision number",
+    },
+    EntryDescription {
+        index: 0x1018,
+        subindex: 4,
+        data_type: data_type::UNSIGNED32,
+        bit_length: 32,
+        access: access::READ_ONLY,
+        value_info: 0,
+        name: "Serial number",
+    },
+    EntryDescription {
+        index: 0x1C00,
+        subindex: 0,
+        data_type: data_type::UNSIGNED8,
+        bit_length: 8,
+        access: access::READ_ONLY,
+        value_info: 0,
+        name: "Number of sync managers",
+    },
+    EntryDescription {
+        index: 0x1C00,
+        subindex: 1,
+        data_type: data_type::UNSIGNED8,
+        bit_length: 8,
+        access: access::READ_ONLY,
+        value_info: 0,
+        name: "SM0 type",
+    },
+    EntryDescription {
+        index: 0x1C00,
+        subindex: 2,
+        data_type: data_type::UNSIGNED8,
+        bit_length: 8,
+        access: access::READ_ONLY,
+        value_info: 0,
+        name: "SM1 type",
+    },
+    EntryDescription {
+        index: 0x1C00,
+        subindex: 3,
+        data_type: data_type::UNSIGNED8,
+        bit_length: 8,
+        access: access::READ_ONLY,
+        value_info: 0,
+        name: "SM2 type",
+    },
+    EntryDescription {
+        index: 0x1C00,
+        subindex: 4,
+        data_type: data_type::UNSIGNED8,
+        bit_length: 8,
+        access: access::READ_ONLY,
+        value_info: 0,
+        name: "SM3 type",
+    },
+    EntryDescription {
+        index: 0x1C12,
+        subindex: 0,
+        data_type: data_type::UNSIGNED8,
+        bit_length: 8,
+        access: access::READ_WRITE_PREOP,
+        value_info: 0,
+        name: "Number of assigned RxPDOs",
+    },
+    EntryDescription {
+        index: 0x1C12,
+        subindex: 1,
+        data_type: data_type::UNSIGNED16,
+        bit_length: 16,
+        access: access::READ_WRITE_PREOP,
+        value_info: 0,
+        name: "RxPDO assign",
+    },
+    EntryDescription {
+        index: 0x1C13,
+        subindex: 0,
+        data_type: data_type::UNSIGNED8,
+        bit_length: 8,
+        access: access::READ_WRITE_PREOP,
+        value_info: 0,
+        name: "Number of assigned TxPDOs",
+    },
+    EntryDescription {
+        index: 0x1C13,
+        subindex: 1,
+        data_type: data_type::UNSIGNED16,
+        bit_length: 16,
+        access: access::READ_WRITE_PREOP,
+        value_info: 0,
+        name: "TxPDO assign",
+    },
+    EntryDescription {
+        index: 0x1600,
+        subindex: 0,
+        data_type: data_type::UNSIGNED8,
+        bit_length: 8,
+        access: access::READ_WRITE_PREOP,
+        value_info: 0,
+        name: "Number of mapped objects",
+    },
+    EntryDescription {
+        index: 0x1600,
+        subindex: 1,
+        data_type: data_type::UNSIGNED32,
+        bit_length: 32,
+        access: access::READ_WRITE_PREOP,
+        value_info: 0,
+        name: "RxPDO mapping 0x7000:00",
+    },
+    EntryDescription {
+        index: 0x1A00,
+        subindex: 0,
+        data_type: data_type::UNSIGNED8,
+        bit_length: 8,
+        access: access::READ_WRITE_PREOP,
+        value_info: 0,
+        name: "Number of mapped objects",
+    },
+    EntryDescription {
+        index: 0x1A00,
+        subindex: 1,
+        data_type: data_type::UNSIGNED32,
+        bit_length: 32,
+        access: access::READ_WRITE_PREOP,
+        value_info: 0,
+        name: "TxPDO mapping 0x6000:00",
+    },
+];
+
+/// 对象字典的索引列表（去重、按 [`SIM_OBJECT_DESCRIPTIONS`] 顺序）。
+#[must_use]
+pub fn object_index_list() -> Vec<u16> {
+    SIM_OBJECT_DESCRIPTIONS
+        .iter()
+        .map(|description| description.index)
+        .collect()
+}
+
+/// 按索引查对象描述（SDO Info Get OD 用）。
+#[must_use]
+pub fn object_description(index: u16) -> Option<ObjectDescription> {
+    SIM_OBJECT_DESCRIPTIONS
+        .iter()
+        .find(|description| description.index == index)
+        .copied()
+}
+
+/// 按索引+子索引查条目描述（SDO Info Get Entry Description 用）。
+#[must_use]
+pub fn entry_description(index: u16, subindex: u8) -> Option<EntryDescription> {
+    SIM_ENTRY_DESCRIPTIONS
+        .iter()
+        .find(|description| description.index == index && description.subindex == subindex)
+        .copied()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,5 +615,42 @@ mod tests {
     fn unknown_objects_return_none() {
         assert!(read_object(0x2000, 0).is_none());
         assert!(read_object(0x1C12, 2).is_none());
+    }
+
+    #[test]
+    fn descriptions_cover_every_simulated_object_entry() {
+        for entry in SIM_OBJECTS {
+            let description = entry_description(entry.index, entry.subindex).unwrap_or_else(|| {
+                panic!("缺少条目描述 0x{:04X}:{:02X}", entry.index, entry.subindex)
+            });
+            assert_eq!(
+                usize::from(description.bit_length),
+                entry.value.len() * 8,
+                "0x{:04X}:{:02X} 位长度与值长度不一致",
+                entry.index,
+                entry.subindex
+            );
+        }
+        assert_eq!(
+            object_index_list(),
+            vec![0x1018, 0x1C00, 0x1C12, 0x1C13, 0x1600, 0x1A00],
+            "Get OD List 的索引顺序"
+        );
+        for description in SIM_OBJECT_DESCRIPTIONS {
+            let max_subindex = SIM_ENTRY_DESCRIPTIONS
+                .iter()
+                .filter(|entry| entry.index == description.index)
+                .map(|entry| entry.subindex)
+                .max()
+                .unwrap_or(0);
+            assert_eq!(
+                description.max_subindex, max_subindex,
+                "0x{:04X} 的 max_subindex 与条目表不一致",
+                description.index
+            );
+            assert!(object_description(description.index).is_some());
+        }
+        assert!(entry_description(0x1018, 5).is_none());
+        assert!(object_description(0x2000).is_none());
     }
 }
