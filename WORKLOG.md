@@ -6,6 +6,38 @@
 
 ---
 
+## 2026-11-12 23:30 班（低峰）— B11 第五步：**IgH 侧 CiA 402 画像进 OP + 运行时行为验证**
+
+**做了什么**
+- 新增验证脚本 `scripts/spikes/igh-cia402-op-probe.sh`：用未修改 IgH 的 ecrt 应用
+  （验证机本地夹具 `ecrt-cia402-op.c`，**源码不入库**）配置 7 字节 RxPDO/TxPDO，
+  按 `0x0006→0x0007→0x000F` 写控制字序列，读回状态字/模式显示/实际位置；
+  断言应用运行期间 `ethercat slaves` 为 **OP**、`RESULT al_states=0x08`、
+  `STATUS sw` 含 `Operation enabled(0x0004)`+`Target reached(0x0400)`、
+  `modes_display=8`、`pos=1000`。
+- `docs/plugins/generic-cia402-verification.md` 增加 IgH OP + 运行时行为证据段落，
+  更新"待验证/后续"清单。
+
+**验证结果**
+- 本机：脚本 `bash -n` 通过；Rust 代码未改，`cargo test --workspace` **160 passed** 基线不变。
+- Linux 验证机：`bash scripts/spikes/igh-cia402-op-probe.sh` → **EXIT=0**：
+  - 应用运行中：`0  0:0  OP  +  0x00000ec5:0x0000e5e0`；
+  - `RESULT al_states=0x08 slaves_responding=1`；
+  - `STATUS sw=0x0637 modes_display=8 pos=1000`；
+  - 应答器侧 `al=0x08`。
+  → 未修改 IgH 零补丁进入 OP，且 TxPDO（状态字/模式显示/实际位置）由 CiA 402 行为驱动。
+
+**卡点**
+- 本班只补 IgH 侧 OP/行为证据，未改代码；行为仍为 Tier0（无运动环/模式切换/Ti 时序）。
+- 夹具源码在验证机本地（不入库，符合 GPL 边界）；仓库内脚本依赖该本地夹具存在。
+- SDO 分段上传设备名在 IgH 侧仍未列入本脚本（SOEM 侧已验证）。
+
+**下次开工第一件事**
+- 派生 **Inovance SV660N 兼容画像**（公开手册默认 PDO/对象，仍用我方 VID/PID），或
+  在行为里加入模式切换（CSP/CSV/CST）与错误码注入；之后处理 B6 FMMU/DC 原文核实。
+
+---
+
 ## 2026-11-12 23:26 班（低峰）— B11 第四步：CiA 402 行为扩展为**完整 7 字节 RxPDO/TxPDO**
 
 **做了什么**

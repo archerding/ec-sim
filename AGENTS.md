@@ -258,8 +258,13 @@ user.email = deepseek-harness@users.noreply.github.com
     enabled 时实际位置跟随目标并置 Target reached，禁用后保持；SM 长度 <7 退化为状态字。
     验证机 `cia402-behavior-probe.sh` **EXIT=0**（`10/7B` 布局、`0x000F→0x0637`、模式显示 8、
     位置 1000）；测试 **160 passed**。⚠️ 无运动环/模式切换/Ti 时序。
-  - 待做：派生 Inovance SV660N 兼容画像（公开手册默认 PDO/对象）；模式切换/错误码注入；
-    IgH ecrt OP 夹具。
+  - 进度（2026-11-12 23:30 班）：**IgH 侧 CiA 402 画像已进 OP 并验证运行时行为**——
+    `scripts/spikes/igh-cia402-op-probe.sh`（验证机本地 ecrt 夹具，源码不入库）：
+    应用运行中 `ethercat slaves` = **OP** + `0x00000ec5:0x0000e5e0`，
+    `RESULT al_states=0x08`，`STATUS sw=0x0637 modes_display=8 pos=1000`（控制字序列
+    `0x0006→0x0007→0x000F` 驱动 TxPDO）。证据：`docs/plugins/generic-cia402-verification.md`。
+  - 待做：派生 Inovance SV660N 兼容画像（公开手册默认 PDO/对象）；模式切换（CSP/CSV/CST）
+    与错误码注入；B6 FMMU/DC 原文核实。
 - [x] ~~**B8 双主站冒烟**~~ ✅ **2026-11-12 19:56 班完成（单从站 8 位 I/O 画像）**：
   **未修改的 SOEM 与 IgH 都在本模拟器上看到从站进入 OP**，输出可复现脚本见
   [spike-4](docs/spikes/spike-4-dual-master-op.md)：

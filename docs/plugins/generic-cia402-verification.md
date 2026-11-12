@@ -44,7 +44,23 @@ Iteration    1:   131 usec  WKC 3  O: 00 00 00 00 00 00 00  I: 00 00 00 00 00 00
 0  0:0  PREOP  +  0x00000ec5:0x0000e5e0
 ```
 
-（IgH 无 ecrt 应用时只配置到 PREOP；OP 用例见 `igh-el2008-op-probe.sh` 的夹具方式。）
+（IgH 无 ecrt 应用时只配置到 PREOP。）
+
+### IgH **OP + 运行时行为**（ecrt 应用夹具，验证机本地、源码不入库）
+
+脚本：`scripts/spikes/igh-cia402-op-probe.sh`（`--behavior cia402` 启用 CiA 402 行为）：
+
+```
+--- 应用运行中的 ethercat slaves ---
+0  0:0  OP  +  0x00000ec5:0x0000e5e0
+RESULT al_states=0x08 slaves_responding=1
+STATUS sw=0x0637 modes_display=8 pos=1000
+OK: IgH 零补丁把 CiA 402 画像推入 OP，且 TxPDO 状态字/模式显示/实际位置由行为驱动（0x0637）
+```
+
+即：未修改 IgH 的 ecrt 应用把从站推入 **OP**；应用按控制字序列 `0x0006→0x0007→0x000F`
+写入 RxPDO，读回的 7 字节 TxPDO 中状态字达到 `Operation enabled(0x0004)` +
+`Target reached(0x0400)`，模式显示为 8（CSP），实际位置跟随目标 1000。
 
 ## 结论
 
@@ -57,7 +73,8 @@ Iteration    1:   131 usec  WKC 3  O: 00 00 00 00 00 00 00  I: 00 00 00 00 00 00
 
 ## ⚠️ 待验证 / 后续
 
-- IgH 侧进入 OP：需按 `igh-el2008-op-probe.sh` 的方式写一个匹配本画像的 ecrt 夹具
-  （7O+7I 的 domain + SDO 上传设备名）。
-- CiA 402 状态机骨架（Tier0 行为插件）与 PDO 动态数据：下一步。
+- CiA 402 行为的运动环/模式切换（CSP/CSV/CST）、Ti=0/1 时序、错误码 `0x603F` 触发：
+  未实现（Tier0 简化，见 `cia402-state-machine.md`）。
 - 具体厂商兼容画像（Inovance SV660N 等）：在通用画像上按公开手册补默认 PDO/对象。
+- SDO 上传本画像设备名（`0x1008`，分段上传）在 IgH 侧尚未列入本脚本；SOEM 侧已验证
+  （分段协议与 EL2008 用例相同，见 `sdo-segmented-upload-probe.sh`）。
