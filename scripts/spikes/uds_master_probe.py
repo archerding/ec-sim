@@ -14,6 +14,7 @@ import os
 import socket
 import struct
 import sys
+import time
 
 ETHERCAT_ETHERTYPE = 0x88A4
 FRAME_TYPE_ECAT_COMMAND = 1
@@ -23,6 +24,7 @@ CMD = {
     "APWR": 0x02,
     "FPRD": 0x04,
     "BRD": 0x07,
+    "LWR": 0x0B,
 }
 
 DEFAULT_SOCKET = "/tmp/ecsim-uds.sock"
@@ -140,10 +142,45 @@ def main():
         )
         check(len(reply) == 2, f"M 位应答 datagram 数 {len(reply)} != 2")
         check(reply[0][4] == 1 and reply[1][4] == 1, "多 datagram 帧 WKC 不是各 +1")
+
+        # 6) SM 过程数据看门狗（B5 子项）：使能后 10 ms 内无过程数据 → SAFEOP+ERROR /
+        #    AL Status Code 0x001B；过程数据写会重置计时；Error ACK 清错。
+        for control in (0x02, 0x04, 0x08):
+            reply = master.transact([(CMD["APWR"], 0, 0x0120, bytes([control]))])
+            check(reply[0][4] == 1, f"AL control {control:#04x} WKC 不是 1")
+        # divider = 2500（40 ns 单位）、intervals = 100 → 10 ms。
+        master.transact([(CMD["APWR"], 0, 0x0400, struct.pack("<H", 2500))])
+        master.transact([(CMD["APWR"], 0, 0x0420, struct.pack("<H", 100))])
+        # SM2：0x1100 / 8 字节 / control 0x44（写方向 + watchdog bit6）/ activate。
+        sm2 = struct.pack("<HHBBBB", 0x1100, 8, 0x44, 0x00, 0x01, 0x00)
+        master.transact([(CMD["APWR"], 0, 0x0810, sm2)])
+        # FMMU0：逻辑 0x1000 → 物理 0x1100，8 字节，type=0x02（写），activate。
+        fmmu = struct.pack("<IHBBHBBB", 0x1000, 8, 0, 7, 0x1100, 0, 0x02, 0x01) + b"\x00\x00\x00"
+        master.transact([(CMD["APWR"], 0, 0x0600, fmmu)])
+        # 写一次过程数据（LWR 逻辑 0x1000），重置看门狗；LWR 的 WKC 应为 1。
+        reply = master.transact([(CMD["LWR"], 0x1000, 0, b"\x00" * 8)])
+        check(reply[0][4] == 1, f"LWR WKC {reply[0][4]} != 1")
+        # 等 > 10 ms 再发一帧（帧驱动时钟推进），读 AL Status / Code。
+        time.sleep(0.02)
+        reply = master.transact([(CMD["APRD"], 0, 0x0130, b"\x00\x00")])
+        status = reply[0][3][0]
+        check(status & 0x10, f"看门狗未置 error 位（AL Status {status:#04x}）")
+        check(status & 0x0F == 0x04, f"看门狗触发后状态 {status & 0x0F:#04x} 不是 SAFEOP")
+        reply = master.transact([(CMD["APRD"], 0, 0x0134, b"\x00\x00")])
+        code = struct.unpack("<H", reply[0][3][:2])[0]
+        check(code == 0x001B, f"AL Status Code {code:#06x} != 0x001B")
+        # Error ACK 清错（SAFEOP|ACK）。
+        master.transact([(CMD["APWR"], 0, 0x0120, bytes([0x12]))])
+        reply = master.transact([(CMD["APRD"], 0, 0x0130, b"\x00\x00")])
+        status = reply[0][3][0]
+        check(status & 0x10 == 0, "Error ACK 后 error 位未清除")
     finally:
         master.close()
 
-    print(f"OK: ESC-over-UDS 线缆层可用（{socket_path}）：BRD/APRD/APWR/FPRD/M 位均通过")
+    print(
+        f"OK: ESC-over-UDS 线缆层可用（{socket_path}）：BRD/APRD/APWR/FPRD/M 位 + "
+        "SM watchdog（10 ms → SAFEOP+ERROR 0x001B → ACK 清错）均通过"
+    )
 
 
 if __name__ == "__main__":

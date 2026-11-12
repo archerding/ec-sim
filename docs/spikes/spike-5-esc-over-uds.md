@@ -3,7 +3,7 @@
 - **日期**：2026-11-12 19:59 班（低峰）
 - **结论**：✅ **模拟器侧成立**：`ec-sim-esc --uds <path>` 在 Linux 上以 `SOCK_DGRAM` Unix domain
   socket 承载 EtherCAT 帧（每个报文 = 一帧），复用**同一** `esc_node::Responder` 内核；
-  合成主站 probe 已断言 BRD/APRD/APWR/FPRD、DL Status `0x5610`、一帧多 datagram（M 位）WKC。
+  合成主站 probe 已断言 BRD/APRD/APWR/FPRD、DL Status `0x5610`、一帧多 datagram（M 位）WKC，\n以及 **SM 过程数据看门狗**（10 ms 超时 → SAFEOP+ERROR / AL Status Code 0x001B → ACK 清错）。
 - **定位**：这是 AGENTS §1.3「线缆层可插拔：Linux TAP（旗舰）与 ESC-over-UDS shim（全平台/CI）
   共用同一个 ESC 内核」的 **UDS 半边**；SOEM `oshw` 的 UDS shim（B3 主体）下一步接入本 socket。
 - **非认证**：预回归证据，不构成一致性测试/认证结论。
@@ -25,7 +25,7 @@
 ```bash
 cargo build --release -p esc-node
 SOCK=/tmp/ecsim-uds.sock bash scripts/spikes/uds-loopback.sh
-# OK: ESC-over-UDS 线缆层可用（/tmp/ecsim-uds.sock）：BRD/APRD/APWR/FPRD/M 位均通过
+# OK: ESC-over-UDS 线缆层可用（/tmp/ecsim-uds.sock）：BRD/APRD/APWR/FPRD/M 位 + SM watchdog（10 ms → SAFEOP+ERROR 0x001B → ACK 清错）均通过
 ```
 
 - `scripts/spikes/uds-loopback.sh`：启动 `ec-sim-esc --uds`、等 socket 就绪、调用 probe、清理。
@@ -34,7 +34,7 @@ SOCK=/tmp/ecsim-uds.sock bash scripts/spikes/uds-loopback.sh
   2. `APRD 0x0130` → WKC 1、AL 状态 INIT；
   3. `APWR 0x0010 = 0x1001` → WKC 1，随后 `FPRD 0x1001 0x0130` 命中（WKC 1）；
   4. `APRD 0x0110` → DL Status `0x5610`（单从站拓扑值）；
-  5. 一帧两个 datagram（M 位）→ 两条应答各自 WKC +1。
+  5. 一帧两个 datagram（M 位）→ 两条应答各自 WKC +1；\n6. SM 过程数据看门狗：配置 0x0400/0x0420 与 SM2 control bit6 后写一次过程数据，等待超过\n   10 ms 再发帧 → AL Status = SAFEOP+ERROR、Code `0x001B`，写 Error ACK 后清错。
 - 说明：datagram 头按 ETG.1000.4 为 **10 字节**（cmd/idx/ADP/ADO/len-flags/**IRQ**），
   probe 首版漏了 IRQ 字段导致帧被拒，已修复并保留为回归点。
 
@@ -42,7 +42,7 @@ SOCK=/tmp/ecsim-uds.sock bash scripts/spikes/uds-loopback.sh
 
 ```
 $ SOCK=/tmp/ecsim-uds.sock bash scripts/spikes/uds-loopback.sh
-OK: ESC-over-UDS 线缆层可用（/tmp/ecsim-uds.sock）：BRD/APRD/APWR/FPRD/M 位均通过
+OK: ESC-over-UDS 线缆层可用（/tmp/ecsim-uds.sock）：BRD/APRD/APWR/FPRD/M 位 + SM watchdog（10 ms → SAFEOP+ERROR 0x001B → ACK 清错）均通过
 SCRIPT_RC=0
 ```
 

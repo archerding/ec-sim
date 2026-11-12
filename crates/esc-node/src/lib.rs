@@ -29,7 +29,8 @@ use esc_core::mailbox::{self, MailboxHeader, SdoRequest};
 use esc_core::memory::DlUserMemory;
 use esc_core::obj_dict;
 use esc_core::sii::SiiImage;
-use esc_core::{reg, AlControl, EscAl, Registers};
+use esc_core::sm::SyncManager;
+use esc_core::{reg, watchdog, AlControl, EscAl, Registers};
 use wire::{
     auto_increment_step, matches_configured_address, Command, Frame, ECAT_HEADER_LEN,
     ETHERNET_HEADER_LEN,
@@ -116,6 +117,10 @@ pub struct Responder {
     memory: DlUserMemory,
     /// SDO Download 写入的配置对象覆盖值（键 = (index, subindex)），Upload 时优先返回。
     object_writes: BTreeMap<(u16, u8), Vec<u8>>,
+    /// 帧驱动时钟的当前时间（毫秒，由 [`Responder::tick`] 更新）。
+    now_ms: u64,
+    /// 最近一次收到过程数据的时刻（毫秒）；`None` 表示尚未收到过。
+    last_process_data_ms: Option<u64>,
     stats: Stats,
 }
 
@@ -140,6 +145,8 @@ impl Responder {
             eeprom: EepromInterface::new(sii),
             memory: DlUserMemory::new(),
             object_writes: BTreeMap::new(),
+            now_ms: 0,
+            last_process_data_ms: None,
             stats: Stats::default(),
         }
     }
@@ -160,6 +167,87 @@ impl Responder {
     #[must_use]
     pub fn station_address(&self) -> u16 {
         self.regs.read_u16(reg::STATION_ADDRESS).unwrap_or(0)
+    }
+
+    /// 帧驱动时钟 tick：由线缆层每收到一帧调用一次（TAP/UDS 均如此）。
+    ///
+    /// 检查 SM 过程数据看门狗：任一过程数据 SM（SM2/SM3）已激活、control bit6 = 1 且
+    /// length > 0 时视为使能；超时（`0x0400 × 0x0420 × 40 ns`）则置 AL Status error 位、
+    /// AL Status Code = `0x001B`，并把状态从 OP 退回 SAFEOP（等待主站 Error ACK）。
+    ///
+    /// ⚠️ 本模拟器没有独立硬件定时器：没有帧到达时时钟不前进（停止收帧不会主动报超时）。
+    pub fn tick(&mut self, now_ms: u64) {
+        self.now_ms = now_ms;
+        if !self.watchdog_enabled() {
+            self.last_process_data_ms = None;
+            return;
+        }
+        let Some(last) = self.last_process_data_ms else {
+            // 首次启用：从现在开始计时，避免启动即误报。
+            self.last_process_data_ms = Some(now_ms);
+            return;
+        };
+        let divider = self.regs.read_u16(watchdog::WATCHDOG_DIVIDER).unwrap_or(0);
+        let intervals = self
+            .regs
+            .read_u16(watchdog::WATCHDOG_TIME_PROCESS_DATA)
+            .unwrap_or(0);
+        let timeout_ms = watchdog::timeout_ms(divider, intervals);
+        if timeout_ms == 0 {
+            // 0 值配置：真实 ESC 的语义待核实（⚠️），模拟器按"未配置超时"处理。
+            return;
+        }
+        if now_ms.saturating_sub(last) >= timeout_ms {
+            self.trigger_watchdog(now_ms);
+        }
+    }
+
+    /// SM 过程数据看门狗是否使能：SM2/SM3 中任一"已激活 + control.bit6 + length > 0"。
+    fn watchdog_enabled(&self) -> bool {
+        (2..=3).any(|index| {
+            SyncManager::read(&self.regs, index).is_some_and(|sm| {
+                sm.activate & 0x01 != 0
+                    && sm.control & watchdog::SM_CONTROL_WATCHDOG != 0
+                    && sm.length > 0
+            })
+        })
+    }
+
+    /// 记录一次过程数据写入（FMMU 逻辑写或物理写命中 SM2/SM3 缓冲区），重置看门狗计时。
+    fn note_process_data_write(&mut self, physical_address: u16, len: usize) {
+        if len == 0 {
+            return;
+        }
+        let write_end = u32::from(physical_address) + len as u32;
+        for index in 2..=3u8 {
+            let Some(sm) = SyncManager::read(&self.regs, index) else {
+                continue;
+            };
+            if sm.length == 0 {
+                continue;
+            }
+            let start = u32::from(sm.start_address);
+            let end = start + u32::from(sm.length);
+            if u32::from(physical_address) < end && start < write_end {
+                self.last_process_data_ms = Some(self.now_ms);
+                return;
+            }
+        }
+    }
+
+    /// 看门狗触发：AL Status error 位 + code 0x001B，OP → SAFEOP（等待 Error ACK）。
+    fn trigger_watchdog(&mut self, now_ms: u64) {
+        self.al.error = true;
+        self.al.status_code = watchdog::AL_STATUS_SM_WATCHDOG;
+        if self.al.state == esc_core::AlState::Op {
+            self.al.state = esc_core::AlState::SafeOp;
+        }
+        self.regs
+            .set_internal(reg::AL_STATUS, &[self.al.status_byte()]);
+        self.regs
+            .set_internal(reg::AL_STATUS_CODE, &self.al.status_code.to_le_bytes());
+        // 避免每个 tick 重复触发；主站 ACK 后会重新开始计时。
+        self.last_process_data_ms = Some(now_ms);
     }
 
     /// 处理一帧以太网请求，返回应发回的应答帧；非法/非 EtherCAT 帧返回 [`None`]。
@@ -327,6 +415,8 @@ impl Responder {
                     .write(translation.physical_address, &data[start..end])
             {
                 write_hit = true;
+                // 逻辑写命中过程数据 SM 缓冲区 → 重置看门狗。
+                self.note_process_data_write(translation.physical_address, translation.len);
             }
         }
         (read_hit, write_hit)
@@ -367,6 +457,8 @@ impl Responder {
         }
         if DlUserMemory::covers(address, data.len()) {
             self.memory.write(address, data);
+            // 物理写命中 SM2/SM3 过程数据缓冲区 → 重置看门狗。
+            self.note_process_data_write(address, data.len());
             if address == mailbox::MAILBOX_RX_OFFSET {
                 self.handle_mailbox_request(data);
             }
@@ -1403,5 +1495,130 @@ mod tests {
             u32::from_le_bytes([response[12], response[13], response[14], response[15]]),
             mailbox::SDO_ABORT_OBJECT_NOT_EXIST
         );
+    }
+
+    /// 通过 APWR 写寄存器块（测试辅助）。
+    fn write_regs(responder: &mut Responder, address: u16, data: Vec<u8>) {
+        let frame = request(&[DatagramData::auto_increment(
+            Command::Apwr,
+            1,
+            0,
+            address,
+            data,
+        )]);
+        responder
+            .handle_frame(&frame, DEFAULT_SIM_MAC)
+            .expect("reply");
+    }
+
+    /// 通过 APRd 读寄存器块（测试辅助）。
+    fn read_regs(responder: &mut Responder, address: u16, len: usize) -> Vec<u8> {
+        let frame = request(&[DatagramData::auto_increment(
+            Command::Aprd,
+            2,
+            0,
+            address,
+            vec![0u8; len],
+        )]);
+        let reply = responder
+            .handle_frame(&frame, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let (wkc, data) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, len);
+        assert_eq!(wkc, 1);
+        data
+    }
+
+    fn al_status_byte(responder: &mut Responder) -> u8 {
+        read_regs(responder, reg::AL_STATUS, 1)[0]
+    }
+
+    fn al_status_code(responder: &mut Responder) -> u16 {
+        let bytes = read_regs(responder, reg::AL_STATUS_CODE, 2);
+        u16::from_le_bytes([bytes[0], bytes[1]])
+    }
+
+    /// 配置 SM2（过程数据输出）与看门狗寄存器/使能位，并把 AL 推进到 OP。
+    fn setup_watchdog_environment(responder: &mut Responder, watchdog_control: u8) {
+        for control in [0x02u8, 0x04, 0x08] {
+            write_regs(responder, reg::AL_CONTROL, vec![control]);
+        }
+        assert_eq!(al_status_byte(responder) & 0x0F, 0x08, "应进入 OP");
+        // divider = 2500（40ns 单位）、intervals = 100 → 10 ms。
+        write_regs(
+            responder,
+            watchdog::WATCHDOG_DIVIDER,
+            2500u16.to_le_bytes().to_vec(),
+        );
+        write_regs(
+            responder,
+            watchdog::WATCHDOG_TIME_PROCESS_DATA,
+            100u16.to_le_bytes().to_vec(),
+        );
+        let sync_manager = esc_core::sm::SyncManager {
+            start_address: 0x1100,
+            length: 8,
+            control: watchdog_control, // bit6 = 看门狗使能；bit2 = 写方向
+            status: 0,
+            activate: 0x01,
+            pdi_control: 0,
+        };
+        write_regs(responder, 0x0810, sync_manager.to_bytes().to_vec());
+        configure_fmmu(responder, 0, fmmu_page(0x0000_1000, 8, 0x1100, 0x02, 0x01));
+    }
+
+    #[test]
+    fn sm_watchdog_triggers_after_timeout_and_error_ack_clears() {
+        let mut responder = Responder::default();
+        setup_watchdog_environment(&mut responder, 0x44); // buffered + 写方向 + watchdog
+        responder.tick(1_000); // 首次启用：开始计时
+                               // 过程数据写（逻辑地址 0x1000 → 物理 0x1100）重置看门狗。
+        let lwr = logical_frame(Command::Lwr, 0x0000_1000, vec![0xA5u8; 8]);
+        responder
+            .handle_frame(&lwr, DEFAULT_SIM_MAC)
+            .expect("reply");
+        responder.tick(1_005);
+        assert_eq!(al_status_byte(&mut responder) & 0x10, 0x00, "5 ms < 10 ms");
+        // 10 ms 未收到过程数据 → SAFEOP + ERROR，AL Status Code = 0x001B。
+        responder.tick(1_010);
+        let status = al_status_byte(&mut responder);
+        assert_eq!(status & 0x10, 0x10, "error 位必须置位");
+        assert_eq!(status & 0x0F, 0x04, "OP 退回 SAFEOP");
+        assert_eq!(
+            al_status_code(&mut responder),
+            watchdog::AL_STATUS_SM_WATCHDOG
+        );
+        // Error ACK 清错，状态保持 SAFEOP。
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x12]); // SAFEOP|ACK
+        let status = al_status_byte(&mut responder);
+        assert_eq!(status & 0x10, 0x00);
+        assert_eq!(status & 0x0F, 0x04, "ACK 后状态保持 SAFEOP");
+    }
+
+    #[test]
+    fn sm_watchdog_disabled_without_control_bit6() {
+        let mut responder = Responder::default();
+        setup_watchdog_environment(&mut responder, 0x04); // 无 watchdog 位
+        responder.tick(1_000);
+        responder.tick(10_000); // 远超 10 ms
+        let status = al_status_byte(&mut responder);
+        assert_eq!(status & 0x10, 0x00, "未使能看门狗不得置 error 位");
+        assert_eq!(al_status_code(&mut responder), 0);
+    }
+
+    #[test]
+    fn sm_watchdog_is_reset_by_process_data() {
+        let mut responder = Responder::default();
+        setup_watchdog_environment(&mut responder, 0x44);
+        responder.tick(1_000);
+        // t=1008 写过程数据 → 重新计时。
+        responder.tick(1_008);
+        let lwr = logical_frame(Command::Lwr, 0x0000_1000, vec![0x5Au8; 8]);
+        responder
+            .handle_frame(&lwr, DEFAULT_SIM_MAC)
+            .expect("reply");
+        responder.tick(1_015); // 距上次写 7 ms < 10 ms
+        assert_eq!(al_status_byte(&mut responder) & 0x10, 0x00);
+        responder.tick(1_019); // 11 ms → 触发
+        assert_eq!(al_status_byte(&mut responder) & 0x10, 0x10);
     }
 }

@@ -12,7 +12,8 @@
 //! （B5 子项）[`sm`] Sync Manager 寄存器块（0x0800–0x083F）、[`fmmu`] FMMU 寄存器块
 //! （0x0600–0x067F）与逻辑→物理翻译、[`memory`] DL 用户内存（0x1000–0xFFFF）；
 //! （B7 子项 1）[`mailbox`] 邮箱头解析与 CoE SDO 应答；
-//! （B7 子项 2）[`obj_dict`] 最小只读对象字典（SM 通信类型/PDO assign/PDO 映射/Identity）。
+//! （B7 子项 2）[`obj_dict`] 最小只读对象字典（SM 通信类型/PDO assign/PDO 映射/Identity）；
+//! （B5 子项）[`watchdog`] SM 过程数据看门狗寄存器与超时语义。
 
 pub mod eeprom;
 pub mod fmmu;
@@ -21,6 +22,7 @@ pub mod memory;
 pub mod obj_dict;
 pub mod sii;
 pub mod sm;
+pub mod watchdog;
 
 /// ESC 标准寄存器空间大小（0x0000–0x0FFF）。
 pub const REG_SPACE_LEN: usize = 0x1000;

@@ -6,6 +6,48 @@
 
 ---
 
+## 2026-11-12 20:07 班（低峰）— B5 子项：SM 过程数据看门狗（寄存器 + 超时 → SAFEOP+ERROR / 0x001B）
+
+**做了什么**
+- `esc-core` 新增 `watchdog` 模块：
+  - 寄存器 **0x0400**（Watchdog Divider，40 ns 基数）、**0x0410**（PDI 时间）、
+    **0x0420**（过程数据 intervals）；超时 = `divider × intervals × 40 ns`（向上取整到 ms）；
+    SM control **bit6** = 看门狗使能；AL Status Code **0x001B** = SM watchdog。
+  - 依据（只读参考）：IgH `include/ecrt.h: ecrt_slave_config_watchdog()`（divider = 40 ns
+    间隔数、intervals = 基础间隔数）、`master/fsm_slave_config.c`（写 0x0400/0x0420）、
+    `master/sync.c`（SM control bit6 = `EC_WD_ENABLE`）；ETG.1000.6 AL Status Code 0x001B。
+- `esc-node`：`Responder` 增加**帧驱动时钟** `tick(now_ms)`（TAP/UDS 每收一帧调用一次）：
+  - SM2/SM3 中任一"已激活 + control.bit6 + length > 0"视为看门狗使能；
+  - 过程数据写入（FMMU 逻辑写 / 物理写命中 SM2/SM3 缓冲区）重置计时；
+  - 超时 → AL Status error 位 + Code `0x001B`，状态从 **OP 退回 SAFEOP**，等待 Error ACK；
+  - 首次启用从当前时刻开始计时（避免启动误报）；divider/intervals 为 0 时视为未配置
+    （⚠️ 真实 ESC 的 0 值语义待核实）。
+- TAP/UDS 两个线缆层循环都接入 `tick(now_ms)`（`SystemTime` 毫秒）。
+- 测试 +5：esc-core +2（超时换算/常量）、esc-node +3（超时触发 + ACK 清错、未使能不触发、
+  过程数据重置计时）；扩展 `scripts/spikes/uds_master_probe.py` 的 UDS 端到端断言。
+
+**验证结果**
+- 本机 Windows：`cargo fmt --check` / `clippy -D warnings` exit 0；
+  `cargo test --workspace` **105 passed**（esc-core 58 / esc-node 31 / wire 16）。
+- Linux 验证机（真实时钟 + UDS 合成主站）：
+  `SOCK=/tmp/ecsim-uds.sock bash scripts/spikes/uds-loopback.sh` →
+  `OK: ... + SM watchdog（10 ms → SAFEOP+ERROR 0x001B → ACK 清错）均通过`。
+- 双主站回归无影响（两家主站本轮都不使能看门狗：IgH ecrt 夹具 `EC_WD_DISABLE`、
+  SOEM SII control 无 bit6）：`minimal-esc-responder.sh`、`soem-process-data.sh`（OP/WKC3）、
+  `igh-op-probe.sh`（IgH OP）、`soem-uds-probe.sh`（UDS shim）全部 exit 0。
+
+**卡点**
+- **帧驱动时钟**：没有帧到达时看门狗不前进（停止收帧不会主动报超时）；无独立硬件定时器/DC。
+- 0x0410（PDI watchdog）只保留读写语义；divider/intervals=0 的真实 ESC 语义 ⚠️ 待核实。
+- 未实现 AL SAFEOP/OP 的 **ESM 前置条件检查**（B5 剩余项）。
+
+**下次开工第一件事**
+- **B5 剩余：AL SAFEOP/OP 的 ESM 前置条件检查**——先以 ESC Sec.II / ETG.1000.6 与两家主站
+  （`fsm_slave_config` / `ecx_statecheck`）的行为核实条件，不凭记忆猜；或 **B6 剩余：SII FMMU
+  类别 0x0028**（同样先核实 SOEM/IgH 解析语义）。若条件无法核实，则转 B9 声明式插件加载器骨架。
+
+---
+
 ## 2026-11-12 20:03 班（低峰）— B3 完成：SOEM oshw UDS shim 经 Unix socket 跑通 `ec_config_init` + `ec_config_map`
 
 **做了什么**

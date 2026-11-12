@@ -87,6 +87,16 @@ fn maybe_print_stats(responder: &esc_node::Responder, verbose: bool) {
     );
 }
 
+/// 帧驱动时钟（毫秒）：TAP/UDS 每个收到的帧调用一次 `Responder::tick`。
+#[cfg(target_os = "linux")]
+fn now_ms() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX))
+        .unwrap_or(0)
+}
+
 #[cfg(target_os = "linux")]
 fn run_uds(path: &str, verbose: bool) -> std::process::ExitCode {
     use esc_node::{Responder, DEFAULT_SIM_MAC};
@@ -121,6 +131,7 @@ fn run_uds(path: &str, verbose: bool) -> std::process::ExitCode {
         if verbose {
             eprintln!("RX uds {len} bytes from {peer:?}");
         }
+        responder.tick(now_ms());
         let Some(reply) = responder.handle_frame(&buf[..len], DEFAULT_SIM_MAC) else {
             if verbose {
                 eprintln!("DROP uds {len} bytes（非 EtherCAT 或非法帧）");
@@ -171,6 +182,7 @@ fn run(tap_name: &str, verbose: bool) -> std::process::ExitCode {
                 return std::process::ExitCode::from(5);
             }
         };
+        responder.tick(now_ms());
         let Some(reply) = responder.handle_frame(&buf[..len], mac) else {
             continue;
         };

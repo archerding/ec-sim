@@ -113,7 +113,14 @@ user.email = deepseek-harness@users.noreply.github.com
   - 进度（2026-11-12 19:26 班）：**更正 LRW 的 WKC 规则**——写 FMMU 命中 +2、读 FMMU 命中 +1
     （IgH `master/datagram_pair.c` 与 SOEM `src/ec_main.c` 证据；19:19 班的"读写各 +1"不适用于
     LRW），SOEM 过程数据 WKC 从 2 修正为期望的 3。
-  - 待做：SM 触发的 mailbox 握手/watchdog、AL SAFEOP/OP 的 ESM 前置条件检查。
+  - 进度（2026-11-12 20:07 班）：**SM 过程数据看门狗已实现**——`watchdog` 模块（0x0400 divider /
+    0x0420 intervals，超时 = `divider × intervals × 40 ns`；SM control bit6 使能），
+    `esc-node` 帧驱动时钟 `tick()`：过程数据写重置计时，超时 → AL Status error + Code **0x001B**、
+    OP → SAFEOP，Error ACK 清错。证据：`crates/esc-core/src/watchdog.rs`、UDS 合成主站
+    `uds_master_probe.py`（10 ms → SAFEOP+ERROR → ACK 清错）；测试 **105 passed**；
+    双主站回归无影响（IgH `EC_WD_DISABLE`、SOEM SII control 无 bit6）。
+  - 待做：AL SAFEOP/OP 的 **ESM 前置条件检查**（需先以 ETG.1000.6 + 两家主站行为核实条件）；
+    无独立硬件定时器（帧驱动时钟）；0x0410 PDI watchdog 仅保留读写语义。
 - [ ] **B6 SII 生成器**：ESI XML → SII 镜像（含固定区 CRC-8（**word 0x0007**，覆盖 0x0000–0x0006，已实现）、category 链 0x0029/0x0032/0x0033、0xFFFF 终止）。
   - 进度（2026-11-12 19:26 班）：**SM 类别 0x0029 + TxPDO 0x0032 + RxPDO 0x0033 已实现**
     （SM0/SM1 = mailbox、SM2 输出 0x1100、SM3 输入 0x1110；PDO 0x1A00/0x1600，
