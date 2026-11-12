@@ -932,14 +932,10 @@ impl Responder {
             .category_bytes(esc_core::sii::category::TX_PDO)
             .is_some();
         let inputs_configured = Self::sync_manager_configured(&self.regs, 3);
-        let outputs_mapping_valid = !outputs_declared
-            || !outputs_configured
-            || self.process_data_mapping_bits(0x1C12)
-                == SyncManager::read(&self.regs, 2).map(|sm| u32::from(sm.length) * 8);
-        let inputs_mapping_valid = !inputs_declared
-            || !inputs_configured
-            || self.process_data_mapping_bits(0x1C13)
-                == SyncManager::read(&self.regs, 3).map(|sm| u32::from(sm.length) * 8);
+        let outputs_mapping_valid =
+            !outputs_declared || !outputs_configured || self.process_data_mapping_valid(0x1C12, 2);
+        let inputs_mapping_valid =
+            !inputs_declared || !inputs_configured || self.process_data_mapping_valid(0x1C13, 3);
         EsmPreconditions {
             mailbox_declared: sii.mailbox_protocols() != 0,
             mailbox_out_configured: Self::sync_manager_configured(&self.regs, 0),
@@ -960,25 +956,60 @@ impl Responder {
     ///
     /// 读取分配对象（0x1C12/0x1C13 子 0 条目数 + 各子 PDO 索引），再读每个 PDO 映射对象
     /// （子 0 条目数 + 各映射字 `index<<16 | sub<<8 | bits`），累加最低字节的位长。
-    fn process_data_mapping_bits(&self, assign_index: u16) -> Option<u32> {
-        let count = *self.dict.value(assign_index, 0)?.first()?;
-        let mut total = 0u32;
-        for sub in 1..=count {
-            let pdo_bytes = self.dict.value(assign_index, sub)?;
+    /// 判断过程数据的分配 + 映射是否**有效**（比只比总位长更细的检查）。
+    ///
+    /// 规则（Tier0，基于 `0x1C12`/`0x1C13` 分配与 PDO 映射对象内容）：
+    /// - 分配对象存在、条目数 > 0；每个分配的 PDO 索引非 0 且**不重复**；
+    /// - 每个 PDO 映射对象存在且条目数 > 0；每个映射字的对象索引非 0、位长非 0；
+    /// - 所有映射位长之和 = 对应 SM 的 `length × 8`。
+    fn process_data_mapping_valid(&self, assign_index: u16, sm_index: u8) -> bool {
+        let Some(sm) = SyncManager::read(&self.regs, sm_index) else {
+            return false;
+        };
+        let Some(count) = self
+            .dict
+            .value(assign_index, 0)
+            .and_then(|bytes| bytes.first())
+        else {
+            return false;
+        };
+        let mut total_bits = 0u32;
+        let mut seen: Vec<u16> = Vec::new();
+        for sub in 1..=*count {
+            let Some(pdo_bytes) = self.dict.value(assign_index, sub) else {
+                return false;
+            };
             if pdo_bytes.len() < 2 {
-                return None;
+                return false;
             }
             let pdo = u16::from_le_bytes([pdo_bytes[0], pdo_bytes[1]]);
-            let pdo_count = *self.dict.value(pdo, 0)?.first()?;
-            for entry_sub in 1..=pdo_count {
-                let word = self.dict.value(pdo, entry_sub)?;
+            if pdo == 0 || seen.contains(&pdo) {
+                return false;
+            }
+            seen.push(pdo);
+            let Some(pdo_count) = self.dict.value(pdo, 0).and_then(|bytes| bytes.first()) else {
+                return false;
+            };
+            if *pdo_count == 0 {
+                return false;
+            }
+            for entry_sub in 1..=*pdo_count {
+                let Some(word) = self.dict.value(pdo, entry_sub) else {
+                    return false;
+                };
                 if word.len() < 4 {
-                    return None;
+                    return false;
                 }
-                total += u32::from_le_bytes([word[0], word[1], word[2], word[3]]) & 0x00FF;
+                let packed = u32::from_le_bytes([word[0], word[1], word[2], word[3]]);
+                let index = (packed >> 16) as u16;
+                let bits = packed & 0x00FF;
+                if index == 0 || bits == 0 {
+                    return false;
+                }
+                total_bits += bits;
             }
         }
-        Some(total)
+        total_bits == u32::from(sm.length) * 8
     }
 
     /// SM 是否已配置：Activate bit0 置位且 Length > 0（与 IgH/SOEM 写入的 SM 页一致）。
@@ -2456,6 +2487,96 @@ mod tests {
         assert_eq!(
             al_status_code(&mut responder),
             esc_core::al_status::NO_VALID_OUTPUT_CONFIGURATION
+        );
+    }
+
+    #[test]
+    fn esm_strict_rejects_op_with_duplicate_pdo_assignment() {
+        use esc_core::obj_dict::{RuntimeEntry, RuntimeObject};
+
+        // 0x1C12 把同一个 PDO（0x1600）分配两次 → 映射无效（0x0024）。
+        let objects = vec![
+            RuntimeObject {
+                index: 0x1C12,
+                max_subindex: 2,
+                object_code: esc_core::obj_dict::object_code::ARRAY,
+                data_type: esc_core::obj_dict::data_type::UNSIGNED16,
+                name: "RxPDO assign".to_string(),
+            },
+            RuntimeObject {
+                index: 0x1600,
+                max_subindex: 1,
+                object_code: esc_core::obj_dict::object_code::ARRAY,
+                data_type: esc_core::obj_dict::data_type::UNSIGNED32,
+                name: "RxPDO mapping".to_string(),
+            },
+        ];
+        let entry =
+            |index: u16, subindex: u8, value: Vec<u8>, data_type: u16, bits: u16| RuntimeEntry {
+                index,
+                subindex,
+                value,
+                data_type,
+                bit_length: bits,
+                access: esc_core::obj_dict::access::READ_ONLY,
+                value_info: 0,
+                name: String::new(),
+                writable: false,
+            };
+        let entries = vec![
+            entry(
+                0x1C12,
+                0,
+                vec![2],
+                esc_core::obj_dict::data_type::UNSIGNED8,
+                8,
+            ),
+            entry(
+                0x1C12,
+                1,
+                0x1600u16.to_le_bytes().to_vec(),
+                esc_core::obj_dict::data_type::UNSIGNED16,
+                16,
+            ),
+            entry(
+                0x1C12,
+                2,
+                0x1600u16.to_le_bytes().to_vec(),
+                esc_core::obj_dict::data_type::UNSIGNED16,
+                16,
+            ),
+            entry(
+                0x1600,
+                0,
+                vec![1],
+                esc_core::obj_dict::data_type::UNSIGNED8,
+                8,
+            ),
+            entry(
+                0x1600,
+                1,
+                0x7000_0008u32.to_le_bytes().to_vec(),
+                esc_core::obj_dict::data_type::UNSIGNED32,
+                32,
+            ),
+        ];
+        let dict = ObjectDictionary::new(objects, entries);
+        let mut responder = Responder::default()
+            .with_dictionary(dict)
+            .with_esm_preconditions(true);
+        configure_sync_managers(&mut responder, 4);
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x02]);
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x04]);
+        assert_eq!(al_status_byte(&mut responder) & 0x0F, 0x04);
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x08]);
+        assert_eq!(
+            al_status_code(&mut responder),
+            esc_core::al_status::NO_VALID_OUTPUT_CONFIGURATION
+        );
+        assert_eq!(
+            al_status_byte(&mut responder) & 0x0F,
+            0x04,
+            "状态保持 SAFEOP"
         );
     }
 

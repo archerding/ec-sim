@@ -6,6 +6,37 @@
 
 ---
 
+## 2026-11-13 00:06 班（低峰）— B5 细化：**映射合法性校验**（重复分配/零项/无效映射字）
+
+**做了什么**
+- `esc-node` 把"只比较总位长"的映射检查升级为 `process_data_mapping_valid(assign_index, sm_index)`：
+  - 分配对象（`0x1C12`/`0x1C13`）存在且条目数 > 0；
+  - 每个分配的 PDO 索引非 0 且**不重复**；
+  - 每个 PDO 映射对象存在且条目数 > 0；每个映射字的对象索引非 0、位长非 0；
+  - 所有映射位长之和 = 对应 SM 的 `length × 8`。
+  `outputs_mapping_valid`/`inputs_mapping_valid` 改用该函数（仍只在"已声明且已配置"时检查）。
+- 新增单测 `esm_strict_rejects_op_with_duplicate_pdo_assignment`：`0x1C12` 重复分配
+  `0x1600` → OP 被拒（**0x0024**）、状态保持 SAFEOP。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **169 passed**（esc-core 79 / esc-node 52 / plugin-host 21 + 1 集成 / wire 16）。
+- Linux 验证机回归（重建后）：`soem-process-data.sh` **EXIT=0**（SOEM OP、1055 轮
+  WKC=3、无 WKC 不符）、`generic-cia402-probe.sh` **EXIT=0**（CiA 402 扫描/OP）、
+  `igh-el2008-op-probe.sh` **EXIT=0**（IgH `al_states=0x08`、EL2008 画像 OP）。
+  → 更严格的映射校验对既有合法画像（内置 8 位 I/O、EL2008、通用 CiA 402）无回归。
+
+**卡点**
+- 仍未校验映射字的**子索引范围/对象存在性**（映射字里的对象索引/子索引是否真实存在于
+  对象字典，以及是否与 PDO 分配长度精确对应）；这部分需要对象字典与 SII 的双向校验。
+- 0x0024/0x0025 文本与"何时使用"仍按常见解释，⚠️ 待 ETG.1000.6 原文复核。
+
+**下次开工第一件事**
+- 增加"映射字对象存在性/子索引范围"校验（需对象字典查询），或继续 B11（9/11 字节 PDO →
+  CSV、SV660N 手册核对）；B6 FMMU/DC 原文核实仍待条件。
+
+---
+
 ## 2026-11-12 23:57 班（低峰）— B5 子项：**映射类 OP 前置条件**（AL Status Code 0x0024/0x0025）
 
 **做了什么**
