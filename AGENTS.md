@@ -175,6 +175,13 @@ user.email = deepseek-harness@users.noreply.github.com
   - 待做：SDO Info 的 IgH 侧验证（ecrt 夹具）、Complete Access、分段传输；
     IgH 进 OP 需 B8 的 ecrt 应用夹具（Download 已具备）。
 - [ ] **B9 声明式插件加载器**：读取 `plugins/<id>/plugin.yaml` → 生成 SII + 对象字典 + 默认 PDO 分配 + SM/FMMU 布局（不依赖行为代码），并在 IgH/SOEM 上扫描到该从站。
+  - 进度（2026-11-12 21:20 班，子项 1）：**manifest 解析 + SII 生成已实现**——`plugin-host::manifest`
+    零依赖解析 `plugin.yaml`（YAML 子集）+ R2/R5 校验（自有 VID/PID、名称含 SIMULATED、
+    sources 必填）；`plugin-host::sii_gen` 把 manifest 的身份/邮箱/SM/PDO 声明转成
+    `esc_core::sii::SiiSpec`，`SiiImage::from_spec()` 生成 SII 镜像（CRC/EEPROM 大小自动）。
+    `simulated_slave()` 改为 `from_spec` 薄封装且逐 word 等价（旧镜像不变）。测试 **137 passed**。
+    ⚠️ 尚未接入 `esc-node`（对象字典/SM/FMMU 运行时装配），也未在验证机上扫描 manifest 画像。
+  - 待做（子项 2）：`Responder::from_manifest` + 示例 manifest（8DO）→ SOEM/IgH 扫描验证。
 - [ ] **B10 首个 P0 设备插件**：Beckhoff EL2008 兼容 8DO（声明式），完成 `facts.md`（含来源 URL）、manifest、双主站扫描验证记录（`docs/plugins/`）。
 - [ ] **B11 CiA402 行为插件**：以 Inovance SV660N 兼容画像为第一个目标，实现 CSP 状态机（Tier0/内置 profile 起步）。
 - [x] ~~**B8 双主站冒烟**~~ ✅ **2026-11-12 19:56 班完成（单从站 8 位 I/O 画像）**：

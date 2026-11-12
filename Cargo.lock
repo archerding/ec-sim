@@ -29,6 +29,9 @@ dependencies = [
 [[package]]
 name = "plugin-host"
 version = "0.0.1"
+dependencies = [
+ "esc-core",
+]
 
 [[package]]
 name = "wire"

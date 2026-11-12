@@ -7,3 +7,4 @@ license.workspace = true
 description = "EC-Sim 插件宿主：声明式插件加载与 WASM 行为沙箱（插件永不进实时环）"
 
 [dependencies]
+esc-core = { path = "../esc-core" }

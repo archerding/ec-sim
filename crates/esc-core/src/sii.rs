@@ -332,14 +332,63 @@ pub const SIM_RX_PDOS: [SiiPdo; 1] = [SiiPdo {
 /// 而本模拟器尚未实现 CA 传输。
 pub const SIM_COE_DETAILS: u8 = 0x0F;
 
-/// 构造通用类别（0x001E）的 32 字节数据：名称索引 0 + 物理层 + CoE 能力位。
+/// 标准/引导邮箱参数（SII 固定区 word 0x0014–0x001C）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SiiMailbox {
+    /// 接收（主站 → 从站，SM0）邮箱偏移。
+    pub rx_offset: u16,
+    /// 接收邮箱容量（字节）。
+    pub rx_size: u16,
+    /// 发送（从站 → 主站，SM1）邮箱偏移。
+    pub tx_offset: u16,
+    /// 发送邮箱容量（字节）。
+    pub tx_size: u16,
+    /// 邮箱协议位（bit2 = CoE，见 [`SIM_MAILBOX_PROTOCOLS`]）。
+    pub protocols: u16,
+}
+
+/// 运行时 PDO 描述（SII 类别 0x0032 / 0x0033 的一个 PDO）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SiiPdoSpec {
+    /// PDO 索引（如 0x1600 / 0x1A00）。
+    pub index: u16,
+    /// 绑定的 Sync Manager 通道。
+    pub sync_manager: u8,
+    /// 默认映射项。
+    pub entries: Vec<SiiPdoEntry>,
+}
+
+/// SII 镜像的运行时描述：声明式插件 manifest / 后续 ESI 转换的生成输入。
 ///
-/// 布局按 IgH `ec_slave_fetch_sii_general()`：data[4] = 物理层（每端口 2 位）、
-/// data[5] = CoE details、data[0x0B] = general flags、data[0x0C..0x0E] = Ebus 电流。
-fn general_category() -> Vec<u8> {
-    let mut data = vec![0u8; 32];
-    data[5] = SIM_COE_DETAILS;
-    data
+/// [`SiiImage::from_spec`] 把它编码为完整 SII 镜像（固定区 + 类别链 + 终止字），
+/// 并自动计算固定区 CRC-8 与 EEPROM 大小（word 0x003E）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SiiSpec {
+    /// Vendor ID（必须是我方自有，R2）。
+    pub vendor_id: u32,
+    /// Product Code（自有）。
+    pub product_code: u32,
+    /// Revision Number。
+    pub revision: u32,
+    /// Serial Number。
+    pub serial: u32,
+    /// 字符串类别：索引 0 = 设备名（必须带 `SIMULATED`），其后为厂商名等。
+    pub names: Vec<String>,
+    /// 邮箱参数；`None` = 不声明邮箱（固定区 0x0014–0x001B 填 0xFFFF、协议字 0）。
+    pub mailbox: Option<SiiMailbox>,
+    /// Sync Manager 类别（0x0029）条目。
+    pub sync_managers: Vec<SiiSyncManager>,
+    /// 输入方向 PDO（TxPDO，类别 0x0032，从站 → 主站）。
+    pub tx_pdos: Vec<SiiPdoSpec>,
+    /// 输出方向 PDO（RxPDO，类别 0x0033，主站 → 从站）。
+    pub rx_pdos: Vec<SiiPdoSpec>,
+    /// 通用类别 CoE details 字节（bit0 SDO、bit1 SDO Info、bit2 PDO assign、
+    /// bit3 PDO configuration、bit5 Complete Access）。
+    pub coe_details: u8,
+    /// 通用类别 general flags（data[0x0B]，bit0 enable SAFEOP、bit1 enable not-LRW）。
+    pub general_flags: u8,
+    /// Ebus 电流（mA，通用类别 data[0x0C]）。
+    pub ebus_current: i16,
 }
 
 /// 最小 SII 镜像（word 数组，1 word = 2 字节小端）。
@@ -350,42 +399,73 @@ pub struct SiiImage {
 
 impl SiiImage {
     /// 构造"1 个仿真从站"的最小 SII：固定区（含 mailbox 参数）+ 字符串/通用/SM/TxPDO/RxPDO
-    /// 类别 + 终止字。
-    ///
-    /// mailbox 声明为 **CoE、SM0/SM1 各 128 字节**（0x1000/0x1080）：主站会协商 CoE 并做
-    /// PREOP 邮箱配置；应答器目前对 SDO 请求回 Abort（[`crate::mailbox`]），尚未提供对象字典。
-    /// SOEM 在 CoE 映射失败后回退本镜像的 PDO 类别，得到 **8 位输入 / 8 位输出** 默认映射。
+    /// 类别 + 终止字（等价于 [`SiiSpec`] 的默认画像）。
     #[must_use]
     pub fn simulated_slave() -> Self {
+        Self::from_spec(&simulated_spec())
+    }
+
+    /// 按运行时 [`SiiSpec`] 生成完整 SII 镜像。
+    ///
+    /// 生成顺序：固定区（识别/邮箱/SII 版本）→ 字符串 / 通用 / SM / TxPDO / RxPDO 类别
+    /// → `0xFFFF` 终止字；随后按实际长度回填 **word 0x003E（EEPROM 大小，单位 128 字节，
+    /// 值 = 单元数 − 1）** 与固定区 **CRC-8（word 0x0007，覆盖 word 0x0000–0x0006）**。
+    #[must_use]
+    pub fn from_spec(spec: &SiiSpec) -> Self {
         let mut words = vec![0u16; usize::from(SII_FIRST_CATEGORY_WORD)];
-        put_u32(&mut words, 0x0008, SIM_VENDOR_ID);
-        put_u32(&mut words, 0x000A, SIM_PRODUCT_CODE);
-        put_u32(&mut words, 0x000C, SIM_REVISION);
-        put_u32(&mut words, 0x000E, SIM_SERIAL);
-        // mailbox 参数：boot 与 std 两套都声明（偏移/容量），协议字 bit0 = CoE。
-        words[0x0014] = SIM_MAILBOX_OFFSET_RX;
-        words[0x0015] = SIM_MAILBOX_SIZE;
-        words[0x0016] = SIM_MAILBOX_OFFSET_TX;
-        words[0x0017] = SIM_MAILBOX_SIZE;
-        words[0x0018] = SIM_MAILBOX_OFFSET_RX;
-        words[0x0019] = SIM_MAILBOX_SIZE;
-        words[0x001A] = SIM_MAILBOX_OFFSET_TX;
-        words[0x001B] = SIM_MAILBOX_SIZE;
-        words[0x001C] = SIM_MAILBOX_PROTOCOLS;
-        words[usize::from(SII_EEPROM_SIZE_WORD)] = SIM_EEPROM_SIZE;
+        put_u32(&mut words, 0x0008, spec.vendor_id);
+        put_u32(&mut words, 0x000A, spec.product_code);
+        put_u32(&mut words, 0x000C, spec.revision);
+        put_u32(&mut words, 0x000E, spec.serial);
+        match spec.mailbox {
+            Some(mailbox) => {
+                // boot 与 std 两套都声明（偏移/容量），协议字最后写。
+                for base in [0x0014usize, 0x0018] {
+                    words[base] = mailbox.rx_offset;
+                    words[base + 1] = mailbox.rx_size;
+                    words[base + 2] = mailbox.tx_offset;
+                    words[base + 3] = mailbox.tx_size;
+                }
+                words[0x001C] = mailbox.protocols;
+            }
+            None => {
+                for word in &mut words[0x0014..=0x001B] {
+                    *word = 0xFFFF;
+                }
+                words[0x001C] = 0;
+            }
+        }
         words[usize::from(SII_VERSION_WORD)] = SIM_SII_VERSION;
+
+        push_category(
+            &mut words,
+            category::STRINGS,
+            &strings_category(&spec.names),
+        );
+        push_category(
+            &mut words,
+            category::GENERAL,
+            &general_category(spec.coe_details, spec.general_flags, spec.ebus_current),
+        );
+        push_category(
+            &mut words,
+            category::SYNC_MANAGER,
+            &sync_manager_category(&spec.sync_managers),
+        );
+        if !spec.tx_pdos.is_empty() {
+            push_category(&mut words, category::TX_PDO, &pdo_category(&spec.tx_pdos));
+        }
+        if !spec.rx_pdos.is_empty() {
+            push_category(&mut words, category::RX_PDO, &pdo_category(&spec.rx_pdos));
+        }
+        words.push(category::TERMINATOR);
+
+        // EEPROM 大小：word 0x003E 的值 = ceil(字节数 / 128) − 1（0 = 128 字节）。
+        let bytes = words.len() * 2;
+        let units = bytes.div_ceil(128).saturating_sub(1);
+        words[usize::from(SII_EEPROM_SIZE_WORD)] = u16::try_from(units).unwrap_or(u16::MAX);
         // 固定区 CRC-8 必须在 0x0000–0x0006 全部确定后计算，写入 word 0x0007。
         words[usize::from(SII_CHECKSUM_WORD)] = u16::from(Self::fixed_area_crc8(&words));
-
-        push_category(&mut words, category::STRINGS, &strings_category(&SIM_NAMES));
-        // 通用类别固定 32 字节（IgH ec_slave_fetch_sii_general 要求 data_size == 32）。
-        // data[0..3] 为 group/image/order/name 的字符串索引（全 0 → 名称字符串索引 0）；
-        // data[5] 声明 CoE 能力（含 SDO Info 位，`ethercat sdos`/`slaveinfo -sdo` 需要）。
-        push_category(&mut words, category::GENERAL, &general_category());
-        push_category(&mut words, category::SYNC_MANAGER, &sync_manager_category());
-        push_category(&mut words, category::TX_PDO, &pdo_category(&SIM_TX_PDOS));
-        push_category(&mut words, category::RX_PDO, &pdo_category(&SIM_RX_PDOS));
-        words.push(category::TERMINATOR);
         Self { words }
     }
 
@@ -515,38 +595,95 @@ fn put_u32(words: &mut [u16], word_offset: usize, value: u32) {
     words[word_offset + 1] = (value >> 16) as u16;
 }
 
-/// SM 类别（0x0029）数据：4 条 × 8 字节，无额外计数/长度 word
+/// SM 类别（0x0029）数据：每条 8 字节，无额外计数/长度 word
 /// （类别头已声明 size，两家主站都按 size 推导条数）。
-fn sync_manager_category() -> Vec<u8> {
-    let mut data = Vec::with_capacity(SIM_SYNC_MANAGERS.len() * SiiSyncManager::BYTES);
-    for entry in &SIM_SYNC_MANAGERS {
+fn sync_manager_category(entries: &[SiiSyncManager]) -> Vec<u8> {
+    let mut data = Vec::with_capacity(entries.len() * SiiSyncManager::BYTES);
+    for entry in entries {
         data.extend_from_slice(&entry.to_bytes());
     }
     data
 }
 
 /// PDO 类别（0x0032/0x0033）数据：逐个 PDO 的 8 字节头 + 映射项，无额外计数 word。
-fn pdo_category(pdos: &[SiiPdo]) -> Vec<u8> {
+fn pdo_category(pdos: &[SiiPdoSpec]) -> Vec<u8> {
     let mut data = Vec::new();
     for pdo in pdos {
-        data.extend_from_slice(&pdo.to_bytes());
+        data.extend_from_slice(&pdo.index.to_le_bytes());
+        data.push(u8::try_from(pdo.entries.len()).unwrap_or(u8::MAX));
+        data.push(pdo.sync_manager);
+        data.push(0); // @+4 保留
+        data.push(0); // @+5 name_index（0 = 无名称）
+        data.extend_from_slice(&[0, 0]); // @+6..+8 保留
+        for entry in &pdo.entries {
+            data.extend_from_slice(&entry.to_bytes());
+        }
     }
     data
 }
 
 /// 按 ETG.1000.6 字符串类别格式编码：u8 条数 + 每条 (u8 长度 + 字节)，补齐偶数字节。
-fn strings_category(strings: &[&str]) -> Vec<u8> {
+fn strings_category<S: AsRef<str>>(strings: &[S]) -> Vec<u8> {
     let mut data = Vec::new();
-    data.push(strings.len() as u8);
+    data.push(u8::try_from(strings.len()).unwrap_or(u8::MAX));
     for s in strings {
-        let bytes = s.as_bytes();
-        data.push(bytes.len() as u8);
+        let bytes = s.as_ref().as_bytes();
+        data.push(u8::try_from(bytes.len()).unwrap_or(u8::MAX));
         data.extend_from_slice(bytes);
     }
     if data.len() % 2 == 1 {
         data.push(0);
     }
     data
+}
+
+/// 通用类别（0x001E）的 32 字节数据：CoE details（data[5]）、general flags（data[0x0B]）、
+/// Ebus 电流（data[0x0C..0x0E]）。布局依据 IgH `slave.c: ec_slave_fetch_sii_general()`。
+fn general_category(coe_details: u8, general_flags: u8, ebus_current: i16) -> Vec<u8> {
+    let mut data = vec![0u8; 32];
+    data[5] = coe_details;
+    data[0x0B] = general_flags;
+    data[0x0C..0x0E].copy_from_slice(&ebus_current.to_le_bytes());
+    data
+}
+
+/// 内置仿真从站的 [`SiiSpec`]（由 B6/B7 的常量画像构造）。
+#[must_use]
+pub fn simulated_spec() -> SiiSpec {
+    SiiSpec {
+        vendor_id: SIM_VENDOR_ID,
+        product_code: SIM_PRODUCT_CODE,
+        revision: SIM_REVISION,
+        serial: SIM_SERIAL,
+        names: SIM_NAMES.iter().map(|name| (*name).to_string()).collect(),
+        mailbox: Some(SiiMailbox {
+            rx_offset: SIM_MAILBOX_OFFSET_RX,
+            rx_size: SIM_MAILBOX_SIZE,
+            tx_offset: SIM_MAILBOX_OFFSET_TX,
+            tx_size: SIM_MAILBOX_SIZE,
+            protocols: SIM_MAILBOX_PROTOCOLS,
+        }),
+        sync_managers: SIM_SYNC_MANAGERS.to_vec(),
+        tx_pdos: SIM_TX_PDOS
+            .iter()
+            .map(|pdo| SiiPdoSpec {
+                index: pdo.index,
+                sync_manager: pdo.sync_manager,
+                entries: pdo.entries.to_vec(),
+            })
+            .collect(),
+        rx_pdos: SIM_RX_PDOS
+            .iter()
+            .map(|pdo| SiiPdoSpec {
+                index: pdo.index,
+                sync_manager: pdo.sync_manager,
+                entries: pdo.entries.to_vec(),
+            })
+            .collect(),
+        coe_details: SIM_COE_DETAILS,
+        general_flags: 0,
+        ebus_current: 0,
+    }
 }
 
 fn push_category(words: &mut Vec<u16>, cat_type: u16, data: &[u8]) {
@@ -885,5 +1022,89 @@ mod tests {
             "enable SDO Info（ethercat sdos 需要）"
         );
         assert_eq!(data[5] & 0x20, 0x00, "不声明 Complete Access（尚未实现）");
+    }
+
+    #[test]
+    fn from_spec_matches_builtin_profile_word_for_word() {
+        // `simulated_slave()` 现在只是 `from_spec(simulated_spec())` 的薄封装；
+        // 两者必须逐 word 相同（保证既有双主站验证过的镜像不变）。
+        let builtin = SiiImage::simulated_slave();
+        let from_spec = SiiImage::from_spec(&simulated_spec());
+        assert_eq!(from_spec.words(), builtin.words());
+    }
+
+    #[test]
+    fn from_spec_generates_manifest_style_image() {
+        let spec = SiiSpec {
+            vendor_id: 0x0000_0EC5,
+            product_code: 0x0000_E5C2,
+            revision: 0x0001_0000,
+            serial: 0,
+            names: vec!["EC-Sim 8DO (SIMULATED)".to_string(), "EC-Sim".to_string()],
+            mailbox: Some(SiiMailbox {
+                rx_offset: 0x1000,
+                rx_size: 128,
+                tx_offset: 0x1080,
+                tx_size: 128,
+                protocols: SIM_MAILBOX_PROTOCOLS,
+            }),
+            sync_managers: SIM_SYNC_MANAGERS.to_vec(),
+            tx_pdos: vec![SiiPdoSpec {
+                index: 0x1A00,
+                sync_manager: 3,
+                entries: vec![SiiPdoEntry {
+                    index: 0x6000,
+                    subindex: 0,
+                    bit_length: 8,
+                }],
+            }],
+            rx_pdos: vec![SiiPdoSpec {
+                index: 0x1600,
+                sync_manager: 2,
+                entries: vec![SiiPdoEntry {
+                    index: 0x7000,
+                    subindex: 0,
+                    bit_length: 8,
+                }],
+            }],
+            coe_details: SIM_COE_DETAILS,
+            general_flags: 0,
+            ebus_current: 0,
+        };
+        let sii = SiiImage::from_spec(&spec);
+        assert_eq!(sii.read_word(0x000A), 0xE5C2);
+        assert_eq!(sii.read_word(SII_VERSION_WORD), SIM_SII_VERSION);
+        assert!(sii.verify_checksum());
+        // EEPROM 大小声明必须覆盖镜像自身。
+        let declared = (usize::from(sii.read_word(SII_EEPROM_SIZE_WORD)) + 1) * 128;
+        assert!(declared >= sii.len_words() * 2);
+        assert_eq!(sii.sync_manager_count(), SIM_SYNC_MANAGERS.len());
+        let tx = sii
+            .category_bytes(category::TX_PDO)
+            .expect("TxPDO category");
+        assert_eq!(u16::from_le_bytes([tx[0], tx[1]]), 0x1A00);
+        let strings = sii
+            .category_bytes(category::STRINGS)
+            .expect("strings category");
+        assert!(
+            strings.windows(9).any(|window| window == b"SIMULATED"),
+            "设备名必须带 SIMULATED 标识（R2）"
+        );
+    }
+
+    #[test]
+    fn from_spec_without_mailbox_marks_fixed_area_as_absent() {
+        let mut spec = simulated_spec();
+        spec.mailbox = None;
+        spec.tx_pdos.clear();
+        spec.rx_pdos.clear();
+        let sii = SiiImage::from_spec(&spec);
+        for offset in 0x0014..=0x001B {
+            assert_eq!(sii.read_word(offset), 0xFFFF, "word {offset:#06x}");
+        }
+        assert_eq!(sii.read_word(0x001C), 0);
+        assert_eq!(sii.mailbox_protocols(), 0);
+        assert!(sii.verify_checksum());
+        assert!(sii.category_bytes(category::TX_PDO).is_none());
     }
 }

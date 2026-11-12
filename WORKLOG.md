@@ -6,6 +6,56 @@
 
 ---
 
+## 2026-11-12 21:20 班（低峰）— B9 子项 1：声明式插件 manifest 解析 + SII 生成
+
+**做了什么**
+- 说明：B6 剩余 FMMU 类别 0x0028 仍暂缓（公开资料无字段权威语义，红线要求不猜）、
+  VM 目录锁被其他 worker 占用 → 按"被阻塞取下一项"规则做 **B9 声明式插件加载器（骨架）**。
+- `esc-core::sii`：新增运行时描述 `SiiSpec` / `SiiMailbox` / `SiiPdoSpec` 与
+  `SiiImage::from_spec()` —— 生成固定区 + 字符串/通用/SM/TxPDO/RxPDO 类别链，
+  **自动计算固定区 CRC-8（word 0x0007）与 EEPROM 大小（word 0x003E）**；
+  `simulated_slave()` 改为 `from_spec(simulated_spec())` 的薄封装，并有测试保证
+  两者**逐 word 相同**（既有双主站验证过的镜像不变）。
+- `plugin-host`：新增 `manifest` 模块 —— 零第三方依赖的 YAML 子集解析器
+  （块映射 / 块序列 / 行内 `{...}` 与 `[...]` / 引号与裸标量 / 布尔 / 十进制与十六进制 /
+  `#` 注释，不支持的语法明确报错），`PluginManifest::parse()` / `load()`（读
+  `plugins/<id>/plugin.yaml`）与 `validate()`（R2 自有 VID/PID、名称含 SIMULATED、
+  R5 sources 必填、SM/PDO 基本结构；R1/R3/R4 仍是人工法务审核项）。
+- `plugin-host`：新增 `sii_gen` 模块 —— manifest → `SiiSpec`：邮箱参数取自
+  `mbox-in`/`mbox-out` 通道、SM control 按方向（0x26/0x22/0x04/0x00）、PDO 绑定
+  SM2/SM3、CoE 能力位（SDO/SDO Info/PDO assign+config/CA）从 manifest 推导。
+- `plugin-host` 增加对 `esc-core` 的 path 依赖（核心许可不变，仍无第三方依赖）。
+- 测试 +16（含改造）：esc-core +3（`from_spec` 与内置画像逐 word 一致、manifest 风格
+  镜像的身份/SM/PDO/CRC/EEPROM 大小、无邮箱画像）；plugin-host +10（YAML 子集语法、
+  注释/十六进制/负数、**仓库里真实的 `plugins/_template/plugin.yaml` 可解析且占位值被
+  校验报出**、合法 manifest 零违规、缺 identity/sources 报错、manifest→SII 断言）。
+
+**验证结果**
+- 本机 Windows：`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets
+  -- -D warnings` exit 0；`cargo test --workspace` **137 passed**
+  （esc-core 75 / esc-node 36 / plugin-host 10 / wire 16）。
+- `SiiImage::from_spec(&simulated_spec())` 与 `SiiImage::simulated_slave()` 逐 word
+  相同 → 既有 IgH/SOEM 验证过的镜像未受影响；manifest 样例生成的 SII 通过身份、
+  SM（0x1000/0x1080 mbox、SM2 输出、SM3 输入）、PDO（0x1600→SM2、0x1A00→SM3）、
+  CRC 与 EEPROM 大小断言。
+- ⚠️ 未在 Linux 验证机上扫描"由 manifest 生成的从站画像"：VM 锁被其他 worker 占用，
+  且 `ec-sim-esc` 尚未接入 manifest（B9 子项 2）。
+
+**卡点**
+- `esc-node::Responder` 仍用内置画像：manifest 只生成 SII 规格，尚未做运行时对象字典
+  （manifest `objects` → `obj_dict`）与 SM/FMMU/PDO 装配，所以还不能起"该 manifest 的从站"
+  给主站扫描。
+- YAML 支持范围 = manifest 模板用到的子集（不支持多行字符串/锚点/文档分隔符）。
+- B6 FMMU 类别 0x0028 仍等 ESC Sec.II / IEC 61158 原文。
+
+**下次开工第一件事**
+- B9 子项 2：`esc-node` 按 manifest 装配 —— `Responder::from_manifest`（SII 用
+  `plugin_host::sii_gen`，对象字典/PDO 分配/SM/FMMU 从 manifest `objects`/`pdo`/`sm`
+  生成），加一个示例 manifest（自有 VID/PID，8DO），然后在 Linux 验证机上用未修改
+  SOEM/IgH 扫描到该从站（IgH 侧可能需 ecrt 夹具）。VM 锁被占用时先做本地装配 + 单测。
+
+---
+
 ## 2026-11-12 21:11 班（低峰）— B7 子项：CoE SDO Information（SOEM `slaveinfo -sdo` 读到 6 个对象）
 
 **做了什么**
