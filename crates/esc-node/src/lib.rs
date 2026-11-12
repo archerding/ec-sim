@@ -123,6 +123,17 @@ struct SegmentedUpload {
     offset: usize,
 }
 
+/// CiA 402 状态机行为：每个帧周期读 SM2 的控制字，写 SM3 的状态字（Tier0 骨架）。
+#[derive(Debug, Clone)]
+struct Cia402Behavior {
+    /// 状态机。
+    machine: crate::cia402::Cia402StateMachine,
+    /// SM2（RxPDO）在 DL 用户内存中的起始地址；前 2 字节为控制字 `0x6040`。
+    out_offset: u16,
+    /// SM3（TxPDO）在 DL 用户内存中的起始地址；前 2 字节为状态字 `0x6041`。
+    in_offset: u16,
+}
+
 /// 单从站最小 ESC 应答器。
 #[derive(Debug, Clone)]
 pub struct Responder {
@@ -143,6 +154,8 @@ pub struct Responder {
     dict: ObjectDictionary,
     /// 进行中的分段 SDO 上传（值 > 4 字节的对象）。
     upload: Option<SegmentedUpload>,
+    /// 可选的 CiA 402 状态机行为（SM2 控制字 → SM3 状态字），见 [Responder::with_cia402_behavior]。
+    cia402: Option<Cia402Behavior>,
     stats: Stats,
 }
 
@@ -172,6 +185,7 @@ impl Responder {
             esm_preconditions: true,
             dict: ObjectDictionary::simulated(),
             upload: None,
+            cia402: None,
             stats: Stats::default(),
         }
     }
@@ -219,6 +233,44 @@ impl Responder {
         self.esm_preconditions
     }
 
+    /// 启用 CiA 402 状态机行为（Tier0）：每帧从 out_offset 读控制字 `0x6040`，
+    /// 推进状态机，并把状态字 `0x6041` 写到 in_offset（各 2 字节，小端）。
+    ///
+    /// 偏移应取 manifest 的 SM2（dir out）/SM3（dir in）起始地址；行为在
+    /// [Responder::tick] 中执行（每收到一帧前），因此主站读到的是**上一帧**写入
+    /// 控制字对应的状态字（一帧延迟，Tier0 简化）。
+    #[must_use]
+    pub fn with_cia402_behavior(mut self, out_offset: u16, in_offset: u16) -> Self {
+        self.cia402 = Some(Cia402Behavior {
+            machine: crate::cia402::Cia402StateMachine::new(),
+            out_offset,
+            in_offset,
+        });
+        self
+    }
+
+    /// 当前 CiA 402 状态（未启用行为时返回 None）。
+    #[must_use]
+    pub fn cia402_state(&self) -> Option<crate::cia402::Cia402State> {
+        self.cia402
+            .as_ref()
+            .map(|behavior| behavior.machine.state())
+    }
+
+    /// 执行 CiA 402 行为（如果启用）：读 SM2 控制字 → 状态机 → 写 SM3 状态字。
+    fn step_cia402_behavior(&mut self) {
+        let Responder { cia402, memory, .. } = self;
+        let Some(behavior) = cia402.as_mut() else {
+            return;
+        };
+        let Some(out_bytes) = memory.read(behavior.out_offset, 2) else {
+            return;
+        };
+        let controlword = u16::from_le_bytes([out_bytes[0], out_bytes[1]]);
+        let statusword = behavior.machine.update(controlword);
+        memory.write(behavior.in_offset, &statusword.to_le_bytes());
+    }
+
     /// 统计快照。
     #[must_use]
     pub fn stats(&self) -> Stats {
@@ -246,6 +298,8 @@ impl Responder {
     /// ⚠️ 本模拟器没有独立硬件定时器：没有帧到达时时钟不前进（停止收帧不会主动报超时）。
     pub fn tick(&mut self, now_ms: u64) {
         self.now_ms = now_ms;
+        // Tier0 行为：每帧推进一次 CiA 402 状态机（SM2 控制字 → SM3 状态字）。
+        self.step_cia402_behavior();
         if !self.watchdog_enabled() {
             self.last_process_data_ms = None;
             return;
@@ -789,6 +843,71 @@ mod tests {
         assert_eq!(data[0] & 0x0F, 0x01, "slave starts in INIT");
         assert_eq!(responder.stats().frames_in, 1);
         assert_eq!(responder.stats().frames_out, 1);
+    }
+
+    #[test]
+    fn cia402_behavior_drives_statusword_from_controlword() {
+        use crate::cia402::Cia402State;
+
+        // 用合成主站同样的方式：APWR 写 SM2 控制字、APRD 读 SM3 状态字。
+        fn write_controlword(responder: &mut Responder, value: u16) {
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Apwr,
+                1,
+                0,
+                0x1100,
+                value.to_le_bytes().to_vec(),
+            )]);
+            responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APWR reply");
+        }
+        fn read_statusword(responder: &mut Responder) -> u16 {
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Aprd,
+                1,
+                0,
+                0x1110,
+                vec![0u8; 2],
+            )]);
+            let reply = responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APRD reply");
+            let (wkc, data) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 2);
+            assert_eq!(wkc, 1);
+            u16::from_le_bytes([data[0], data[1]])
+        }
+
+        let mut responder = Responder::default().with_cia402_behavior(0x1100, 0x1110);
+        assert_eq!(
+            responder.cia402_state(),
+            Some(Cia402State::SwitchOnDisabled)
+        );
+
+        write_controlword(&mut responder, 0x0000);
+        responder.tick(1);
+        assert_eq!(read_statusword(&mut responder), 0x0240);
+
+        write_controlword(&mut responder, 0x0006);
+        responder.tick(2);
+        assert_eq!(read_statusword(&mut responder), 0x0221);
+        assert_eq!(responder.cia402_state(), Some(Cia402State::ReadyToSwitchOn));
+
+        write_controlword(&mut responder, 0x0007);
+        responder.tick(3);
+        assert_eq!(read_statusword(&mut responder), 0x0223);
+
+        write_controlword(&mut responder, 0x000F);
+        responder.tick(4);
+        assert_eq!(read_statusword(&mut responder), 0x0237);
+        assert_eq!(
+            responder.cia402_state(),
+            Some(Cia402State::OperationEnabled)
+        );
+
+        write_controlword(&mut responder, 0x0000);
+        responder.tick(5);
+        assert_eq!(read_statusword(&mut responder), 0x0240);
     }
 
     #[test]

@@ -6,6 +6,44 @@
 
 ---
 
+## 2026-11-12 23:20 班（低峰）— B11 第三步：**CiA 402 状态机接入运行时过程数据**（`--behavior cia402`）
+
+**做了什么**
+- `esc-node::Responder` 新增 `cia402` 行为（Tier0）：`with_cia402_behavior(out_offset, in_offset)`
+  在 `tick()`（每帧处理前）读取 SM2 的 2 字节控制字 `0x6040` → 推进
+  `Cia402StateMachine` → 写回 SM3 的 2 字节状态字 `0x6041`；新增 `cia402_state()` 查询。
+- `ec-sim-esc` 新增 `--behavior cia402`：按 manifest 的 SM2(dir `out`)/SM3(dir `in`)
+  起始地址启用行为（缺省 0x1100/0x1110），并打印
+  `BEHAVIOR cia402 sm2_out=0x1100 sm3_in=0x1110`；`--help` 更新。
+- 合成主站 `scripts/spikes/uds_master_probe.py` 新增 `--cia402`：APWR 写控制字、
+  APRD 读状态字，断言标准转换序列；新增验证脚本
+  `scripts/spikes/cia402-behavior-probe.sh`。
+- 单测新增 `cia402_behavior_drives_statusword_from_controlword`（合成 datagram 写/读
+  SM2/SM3，断言 0x0240→0x0221→0x0223→0x0237→0x0240）。
+- `docs/plugins/cia402-state-machine.md` 补充运行时接入与验证方法。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **159 passed**（esc-core 76 / esc-node 45 / plugin-host 21 + 1 集成 / wire 16）。
+- Linux 验证机：`bash scripts/spikes/cia402-behavior-probe.sh` → **EXIT=0**：
+  - 启动日志：`BEHAVIOR cia402 sm2_out=0x1100 sm3_in=0x1110`；
+  - 合成主站断言：`0x0006→0x0221`、`0x0007→0x0223`、`0x000F→0x0237`、
+    `0x0000→0x0240` 全部通过；同时原有 UDS 套件（BRD/APRD/APWR/FPRD/M 位、
+    SM watchdog、ESM 前置条件）继续通过。
+
+**卡点**
+- 行为在 `tick()` 中执行 → 有**一帧延迟**（主站读到上一帧控制字对应的状态字）；
+  Tier0 简化，后续可改为 datagram 处理顺序内联。
+- 状态机仍不实现 Ti=0/1 时序、模式相关位、错误码触发、fault reset 上升沿（文档列明）；
+  行为只写状态字前 2 字节，未驱动 `0x6061`/`0x6064` 等其它 TxPDO 字段。
+
+**下次开工第一件事**
+- 派生 **Inovance SV660N 兼容画像**（公开手册默认 PDO/对象，仍用我方 VID/PID），或
+  把行为扩展为完整 7 字节 TxPDO（状态字 + modes display + position actual）并根据
+  控制字/模式驱动数据变化；IgH ecrt OP 夹具。
+
+---
+
 ## 2026-11-12 23:18 班（低峰）— B11 第二步：**CiA 402 状态机骨架（Tier0 行为插件基础）**
 
 **做了什么**

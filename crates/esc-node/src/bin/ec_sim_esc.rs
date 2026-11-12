@@ -30,6 +30,7 @@ fn main() -> std::process::ExitCode {
     let mut uds_path: Option<String> = None;
     let mut manifest_path: Option<String> = None;
     let mut esi_path: Option<String> = None;
+    let mut behavior: Option<String> = None;
     let mut verbose = false;
     let mut esm_preconditions = true;
     while let Some(arg) = args.next() {
@@ -62,6 +63,19 @@ fn main() -> std::process::ExitCode {
                     return std::process::ExitCode::from(2);
                 }
             },
+            "--behavior" => match args.next() {
+                Some(name) => match name.as_str() {
+                    "cia402" => behavior = Some(name),
+                    other => {
+                        eprintln!("ec-sim-esc: 不支持的 --behavior {other}（当前仅 cia402）");
+                        return std::process::ExitCode::from(2);
+                    }
+                },
+                None => {
+                    eprintln!("ec-sim-esc: --behavior 需要一个行为名（cia402）");
+                    return std::process::ExitCode::from(2);
+                }
+            },
             "--verbose" | "-v" => verbose = true,
             "--esm-lax" => esm_preconditions = false,
             // 兼容旧参数名：前置条件已是默认行为。
@@ -69,7 +83,7 @@ fn main() -> std::process::ExitCode {
             "--help" | "-h" => {
                 println!(
                     "用法: ec-sim-esc [--tap <name> | --uds <path>] [--verbose] [--esm-lax] \
-                     [--manifest <plugin.yaml>] [--esi <file.esi.xml>]"
+                     [--manifest <plugin.yaml>] [--esi <file.esi.xml>] [--behavior cia402]"
                 );
                 return std::process::ExitCode::SUCCESS;
             }
@@ -142,9 +156,16 @@ fn main() -> std::process::ExitCode {
     }
 
     match (tap_name, uds_path) {
-        (_, Some(path)) => run_uds(&path, verbose, esm_preconditions, manifest, esi),
-        (Some(name), None) => run(&name, verbose, esm_preconditions, manifest, esi),
-        (None, None) => run("ecsim0", verbose, esm_preconditions, manifest, esi),
+        (_, Some(path)) => run_uds(&path, verbose, esm_preconditions, manifest, esi, behavior),
+        (Some(name), None) => run(&name, verbose, esm_preconditions, manifest, esi, behavior),
+        (None, None) => run(
+            "ecsim0",
+            verbose,
+            esm_preconditions,
+            manifest,
+            esi,
+            behavior,
+        ),
     }
 }
 
@@ -153,6 +174,7 @@ fn main() -> std::process::ExitCode {
 fn build_responder(
     manifest: Option<&plugin_host::manifest::PluginManifest>,
     esi: Option<&plugin_host::esi::EsiDevice>,
+    behavior: Option<&str>,
     esm_preconditions: bool,
 ) -> Result<esc_node::Responder, String> {
     let responder = match (manifest, esi) {
@@ -177,6 +199,28 @@ fn build_responder(
             esc_node::Responder::new(sii).with_dictionary(dict)
         }
         (None, None) => esc_node::Responder::default(),
+    };
+    // Tier0 行为插件：`--behavior cia402` 时启用控制字 → 状态字状态机。
+    let responder = if behavior == Some("cia402") {
+        let (out_offset, in_offset) = match manifest {
+            Some(manifest) => (
+                manifest
+                    .sm
+                    .iter()
+                    .find(|sm| sm.dir == "out")
+                    .map_or(0x1100, |sm| sm.start),
+                manifest
+                    .sm
+                    .iter()
+                    .find(|sm| sm.dir == "in")
+                    .map_or(0x1110, |sm| sm.start),
+            ),
+            None => (0x1100, 0x1110),
+        };
+        println!("BEHAVIOR cia402 sm2_out=0x{out_offset:04X} sm3_in=0x{in_offset:04X}");
+        responder.with_cia402_behavior(out_offset, in_offset)
+    } else {
+        responder
     };
     Ok(responder.with_esm_preconditions(esm_preconditions))
 }
@@ -221,6 +265,7 @@ fn run_uds(
     esm_preconditions: bool,
     manifest: Option<plugin_host::manifest::PluginManifest>,
     esi: Option<plugin_host::esi::EsiDevice>,
+    behavior: Option<String>,
 ) -> std::process::ExitCode {
     use esc_node::DEFAULT_SIM_MAC;
     use std::io::Write;
@@ -238,7 +283,12 @@ fn run_uds(
     println!("READY uds={path}");
     let _ = std::io::stdout().flush();
 
-    let mut responder = match build_responder(manifest.as_ref(), esi.as_ref(), esm_preconditions) {
+    let mut responder = match build_responder(
+        manifest.as_ref(),
+        esi.as_ref(),
+        behavior.as_deref(),
+        esm_preconditions,
+    ) {
         Ok(responder) => responder,
         Err(error) => {
             eprintln!("ec-sim-esc: 按 manifest/ESI 构造应答器失败：{error}");
@@ -287,6 +337,7 @@ fn run(
     esm_preconditions: bool,
     manifest: Option<plugin_host::manifest::PluginManifest>,
     esi: Option<plugin_host::esi::EsiDevice>,
+    behavior: Option<String>,
 ) -> std::process::ExitCode {
     use esc_node::DEFAULT_SIM_MAC;
     use std::io::Write;
@@ -305,7 +356,12 @@ fn run(
     );
     let _ = std::io::stdout().flush();
 
-    let mut responder = match build_responder(manifest.as_ref(), esi.as_ref(), esm_preconditions) {
+    let mut responder = match build_responder(
+        manifest.as_ref(),
+        esi.as_ref(),
+        behavior.as_deref(),
+        esm_preconditions,
+    ) {
         Ok(responder) => responder,
         Err(error) => {
             eprintln!("ec-sim-esc: 按 manifest/ESI 构造应答器失败：{error}");
@@ -343,6 +399,7 @@ fn run(
     _esm_preconditions: bool,
     _manifest: Option<plugin_host::manifest::PluginManifest>,
     _esi: Option<plugin_host::esi::EsiDevice>,
+    _behavior: Option<String>,
 ) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)
@@ -355,6 +412,7 @@ fn run_uds(
     _esm_preconditions: bool,
     _manifest: Option<plugin_host::manifest::PluginManifest>,
     _esi: Option<plugin_host::esi::EsiDevice>,
+    _behavior: Option<String>,
 ) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)

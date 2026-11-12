@@ -16,7 +16,7 @@
   （用于验证声明式 manifest 画像的设备名）。
 
 用法：python3 uds_master_probe.py [socket_path] [--timeout 2.0] [--lax]
-        [--sdo-segmented] [--expect-string=<text>]
+        [--sdo-segmented] [--expect-string=<text>] [--cia402]
 退出码 0 = 全部断言通过。
 """
 import os
@@ -214,6 +214,7 @@ def main():
     lax = False
     sdo_segmented = False
     expect_string = None
+    cia402 = False
     for arg in sys.argv[1:]:
         if arg.startswith("--timeout="):
             timeout = float(arg.split("=", 1)[1])
@@ -223,6 +224,8 @@ def main():
         # `--sdo-segmented`：额外验证 >4 字节对象（0x1008 设备名）的 segmented SDO 上传。
         if arg == "--sdo-segmented":
             sdo_segmented = True
+        if arg == "--cia402":
+            cia402 = True
         if arg.startswith("--expect-string="):
             expect_string = arg.split("=", 1)[1]
 
@@ -268,6 +271,25 @@ def main():
             if expect_string is not None:
                 check(text == expect_string, f"SDO 分段读取 {text!r} != 期望 {expect_string!r}")
             print(f"OK: segmented SDO 读到 0x1008 = {text!r}（{len(value)} 字节）")
+
+        # 5c) 可选：CiA 402 状态机行为（SM2 控制字 → SM3 状态字，Tier0）。
+        if cia402:
+            sequence = [
+                (0x0000, 0x0240),  # 初始：Switch on disabled
+                (0x0006, 0x0221),  # Shutdown → Ready to switch on
+                (0x0007, 0x0223),  # Switch on → Switched on
+                (0x000F, 0x0237),  # Enable operation → Operation enabled
+                (0x0000, 0x0240),  # Disable voltage → Switch on disabled
+            ]
+            for controlword, expected in sequence:
+                master.transact([(CMD["APWR"], 0, 0x1100, struct.pack("<H", controlword))])
+                reply = master.transact([(CMD["APRD"], 0, 0x1110, b"\x00\x00")])
+                status = struct.unpack("<H", reply[0][3][:2])[0]
+                check(
+                    status == expected,
+                    f"CiA402 cw={controlword:#06x} → sw={status:#06x}，期望 {expected:#06x}",
+                )
+            print("OK: CiA 402 行为：控制字→状态字序列通过（0x0006→0x0221、0x0007→0x0223、0x000F→0x0237）")
 
         # 6) ESM 迁移 + SM 过程数据看门狗（B5 子项）。
         #    默认（模拟器默认开启前置条件检查）：先验证拒绝路径（SM 未配置 → 0x0015 / 0x0017），

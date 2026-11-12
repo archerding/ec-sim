@@ -1,7 +1,13 @@
-# CiA 402 状态机骨架（Tier0 行为插件基础）— 实现说明
+# CiA 402 状态机骨架（Tier0 行为插件）— 实现说明
 
-- 代码：`crates/esc-node/src/cia402.rs`（`esc_node::cia402`）
-- 状态：**Tier0 骨架**（只有状态机，尚未接入运行时 PDO 数据）
+- 状态机逻辑：`crates/esc-node/src/cia402.rs`（`esc_node::cia402`）
+- 运行时接入：`esc-node::Responder::with_cia402_behavior(out_offset, in_offset)`；
+  `ec-sim-esc --behavior cia402` 启用（SM2 控制字 `0x6040` → SM3 状态字 `0x6041`，
+  各 2 字节小端；偏移取 manifest 的 SM2(dir `out`)/SM3(dir `in`) 起始地址）。
+- 行为在 `Responder::tick()`（每收到一帧前）执行一次，因此主站读到的是**上一帧**写入
+  控制字对应的状态字（一帧延迟，Tier0 简化）。
+- 验证：`scripts/spikes/cia402-behavior-probe.sh`（合成主站 UDS；断言
+  `0x0006→0x0221`、`0x0007→0x0223`、`0x000F→0x0237`、禁用电压回 `0x0240`）。
 
 ## 采用的事实（CiA 402 公开 profile）
 

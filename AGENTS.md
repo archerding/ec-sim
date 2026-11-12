@@ -248,9 +248,13 @@ user.email = deepseek-harness@users.noreply.github.com
     shutdown/switch on/enable operation/disable voltage/quick stop/fault reset 标准转换，
     6 个单测；文档 `docs/plugins/cia402-state-machine.md`。测试 **158 passed**。
     ⚠️ 尚未接入运行时 PDO 数据（纯逻辑）；Ti=0/1、模式位、错误码触发未实现。
-  - 待做：**状态机接入 Responder 过程数据**（SM2 controlword → SM3 statusword，按
-    manifest `profile: cia402` 或 `--behavior cia402` 启用）；再派生 Inovance SV660N
-    兼容画像（公开手册默认 PDO/对象）；IgH ecrt OP 夹具。
+  - 进度（2026-11-12 23:20 班）：**状态机已接入运行时过程数据**——`Responder::with_cia402_behavior`
+    + `--behavior cia402`（按 manifest SM2/SM3 起始地址；tick 中读控制字 `0x6040`→状态机→
+    写状态字 `0x6041`）。验证机 `scripts/spikes/cia402-behavior-probe.sh` **EXIT=0**：
+    合成主站断言 `0x0006→0x0221`、`0x0007→0x0223`、`0x000F→0x0237`、回 `0x0240`；
+    同时 UDS 原套件继续通过。测试 **159 passed**。⚠️ 一帧延迟、只写状态字 2 字节。
+  - 待做：派生 Inovance SV660N 兼容画像（公开手册默认 PDO/对象）；行为扩展为完整
+    7 字节 TxPDO（状态字+modes display+position actual）；IgH ecrt OP 夹具。
 - [x] ~~**B8 双主站冒烟**~~ ✅ **2026-11-12 19:56 班完成（单从站 8 位 I/O 画像）**：
   **未修改的 SOEM 与 IgH 都在本模拟器上看到从站进入 OP**，输出可复现脚本见
   [spike-4](docs/spikes/spike-4-dual-master-op.md)：
