@@ -81,6 +81,9 @@ user.email = deepseek-harness@users.noreply.github.com
 - [ ] **B5 `esc-core` 最小 ESC**：寄存器阵列 + SM/FMMU + AL 状态机 INIT/PREOP 握手 + EEPROM 接口状态机（Busy/8 字节能力位）。
 - [ ] **B6 SII 生成器**：ESI XML → SII 镜像（含 0x003F CRC-8、category 链 0x0029/0x0032/0x0033、0xFFFF 终止）。
 - [ ] **B7 CoE 最小闭环**：加速 SDO 上传/下载 + 0x1C12/0x1C13/0x1600/0x1A00 + Abort 码；先**不做** SDO Info 与 Complete Access（SII 对应位清 0）。
+- [ ] **B9 声明式插件加载器**：读取 `plugins/<id>/plugin.yaml` → 生成 SII + 对象字典 + 默认 PDO 分配 + SM/FMMU 布局（不依赖行为代码），并在 IgH/SOEM 上扫描到该从站。
+- [ ] **B10 首个 P0 设备插件**：Beckhoff EL2008 兼容 8DO（声明式），完成 `facts.md`（含来源 URL）、manifest、双主站扫描验证记录（`docs/plugins/`）。
+- [ ] **B11 CiA402 行为插件**：以 Inovance SV660N 兼容画像为第一个目标，实现 CSP 状态机（Tier0/内置 profile 起步）。
 - [ ] **B8 双主站冒烟**：IgH `ethercat slaves` 与 SOEM `slaveinfo` 零补丁看到 OP，输出可复现脚本与截图。
 
 ## 7. 目录约定
@@ -100,3 +103,14 @@ tests-gpl/      只跑 GPL 主站的夹具（独立目录、独立许可、不�
 - 仓库内提到远端时只用中性说法（"Linux 验证机""远端"），不写主机名/IP/端口/账号/代理地址；WORKLOG 记录验证结果时同样脱敏。
 - 需要 TAP / AF_PACKET / SOEM / IgH 等 Linux 能力时，在远端验证机执行，把命令要点与关键输出（脱敏）写进 WORKLOG。
 - 不要把 IgH/SOEM 源码或二进制提交进本仓库。
+
+## 9. 设备插件与互联网调研
+
+- **允许联网检索**知名品牌电机/IO/编码器等的**公开文档**，用于制作"兼容仿真"插件；但必须遵守 **[docs/DEVICE-PLUGINS.md](docs/DEVICE-PLUGINS.md)** 的 R1–R5 红线：
+  - R1 不把厂商 ESI/PDF/固件/示例代码放进仓库或插件包（只提取接口事实 + 记来源 URL）；
+  - R2 设备身份（0x1018/ESI 名称）用**我方自有 Vendor ID/PID**，不用厂商 VID/PID/Logo；
+  - R3 不宣称"完全一致 / 通过一致性测试 / 官方认证"；
+  - R4 厂商手册禁止开发竞争产品的，登记到 `plugins/catalog.yaml` 的 `blocked`；
+  - R5 每个插件必须有 `sources` 证据链（标题 + URL + 访问日期）。
+- 插件默认**声明式**（manifest 描述对象字典/PDO/SM），只有行为逻辑才写 WASM；闭源插件的源码不入库。
+- 市场/审核/定价/免责声明细则见 docs/DEVICE-PLUGINS.md §5–§6。

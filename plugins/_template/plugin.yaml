@@ -1,0 +1,62 @@
+# 插件 manifest 模板（复制到 plugins/<plugin-id>/plugin.yaml 后修改）
+# 规则：docs/DEVICE-PLUGINS.md；红线 R1–R5 必须遵守。
+
+schema: ecsim.plugin/v1
+id: com.ecsim.compat.brand-model       # 自有域名前缀，不用厂商域名
+name: "<Brand Model> compatible device (simulated)"
+version: 0.1.0
+kind: device                           # device | app-layer | pdo-extension
+license: proprietary                   # 付费闭源插件；开源插件写 Apache-2.0 OR MIT
+pricing: {model: one-time, amount: 0, currency: CNY}
+
+compatibility:                         # 说明性元数据，不是设备身份
+  brands: ["<Brand>"]
+  models: ["<Model>"]
+  disclaimer: "Independent re-implementation from public documentation. Not affiliated with, endorsed by, or certified by <Brand>."
+
+identity:                              # 必须是自有 VID / 自有 PID（红线 R2）
+  vendor_id: 0x00000000                # TODO: 填入 ETG 分配给我方的 Vendor ID
+  product_code: 0x00000000             # TODO: 自有产品码
+  revision: 0x00010000
+  simulated: true
+
+profile: generic-io                   # 行为模板：generic-io | cia402-csp | cia402-csv | stepper | custom
+mailbox:
+  coe: {sdo: true, sdo_info: true, complete_access: true}
+
+sm:
+  - {index: 0, dir: mbox-in,  start: 0x1000, len: 128}
+  - {index: 1, dir: mbox-out, start: 0x1080, len: 128}
+  - {index: 2, dir: out,      start: 0x1100, len: 32}
+  - {index: 3, dir: in,       start: 0x1200, len: 32}
+
+pdo:
+  rx:
+    - index: 0x1600
+      entries:
+        - {index: 0x7000, sub: 1, bits: 8}
+  tx:
+    - index: 0x1A00
+      entries:
+        - {index: 0x6000, sub: 1, bits: 8}
+
+objects:
+  - {index: 0x1000, sub: 0, name: Device type, dtype: UINT32, access: ro, value: 0x00000000}
+  - {index: 0x1008, sub: 0, name: Device name, dtype: STRING, access: ro, value: "EC-Sim compatible device (SIMULATED)"}
+  - {index: 0x1018, sub: 1, name: Vendor ID,   dtype: UINT32, access: ro}
+  - {index: 0x1018, sub: 2, name: Product code, dtype: UINT32, access: ro}
+  - {index: 0x1018, sub: 3, name: Revision,     dtype: UINT32, access: ro}
+  - {index: 0x1C12, sub: 0, name: RxPDO assign count, dtype: UINT8, access: rw, value: 1}
+  - {index: 0x1C13, sub: 0, name: TxPDO assign count, dtype: UINT8, access: rw, value: 1}
+  - {index: 0x7000, sub: 1, name: Output 0..7, dtype: UINT8, access: rw, pdo: rx}
+  - {index: 0x6000, sub: 1, name: Input 0..7,  dtype: UINT8, access: ro, pdo: tx}
+
+dc: {supported: false, sync0: false}    # 不确定就 false（宁可少声明）
+
+# 可选：需要状态机时才提供
+# behavior:
+#   code: code/behavior.wasm
+#   tick_hz: 1000
+
+sources:                               # 红线 R5：必填，证据链
+  - {title: "<文档标题>", url: "https://…", accessed: "2026-11-12"}

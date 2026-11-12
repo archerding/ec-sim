@@ -1,0 +1,105 @@
+# 设备插件研究清单
+# 状态：planned（未开始）→ researching（收集中）→ ready（可上架）→ blocked（法律/技术原因不做）
+# 规则：docs/DEVICE-PLUGINS.md。红线：不复制厂商文件入库、不用厂商 VID/PID/Logo、不宣称认证。
+
+meta:
+  updated: 2026-11-12
+  owner: ec-sim
+  note: "所有设备均为【兼容仿真】，身份使用我方自有 Vendor ID；名称带 SIMULATED。"
+
+# 优先级：P0 = 先做（做出来就能演示/收费）；P1 = 第二波；P2 = 长尾
+devices:
+  # ---------- IO / 端子 ----------
+  - id: beckhoff-el2008
+    brand: Beckhoff
+    model: EL2008
+    kind: io-output
+    priority: P0
+    status: planned
+    why: "8 路数字输出，最常见端子；声明式即可实现，是验证插件闭环的最佳样品"
+    need: "SM2 布局、0x7000 PDO 映射、默认 0x1C12/0x1600 映射、AL/DC 声明"
+  - id: beckhoff-el1008
+    brand: Beckhoff
+    model: EL1008
+    kind: io-input
+    priority: P0
+    status: planned
+    why: "8 路数字输入，与 EL2008 成对使用"
+    need: "SM3 布局、0x6000 映射、默认 0x1C13/0x1A00"
+  - id: wago-750-354
+    brand: WAGO
+    model: 750-354
+    kind: io
+    priority: P1
+    status: planned
+  - id: turck-tben-l
+    brand: Turck
+    model: TBEN-L
+    kind: io
+    priority: P2
+    status: planned
+
+  # ---------- 伺服（CiA402） ----------
+  - id: inovance-sv660n
+    brand: Inovance
+    model: SV660N
+    kind: servo
+    priority: P0
+    status: planned
+    why: "国内 LinuxCNC/EtherCAT 用量最大的伺服之一；做出来就是市场刚需"
+    need: "默认 RPDO/TPDO 映射、CSP/CSV 模式对象、状态字/控制字行为、DC 参数、错误码"
+  - id: delta-asda-a3
+    brand: Delta
+    model: ASDA-A3
+    kind: servo
+    priority: P1
+    status: planned
+  - id: leadshine-el7
+    brand: Leadshine
+    model: EL7
+    kind: servo
+    priority: P1
+    status: planned
+  - id: yaskawa-sgd7s
+    brand: Yaskawa
+    model: SGD7S
+    kind: servo
+    priority: P1
+    status: planned
+  - id: panasonic-minas-a6
+    brand: Panasonic
+    model: MINAS A6
+    kind: servo
+    priority: P2
+    status: planned
+  - id: beckhoff-ax5000
+    brand: Beckhoff
+    model: AX5000
+    kind: servo
+    priority: P2
+    status: planned
+  - id: schneider-lxm32
+    brand: Schneider
+    model: Lexium 32
+    kind: servo
+    priority: P2
+    status: planned
+
+  # ---------- 步进 / 编码器 ----------
+  - id: beckhoff-el7031
+    brand: Beckhoff
+    model: EL7031
+    kind: stepper
+    priority: P1
+    status: planned
+  - id: beckhoff-el5101
+    brand: Beckhoff
+    model: EL5101
+    kind: encoder
+    priority: P2
+    status: planned
+
+# 法律原因不做的设备（写明原因，避免反复评估）
+blocked: []
+# - id: <vendor-model>
+#   reason: "厂商手册明确禁止用于开发竞争产品"
