@@ -320,6 +320,8 @@ def main():
     sdo_ca_download_multi = False
     cia402_fault = False
     cia402_cst = False
+    cia402_tq = False
+    cia402_pv = False
     dc_clock = False
     cia402_homing = False
     cia402_pp = False
@@ -351,6 +353,10 @@ def main():
             dc_clock = True
         if arg == "--cia402-cst":
             cia402_cst = True
+        if arg == "--cia402-tq":
+            cia402_tq = True
+        if arg == "--cia402-pv":
+            cia402_pv = True
         if arg == "--cia402-fault":
             cia402_fault = True
         if arg == "--cia402-csv":
@@ -583,6 +589,28 @@ def main():
                 )
             print("OK: CiA 402 CST（5 字节 PDO，转矩模式镜像）通过")
 
+        # 5o) 可选：CiA 402 TQ（模式 4，5 字节 PDO；Tier0 复用转矩镜像语义）。
+        if cia402_tq:
+            sequence = [
+                (0x0006, 4, 250, 0x0221, 0),
+                (0x0007, 4, 250, 0x0223, 0),
+                (0x000F, 4, 250, 0x0237, 250),
+                (0x0000, 4, 250, 0x0240, 0),
+            ]
+            for controlword, mode, torque, expected_sw, expected_torque in sequence:
+                master.transact(
+                    [(CMD["APWR"], 0, 0x1100, struct.pack("<HbH", controlword, mode, torque))]
+                )
+                reply = master.transact([(CMD["APRD"], 0, 0x1110, bytes(5))])
+                sw, modes_display, torque_actual = struct.unpack("<HbH", reply[0][3][:5])
+                check(sw == expected_sw, f"TQ sw={sw:#06x} != {expected_sw:#06x}")
+                check(modes_display == mode, f"TQ 模式显示 {modes_display} != {mode}")
+                check(
+                    torque_actual == expected_torque,
+                    f"TQ 实际转矩 {torque_actual} != {expected_torque}",
+                )
+            print("OK: CiA 402 TQ（模式 4，转矩镜像）通过")
+
         # 5i) 可选：CiA 402 故障注入（需从站以 `--fault <code>` 启动）：断言初始 Fault
         # bit、故障复位（控制字 bit7）清故障、0x603F 错误码可回读。
         if cia402_fault:
@@ -633,6 +661,48 @@ def main():
                     f"CiA402-CSV 速度显示 {velocity_actual} != {expected_vel}",
                 )
             print("OK: CiA 402 CSV：速度模式位置累加/速度显示通过（11 字节 PDO）")
+
+        # 5n) 可选：CiA 402 PV/VL（模式 3/2，11 字节 PDO；Tier0 复用速度累加语义）。
+        if cia402_pv:
+            for mode in (3, 2):
+                # 同一从站连续跑两种模式：位置连续累加，第二种模式期望值加基础偏移。
+                base = 20 if mode == 2 else 0
+                sequence = [
+                    (0x0006, 0, 5, 0x0221, 0, 0),
+                    (0x0007, 0, 5, 0x0223, 0, 0),
+                    (0x000F, 0, 5, 0x0237, 5, 5),
+                    (0x000F, 0, 5, 0x0237, 15, 5),
+                    (0x0000, 0, 5, 0x0240, 20, 0),
+                ]
+                for controlword, target, velocity, expected_sw, expected_pos, expected_vel in sequence:
+                    master.transact(
+                        [
+                            (
+                                CMD["APWR"],
+                                0,
+                                0x1100,
+                                struct.pack("<Hbii", controlword, mode, target, velocity),
+                            )
+                        ]
+                    )
+                    reply = master.transact([(CMD["APRD"], 0, 0x1110, bytes(11))])
+                    sw, modes_display, position, velocity_actual = struct.unpack(
+                        "<Hbii", reply[0][3][:11]
+                    )
+                    check(sw == expected_sw, f"PV/VL sw={sw:#06x} != {expected_sw:#06x}")
+                    check(
+                        modes_display == mode,
+                        f"PV/VL 模式显示 {modes_display} != {mode}",
+                    )
+                    check(
+                        position == expected_pos + base,
+                        f"PV/VL 位置 {position} != {expected_pos + base}",
+                    )
+                    check(
+                        velocity_actual == expected_vel,
+                        f"PV/VL 速度显示 {velocity_actual} != {expected_vel}",
+                    )
+            print("OK: CiA 402 PV/VL（模式 3/2）：位置累加/速度显示通过（11 字节 PDO）")
 
         # 5c) 可选：CiA 402 状态机行为（完整 7 字节 RxPDO/TxPDO，Tier0）。
         if cia402:

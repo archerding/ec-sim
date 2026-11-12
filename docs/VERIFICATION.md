@@ -19,7 +19,7 @@
 | `cia402-cst-op-probe.sh` | CST 画像双主站：SOEM 40/40 bits、`0x6071`/`0x6077` 映射、`5O+5I` 进 OP；IgH PREOP+身份 `0xe5e2` | **EXIT=0** |
 | `cia402-cst-probe.sh` | 5 字节 PDO CST：状态机序列 + 实际转矩镜像 `0x6071`→`0x6077`、禁用后归零 | **EXIT=0** |
 | `cia402-tq-probe.sh` | 5B PDO TQ（模式 4）：实际转矩镜像目标转矩，禁用后归零 | **EXIT=0** |
-| `cia402-pv-probe.sh` | 11B PDO PV（模式 3）：速度累加/速度显示，禁用后归零 | **EXIT=0** |
+| `cia402-pv-probe.sh` | 11B PDO PV/VL（模式 3/2）：速度累加/速度显示，禁用后归零 | **EXIT=0** |
 | `cia402-pp-probe.sh` | 7B PDO PP（模式 1）：new set-point 位置跳变 + Target reached + Set-point acknowledge | **EXIT=0** |
 | `cia402-homing-probe.sh` | 7B PDO HM（模式 6）：位置归零 + Homing attained（bit12），bit4 清除后不再置位 | **EXIT=0** |
 | `cia402-fault-probe.sh` | `--fault 0x7500`：Fault bit、控制字 bit7 复位、`0x603F` 回读 | **EXIT=0** |

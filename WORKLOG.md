@@ -32,6 +32,35 @@
 
 ---
 
+## 2026-11-13 03:21 班（低峰）— B11：**VL（速度，模式 2）Tier0 + 修复探针可复现性缺口**
+
+**做了什么**
+- `--behavior cia402`：模式 2（VL）复用 PV/CSV 的速度累加语义（11 字节 PDO）；
+  单测改为循环覆盖 PV=3 / VL=2（位置 0→5→10、速度 5→0）。
+- **修复可复现性缺口**：发现 `scripts/spikes/uds_master_probe.py` 里 PV/TQ 的
+  `--cia402-pv`/`--cia402-tq` 参数与探针块**并未真正进入 git**（此前命令的
+  PowerShell 字符串写法把 `\n` 当成了字面量或替换未命中；验证机当时用的是手工
+  `scp` 的副本，导致仓库内脚本不可复现）。本轮重新写入并 `py_compile` 校验。
+- PV/VL 探针同一从站连续跑两种模式时位置连续累加 → 增加 `base` 偏移期望。
+- 文档：`docs/plugins/cia402-state-machine.md`（PV/VL 合并小节）、
+  `docs/VERIFICATION.md`（PV/VL 行）、AGENTS B11。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **207 passed**
+  （esc-core 86 / esc-node 70 / plugin-host 27 + 1 集成 / wire 23）。
+- Linux 验证机（重建 + 同步修复后的探针）：
+  - `cia402-pv-probe.sh` → **EXIT=0**（PV/VL 两模式：状态字/模式显示/位置/速度）；
+  - `cia402-tq-probe.sh` → **EXIT=0**（TQ 模式 4：转矩镜像/禁用归零）。
+
+**卡点**
+- 教训：PowerShell 大批量字符串替换不可靠；后续脚本修改改用 `edit` 工具并
+  `py_compile`/`bash -n` 校验（本轮已按此修复）。
+
+**下次开工第一件事**
+- B11：继续找 SV660N 默认 PDO 条目；或评估真实 DC 同步（SYNC0 脉冲）。
+
+---
+
 ## 2026-11-13 03:17 班（低峰）— B11：**TQ（转矩，模式 4）Tier0 行为**
 
 **做了什么**

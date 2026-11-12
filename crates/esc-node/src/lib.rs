@@ -373,7 +373,7 @@ impl Responder {
         // - 其它模式：位置冻结。
         let csp = modes == 8;
         // CSV（模式 9）与 PV（模式 3，Tier0 复用速度累加语义）都使用 11 字节布局。
-        let csv = (modes == 9 || modes == 3) && out_bytes.len() >= 11;
+        let csv = (modes == 9 || modes == 3 || modes == 2) && out_bytes.len() >= 11;
         // CST（模式 10）与 TQ（模式 4，Tier0 复用转矩镜像语义）都使用 5 字节布局。
         let cst = (modes == 10 || modes == 4) && out_bytes.len() == 5;
         if enabled && csp {
@@ -3880,26 +3880,29 @@ mod tests {
             )
         }
 
-        let mut responder = Responder::default().with_cia402_behavior(0x1100, 11, 0x1110, 11);
-        write_rx(&mut responder, 0x0006, 3, 0, 5); // Shutdown → Ready（PV）
-        responder.tick(1);
-        assert_eq!(read_tx(&mut responder), (0x0221, 3, 0, 0));
-        write_rx(&mut responder, 0x0007, 3, 0, 5);
-        responder.tick(2);
-        assert_eq!(read_tx(&mut responder), (0x0223, 3, 0, 0));
-        write_rx(&mut responder, 0x000F, 3, 0, 5);
-        responder.tick(3);
-        assert_eq!(
-            read_tx(&mut responder),
-            (0x0237, 3, 5, 5),
-            "PV：位置 +5/周期"
-        );
-        write_rx(&mut responder, 0x000F, 3, 0, 5);
-        responder.tick(4);
-        assert_eq!(read_tx(&mut responder), (0x0237, 3, 10, 5));
-        write_rx(&mut responder, 0x0000, 3, 0, 5);
-        responder.tick(5);
-        assert_eq!(read_tx(&mut responder), (0x0240, 3, 10, 0));
+        // PV=3 与 VL=2 复用同一速度累加语义。
+        for mode in [3i8, 2i8] {
+            let mut responder = Responder::default().with_cia402_behavior(0x1100, 11, 0x1110, 11);
+            write_rx(&mut responder, 0x0006, mode, 0, 5); // Shutdown → Ready
+            responder.tick(1);
+            assert_eq!(read_tx(&mut responder), (0x0221, mode, 0, 0));
+            write_rx(&mut responder, 0x0007, mode, 0, 5);
+            responder.tick(2);
+            assert_eq!(read_tx(&mut responder), (0x0223, mode, 0, 0));
+            write_rx(&mut responder, 0x000F, mode, 0, 5);
+            responder.tick(3);
+            assert_eq!(
+                read_tx(&mut responder),
+                (0x0237, mode, 5, 5),
+                "速度模式（PV/VL）：位置 +5/周期"
+            );
+            write_rx(&mut responder, 0x000F, mode, 0, 5);
+            responder.tick(4);
+            assert_eq!(read_tx(&mut responder), (0x0237, mode, 10, 5));
+            write_rx(&mut responder, 0x0000, mode, 0, 5);
+            responder.tick(5);
+            assert_eq!(read_tx(&mut responder), (0x0240, mode, 10, 0));
+        }
     }
 
     #[test]
