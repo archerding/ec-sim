@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EC-Sim 只读状态视图</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; padding: 24px; background: #0f1115; color: #e6e8ee; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .sub { color: #9aa3b2; margin-bottom: 20px; }
+    section { background: #171a21; border: 1px solid #262b36; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+    h2 { font-size: 15px; margin: 0 0 10px; color: #cfd6e4; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #262b36; font-variant-numeric: tabular-nums; }
+    th { color: #9aa3b2; font-weight: 600; }
+    code { background: #0f1115; padding: 1px 5px; border-radius: 4px; }
+    .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; background: #1f3b2a; color: #8fe3a8; font-size: 12px; }
+    .tag.warn { background: #3b2f1f; color: #e3c98f; }
+    input[type=file] { color: #e6e8ee; }
+    .grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .kv { background: #0f1115; border-radius: 8px; padding: 10px; }
+    .kv b { display: block; color: #9aa3b2; font-weight: 500; font-size: 12px; }
+    .kv span { font-size: 16px; font-variant-numeric: tabular-nums; }
+    .error { color: #ff9a9a; }
+  </style>
+</head>
+<body>
+  <h1>EC-Sim 只读状态视图</h1>
+  <div class="sub">
+    数据源：<code>ec-sim-esc --dump-state</code> 生成的 JSON（M2 WebUI 的最小起点，只读）。
+    可直接把 JSON 文件拖入下方，或先执行
+    <code>ec-sim-esc --dump-state --manifest plugins/… &gt; web/state.json</code> 后
+    <code>python3 -m http.server 8080 --directory web</code>，页面会自动读取同目录 <code>state.json</code>。
+  </div>
+
+  <section>
+    <h2>载入状态</h2>
+    <input id="file" type="file" accept="application/json,.json" />
+    <div id="message" class="sub"></div>
+  </section>
+
+  <div id="app"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

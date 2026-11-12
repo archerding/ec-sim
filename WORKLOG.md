@@ -1,5 +1,34 @@
 ---
 
+## 2026-11-13 05:26 班（低峰）— **B18：`--dump-state` JSON + Web 只读状态页（M2 起点）**
+
+**做了什么**
+- `ec-sim-esc` 新增 **`--dump-state [--manifest|--esi]`**：输出 state-v1 JSON（手写序列化，
+  无新依赖）——身份/名称/邮箱声明/CoE details/general flags/Ebus 电流/SM 列表/PDO 映射
+  （tx/rx）/DC 参数/manifest 画像与字典对象数；无 manifest 时为内置画像（`profile:null`）。
+- 新增 **`web/`** 零依赖只读页：`index.html` + `app.js`（原生 JS）+ `README.md`；支持拖入
+  `--dump-state` JSON 或静态服务下自动读取同目录 `state.json`，渲染身份/SM/PDO/DC。
+- 新增 `scripts/spikes/dump-state-probe.sh`：对 CST、SV660N 两个 manifest 画像与内置画像
+  校验 state-v1 JSON（schema/identity/names/SM/PDO/profile/dict_objects）并检查 `web/` 资源。
+- 更新 `docs/STATUS.md` 快速开始（dump-state + http.server）、`docs/VERIFICATION.md` 索引、
+  AGENTS（B18 完成、新增 B19 `--dump-dict --json` + Web 对象字典视图）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **210 passed**；
+  `python -c json.load` 校验 3 份输出通过；`node --check web/app.js` 通过；
+  `BIN=target/debug/ec-sim-esc.exe PY=python bash scripts/spikes/dump-state-probe.sh` → 4 条 OK。
+- 验证机：重建后 `dump-state-probe.sh` **EXIT=0**（2 个 manifest 画像 + 内置画像 JSON 校验）。
+
+**卡点**
+- 只读视图；实时拓扑/PDO 波形/SDO 编辑属 M2 后续（需要控制面 API）。
+
+**下次开工第一件事**
+- **B19**：`--dump-dict --json`（对象/条目/类型/访问/值）+ `web/app.js` 对象字典表格视图 +
+  探针校验。
+
+---
+---
+
 ## 2026-11-13 05:16 班（低峰）— **B17：原生 Rust 延迟基准 + `--poll`；M1 p99 达成（忙轮询）**
 
 **做了什么**

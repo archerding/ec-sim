@@ -7,6 +7,7 @@
 //! ec-sim-esc --tap escsim0 [--esi <file.esi.xml>]   # B6：ESI XML → SII
 //! ec-sim-esc --dump-sii [--manifest ... | --esi ...]  # 打印 SII hex/类别链后退出
 //! ec-sim-esc --dump-dict [--manifest ... | --esi ...] # 打印运行时对象字典后退出
+//! ec-sim-esc --dump-state [--manifest ... | --esi ...] # 打印只读状态 JSON（M2 WebUI 数据源）
 //! ec-sim-esc --version                                # 打印版本
 //!
 //! ESM 状态迁移前置条件检查默认**开启**（SM 未配置时拒绝进入 PREOP/SAFEOP 并给
@@ -154,6 +155,190 @@ fn dump_sii_and_exit(
     }
     std::process::ExitCode::SUCCESS
 }
+/// JSON 字符串转义（只处理常用控制字符；`--dump-state` 输出为机器可读 JSON）。
+fn json_escape(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len() + 2);
+    for ch in text.chars() {
+        match ch {
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            other => escaped.push(other),
+        }
+    }
+    escaped
+}
+
+/// `--dump-state`：把（manifest/ESI/内置）画像的只读状态以 JSON 输出后退出（M2 WebUI 数据源）。
+fn dump_state_and_exit(
+    manifest_path: Option<&str>,
+    esi_path: Option<&str>,
+) -> std::process::ExitCode {
+    use esc_core::sii::{simulated_spec, SiiSpec};
+    use std::fmt::Write as _;
+
+    let manifest = match manifest_path {
+        Some(path) => match plugin_host::manifest::PluginManifest::load(path) {
+            Ok(manifest) => Some(manifest),
+            Err(err) => {
+                eprintln!("ec-sim-esc: {err}");
+                return std::process::ExitCode::from(2);
+            }
+        },
+        None => None,
+    };
+    let device = match esi_path {
+        Some(path) => {
+            let text = match std::fs::read_to_string(path) {
+                Ok(text) => text,
+                Err(err) => {
+                    eprintln!("ec-sim-esc: 读取 ESI 失败：{err}");
+                    return std::process::ExitCode::from(2);
+                }
+            };
+            match plugin_host::esi::parse_esi(&text) {
+                Ok(device) => Some(device),
+                Err(err) => {
+                    eprintln!("ec-sim-esc: 解析 ESI 失败：{err}");
+                    return std::process::ExitCode::from(2);
+                }
+            }
+        }
+        None => None,
+    };
+    let spec: Result<SiiSpec, String> = match (&device, &manifest) {
+        (Some(device), Some(manifest)) => {
+            plugin_host::esi::sii_spec_from_esi_and_manifest(device, manifest)
+        }
+        (Some(device), None) => plugin_host::esi::sii_spec_from_esi(device),
+        (None, Some(manifest)) => plugin_host::sii_gen::sii_spec_from_manifest(manifest),
+        (None, None) => Ok(simulated_spec()),
+    };
+    let spec = match spec {
+        Ok(spec) => spec,
+        Err(err) => {
+            eprintln!("ec-sim-esc: {err}");
+            return std::process::ExitCode::from(2);
+        }
+    };
+    let dict_objects = manifest.as_ref().and_then(|manifest| {
+        plugin_host::dict_gen::dictionary_from_manifest(manifest)
+            .ok()
+            .map(|dict| dict.objects().len())
+    });
+
+    let mut out = String::new();
+    let _ = writeln!(out, "{{");
+    let _ = writeln!(out, "  \"schema\": \"ec-sim/state-v1\",");
+    let _ = writeln!(
+        out,
+        "  \"tool\": \"ec-sim-esc {}\",",
+        env!("CARGO_PKG_VERSION")
+    );
+    let _ = writeln!(
+        out,
+        "  \"identity\": {{\"vendor_id\": \"0x{:08X}\", \"product_code\": \"0x{:08X}\", \"revision\": \"0x{:08X}\", \"serial\": \"0x{:08X}\"}},",
+        spec.vendor_id, spec.product_code, spec.revision, spec.serial
+    );
+    let names: Vec<String> = spec
+        .names
+        .iter()
+        .map(|name| format!("\"{}\"", json_escape(name)))
+        .collect();
+    let _ = writeln!(out, "  \"names\": [{}],", names.join(", "));
+    let _ = writeln!(out, "  \"mailbox_declared\": {},", spec.mailbox.is_some());
+    let _ = writeln!(out, "  \"coe_details\": {},", spec.coe_details);
+    let _ = writeln!(out, "  \"general_flags\": {},", spec.general_flags);
+    let _ = writeln!(out, "  \"ebus_current_ma\": {},", spec.ebus_current);
+
+    let _ = writeln!(out, "  \"sync_managers\": [");
+    for (index, sm) in spec.sync_managers.iter().enumerate() {
+        if index + 1 == spec.sync_managers.len() {
+            let _ = writeln!(
+                out,
+                "    {{\"start\": \"0x{:04X}\", \"length\": {}, \"control\": \"0x{:02X}\", \"status\": {}, \"enable\": {}}}",
+                sm.physical_start_address, sm.length, sm.control, sm.status, sm.enable
+            );
+        } else {
+            let _ = writeln!(
+                out,
+                "    {{\"start\": \"0x{:04X}\", \"length\": {}, \"control\": \"0x{:02X}\", \"status\": {}, \"enable\": {}}},",
+                sm.physical_start_address, sm.length, sm.control, sm.status, sm.enable
+            );
+        }
+    }
+    let _ = writeln!(out, "  ],");
+
+    for (label, pdos) in [("tx", &spec.tx_pdos), ("rx", &spec.rx_pdos)] {
+        let _ = writeln!(out, "  \"pdo_{label}\": [");
+        for (index, pdo) in pdos.iter().enumerate() {
+            let entries: Vec<String> = pdo
+                .entries
+                .iter()
+                .map(|entry| {
+                    format!(
+                        "{{\"index\": \"0x{:04X}\", \"sub\": {}, \"bits\": {}}}",
+                        entry.index, entry.subindex, entry.bit_length
+                    )
+                })
+                .collect();
+            let tail = if index + 1 == pdos.len() { "" } else { "," };
+            let _ = writeln!(
+                out,
+                "    {{\"index\": \"0x{:04X}\", \"sync_manager\": {}, \"entries\": [{}]}}{tail}",
+                pdo.index,
+                pdo.sync_manager,
+                entries.join(", ")
+            );
+        }
+        let _ = writeln!(out, "  ],");
+    }
+
+    match &spec.dc {
+        Some(dc) => {
+            let _ = writeln!(
+                out,
+                "  \"dc\": {{\"cycle_time0_ns\": {}, \"shift_time0_ns\": {}, \"shift_time1_ns\": {}, \"sync0_cycle_factor\": {}, \"sync1_cycle_factor\": {}, \"assign_activate\": \"0x{:04X}\"}},",
+                dc.cycle_time0,
+                dc.shift_time0,
+                dc.shift_time1,
+                dc.sync0_cycle_factor,
+                dc.sync1_cycle_factor,
+                dc.assign_activate
+            );
+        }
+        None => {
+            let _ = writeln!(out, "  \"dc\": null,");
+        }
+    }
+    match &manifest {
+        Some(manifest) => {
+            let _ = writeln!(
+                out,
+                "  \"profile\": {{\"id\": \"{}\", \"name\": \"{}\"}},",
+                json_escape(&manifest.id),
+                json_escape(&manifest.name)
+            );
+        }
+        None => {
+            let _ = writeln!(out, "  \"profile\": null,");
+        }
+    }
+    match dict_objects {
+        Some(count) => {
+            let _ = writeln!(out, "  \"dict_objects\": {count}");
+        }
+        None => {
+            let _ = writeln!(out, "  \"dict_objects\": null");
+        }
+    }
+    let _ = writeln!(out, "}}");
+    print!("{out}");
+    std::process::ExitCode::SUCCESS
+}
+
 fn main() -> std::process::ExitCode {
     let mut args = std::env::args().skip(1);
     let mut tap_name: Option<String> = None;
@@ -170,6 +355,7 @@ fn main() -> std::process::ExitCode {
     let mut poll = false;
     let mut dump_sii = false;
     let mut dump_dict = false;
+    let mut dump_state = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--tap" => match args.next() {
@@ -247,6 +433,7 @@ fn main() -> std::process::ExitCode {
             "--poll" => poll = true,
             "--dump-sii" => dump_sii = true,
             "--dump-dict" => dump_dict = true,
+            "--dump-state" => dump_state = true,
             "--version" | "-V" => {
                 println!("ec-sim-esc {}", env!("CARGO_PKG_VERSION"));
                 return std::process::ExitCode::SUCCESS;
@@ -261,6 +448,7 @@ fn main() -> std::process::ExitCode {
                      [--fault <hex>（需 --behavior cia402）] [--slaves <1..64>] [--poll]
                      调试：--dump-sii [--manifest <yaml>] [--esi <xml>] 打印 SII 镜像 hex/类别链后退出；
                      --dump-dict [--manifest <yaml>] [--esi <xml>] 打印运行时对象字典后退出；
+                     --dump-state [--manifest <yaml>] [--esi <xml>] 打印只读状态 JSON（供 WebUI/工具消费）；
                      --version 打印版本。"
                 );
                 return std::process::ExitCode::SUCCESS;
@@ -274,6 +462,10 @@ fn main() -> std::process::ExitCode {
 
     if dump_dict {
         return dump_dict_and_exit(manifest_path.as_deref(), esi_path.as_deref());
+    }
+
+    if dump_state {
+        return dump_state_and_exit(manifest_path.as_deref(), esi_path.as_deref());
     }
 
     if dump_sii {
