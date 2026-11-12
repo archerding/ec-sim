@@ -380,19 +380,20 @@ fn serve_live_http(
             return;
         }
     };
-    let (dict_objects, profile, dict_json) = match &manifest {
+    let (dict_objects, profile, dict_json, dict_for_decode) = match &manifest {
         Some(manifest) => match plugin_host::dict_gen::dictionary_from_manifest(manifest) {
             Ok(dict) => (
                 Some(dict.objects().len()),
                 Some((manifest.id.as_str(), manifest.name.as_str())),
                 Some(control_plane::dict_json(&dict)),
+                Some(dict),
             ),
             Err(err) => {
                 eprintln!("ec-sim-esc: 实时 --serve 构建字典失败：{err}");
                 return;
             }
         },
-        None => (None, None, None),
+        None => (None, None, None, None),
     };
     let mut history: std::collections::VecDeque<control_plane::PdoSnapshot> =
         std::collections::VecDeque::with_capacity(PDO_HISTORY_CAPACITY);
@@ -474,7 +475,13 @@ fn serve_live_http(
             if want_history {
                 control_plane::pdo_history_json(history.make_contiguous())
             } else {
-                control_plane::pdo_json(&pdo)
+                let decoded = control_plane::decode_pdo(
+                    &spec,
+                    dict_for_decode.as_ref(),
+                    &pdo.sm2_bytes,
+                    &pdo.sm3_bytes,
+                );
+                control_plane::pdo_json_decoded(&pdo, &decoded)
             }
         });
         let response = match pdo_response {

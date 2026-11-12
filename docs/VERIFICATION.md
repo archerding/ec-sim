@@ -52,6 +52,7 @@
 | `igh-cia402-op-probe.sh` | IgH ecrt 7B CiA402：OP + 状态字/模式/位置 | **EXIT=0** |
 | `igh-cia402-csv-op-probe.sh` | IgH ecrt 11B CSV：OP + 速度模式位置累加/速度显示 | **EXIT=0** |
 | `uds-multi-slave-probe.sh` | `--slaves 8` 多从站链：广播 WKC=8、逐站地址分配、配置地址寻址 | **EXIT=0** |
+| `pdo-decode-probe.sh` | `/pdo` 具名解码：CST 5B 布局写入后 decoded 6 项（0x6040=15、0x6060=8、0x6071=300、0x6041=0x237、0x6061=8、0x6077=-100），名称来自字典 | **EXIT=0** |
 | `pdo-history-probe.sh` | `/pdo?history=1`：去重采样（无变化不增长）、写 0xBEEF→0x1234 后 count 递增且最后一条匹配、上限 256 | **EXIT=0** |
 | `tap-live-state-probe.sh` | TAP 实时 `--serve`：SOEM `simple_ng` 推入 OP 后 `/state.live` AL 低 4 位=0x08、`frames_in>0`，`/pdo` 返回 pdo-v1（root，验证机） | **EXIT=0** |
 | `pdo-live-probe.sh` | `--serve` 实时 `/pdo`：初始 SM2/SM3 全 0、AL=0x01；UDS APWR 写 0x1100=0xBEEF/0x1110=0x1234 后 `/pdo` 实时反映 `beef`/`1234` | **EXIT=0** |

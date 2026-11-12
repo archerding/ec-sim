@@ -217,6 +217,27 @@ function renderPdo(pdo) {
       table(["方向", "地址", "字节数", "hex", "u16 解码"], rows),
     ),
   );
+  if (Array.isArray(pdo.decoded) && pdo.decoded.length > 0) {
+    const decodedRows = pdo.decoded.map((entry) => [
+      entry.dir === "rx" ? "SM2" : "SM3",
+      entry.index,
+      String(entry.sub).padStart(2, "0"),
+      entry.name,
+      String(entry.bits),
+      String(entry.value),
+    ]);
+    app.append(
+      section(
+        "PDO 具名解码（按映射顺序）",
+        el(
+          "p",
+          { class: "sub" },
+          "依据 state 的 PDO 映射与 dict-v1 的对象名/类型解码；有符号类型按符号扩展。",
+        ),
+        table(["方向", "索引", "子索引", "名称", "位长", "值"], decodedRows),
+      ),
+    );
+  }
 }
 
 

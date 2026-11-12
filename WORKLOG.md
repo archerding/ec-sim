@@ -1,5 +1,35 @@
 ---
 
+## 2026-11-13 06:09 班（低峰）— **B26：`/pdo` 具名解码（按映射 + 字典）**
+
+**做了什么**
+- `control-plane` 新增：
+  - `decode_pdo(spec, dict, sm2, sm3)`：按 SII TxPDO/RxPDO 映射顺序、字节对齐位长（≤32）解码
+    为 `{dir,index,sub,bits,name,value}`；名称取自字典，有符号类型按 `data_type` 符号扩展；
+  - `pdo_json_decoded`：在 pdo-v1 JSON 末尾追加 `decoded[]`；
+  - 3 个单测（模拟布局顺序、符号扩展/位读取、decoded JSON），共 11 个 control-plane 测试。
+- 实时 `--serve` 的 `/pdo` 改为返回带 `decoded` 的 JSON（`dict_for_decode` 保留运行时字典）。
+- `web/` 新增“PDO 具名解码”表格（方向/索引/子索引/名称/位长/值）。
+- 新增 `scripts/spikes/pdo-decode-probe.sh`：CST 5B 画像写入 cw=15、mode=8、target torque=300、
+  sw=0x0237、mode display=8、torque actual=-100，断言 decoded 6 项（含符号扩展与字典名称）。
+- 更新 `docs/VERIFICATION.md`、`docs/STATUS.md`、AGENTS（B26 完成、新增 B27 多从站拓扑）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **221 passed**
+  （control-plane 11 / esc-core 86 / esc-node 71 / plugin-host 27+3 / wire 23）；`node --check web/app.js` 通过。
+- 验证机：重建后 `pdo-decode-probe.sh` **EXIT=0**——`OK: PDO 具名解码 6 项（… 名称=Controlword/
+  Torque actual value）`；`pdo-live-probe.sh` 仍 **EXIT=0**。
+
+**卡点**
+- 解码只支持字节对齐、≤32 位条目；多从站拓扑汇总仍只有首个从站（B27）。
+
+**下次开工第一件事**
+- **B27**：实时模式 `/topology` 返回所有从站摘要（站地址/AL/帧统计/SM 摘要），`web/` 拓扑表；
+  探针用 `--slaves 3` 校验 3 行与逐个 AL。
+
+---
+---
+
 ## 2026-11-13 06:04 班（低峰）— **B25：`/pdo` 历史缓冲 + Web 波形**
 
 **做了什么**

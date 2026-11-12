@@ -399,6 +399,136 @@ pub fn pdo_history_json(samples: &[PdoSnapshot]) -> String {
     out
 }
 
+/// PDO 解码条目（按映射顺序把原始字节解释为具名值；只读）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PdoDecodedEntry {
+    /// `"rx"`（SM2）或 `"tx"`（SM3）。
+    pub direction: &'static str,
+    /// 对象索引。
+    pub index: u16,
+    /// 子索引。
+    pub sub: u8,
+    /// 位长度。
+    pub bits: u8,
+    /// 对象名（字典有则用字典名，否则 `0xIIII:SS`）。
+    pub name: String,
+    /// 解码值（有符号类型按符号扩展）。
+    pub value: i64,
+}
+
+fn read_bits(bytes: &[u8], bit_offset: usize, bits: usize) -> Option<u64> {
+    if bits == 0 || bits > 32 || bit_offset % 8 != 0 {
+        return None;
+    }
+    let start = bit_offset / 8;
+    let need = bits.div_ceil(8);
+    if start + need > bytes.len() {
+        return None;
+    }
+    let mut raw = 0u64;
+    for index in 0..need {
+        raw |= u64::from(bytes[start + index]) << (8 * index);
+    }
+    let mask = if bits == 64 {
+        u64::MAX
+    } else {
+        (1u64 << bits) - 1
+    };
+    Some(raw & mask)
+}
+
+fn sign_extend(raw: u64, bits: usize) -> i64 {
+    if bits == 0 || bits >= 64 {
+        return raw as i64;
+    }
+    let shift = 64 - bits;
+    ((raw << shift) as i64) >> shift
+}
+
+/// 按 SII 的 TxPDO/RxPDO 映射顺序解码 SM2/SM3 原始字节为具名对象值。
+///
+/// 只支持字节对齐、位长 ≤32 的条目；超出项跳过（Tier0 简化）。
+#[must_use]
+pub fn decode_pdo(
+    spec: &SiiSpec,
+    dict: Option<&ObjectDictionary>,
+    sm2: &[u8],
+    sm3: &[u8],
+) -> Vec<PdoDecodedEntry> {
+    use esc_core::obj_dict::data_type;
+
+    let mut decoded = Vec::new();
+    for (direction, pdos, bytes) in [("rx", &spec.rx_pdos, sm2), ("tx", &spec.tx_pdos, sm3)] {
+        let mut bit_offset = 0usize;
+        for pdo in pdos {
+            for mapping in &pdo.entries {
+                let bits = usize::from(mapping.bit_length);
+                if let Some(raw) = read_bits(bytes, bit_offset, bits) {
+                    let dict_entry =
+                        dict.and_then(|dict| dict.entry(mapping.index, mapping.subindex));
+                    let (name, signed) = match dict_entry {
+                        Some(entry) => (
+                            entry.name.clone(),
+                            matches!(
+                                entry.data_type,
+                                data_type::INTEGER8 | data_type::INTEGER16 | data_type::INTEGER32
+                            ),
+                        ),
+                        None => (
+                            format!("0x{:04X}:{:02X}", mapping.index, mapping.subindex),
+                            false,
+                        ),
+                    };
+                    let value = if signed {
+                        sign_extend(raw, bits)
+                    } else {
+                        raw as i64
+                    };
+                    decoded.push(PdoDecodedEntry {
+                        direction,
+                        index: mapping.index,
+                        sub: mapping.subindex,
+                        bits: mapping.bit_length,
+                        name,
+                        value,
+                    });
+                }
+                bit_offset += bits;
+            }
+        }
+    }
+    decoded
+}
+
+fn decoded_json(decoded: &[PdoDecodedEntry]) -> String {
+    let mut out = String::new();
+    for (index, entry) in decoded.iter().enumerate() {
+        let tail = if index + 1 == decoded.len() { "" } else { "," };
+        let _ = write!(
+            out,
+            "\n    {{\"dir\": \"{}\", \"index\": \"0x{:04X}\", \"sub\": {}, \"bits\": {}, \"name\": \"{}\", \"value\": {}}}{tail}",
+            entry.direction,
+            entry.index,
+            entry.sub,
+            entry.bits,
+            json_escape(&entry.name),
+            entry.value
+        );
+    }
+    out
+}
+
+/// 生成带 `decoded` 数组的 pdo-v1 JSON（在 `pdo_json` 基础上追加）。
+#[must_use]
+pub fn pdo_json_decoded(pdo: &PdoSnapshot, decoded: &[PdoDecodedEntry]) -> String {
+    let base = pdo_json(pdo);
+    let insert_at = base.rfind('}').unwrap_or(base.len());
+    let insert = format!(",\n  \"decoded\": [{}]\n", decoded_json(decoded));
+    let mut out = base;
+    out.insert_str(insert_at, &insert);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -502,6 +632,69 @@ mod tests {
         assert!(json.contains("\"count\": 2"));
         assert!(json.contains("\"sm2_hex\": \"0000\""));
         assert!(json.contains("\"sm2_hex\": \"beef\", \"sm3_hex\": \"1234\""));
+        assert!(json.trim_end().ends_with('}'));
+    }
+
+    #[test]
+    fn decode_pdo_reads_simulated_mapping_in_order() {
+        use esc_core::sii::simulated_spec;
+        let spec = simulated_spec();
+        let dict = ObjectDictionary::simulated();
+        let sm2 = vec![0x01; 16];
+        let sm3 = vec![0x02; 16];
+        let decoded = decode_pdo(&spec, Some(&dict), &sm2, &sm3);
+        let expected = spec
+            .rx_pdos
+            .iter()
+            .map(|pdo| pdo.entries.len())
+            .sum::<usize>()
+            + spec
+                .tx_pdos
+                .iter()
+                .map(|pdo| pdo.entries.len())
+                .sum::<usize>();
+        assert_eq!(decoded.len(), expected);
+        assert!(decoded.iter().any(|entry| entry.direction == "rx"));
+        assert!(decoded.iter().any(|entry| entry.direction == "tx"));
+        // 首条映射值 = 0x01（8 位无符号）。
+        let first = &decoded[0];
+        assert_eq!(first.value, 1);
+        assert!(first.name.contains("0x") || !first.name.is_empty());
+    }
+
+    #[test]
+    fn sign_extend_and_read_bits_handle_signed_values() {
+        assert_eq!(sign_extend(0xFFFF, 16), -1);
+        assert_eq!(sign_extend(0x8000, 16), i16::MIN as i64);
+        assert_eq!(sign_extend(0x7F, 8), 127);
+        assert_eq!(read_bits(&[0x34, 0x12], 0, 16), Some(0x1234));
+        assert_eq!(read_bits(&[0x34, 0x12], 8, 16), None);
+        assert_eq!(read_bits(&[0x01], 0, 8), Some(1));
+    }
+
+    #[test]
+    fn pdo_json_decoded_appends_named_values() {
+        let pdo = PdoSnapshot {
+            station_address: 0x1001,
+            al_status: 0x02,
+            sm2_address: 0x1100,
+            sm2_bytes: vec![0x0F, 0x00],
+            sm3_address: 0x1110,
+            sm3_bytes: vec![0x37, 0x02],
+        };
+        let decoded = vec![PdoDecodedEntry {
+            direction: "rx",
+            index: 0x6040,
+            sub: 0,
+            bits: 16,
+            name: "Controlword".to_string(),
+            value: 15,
+        }];
+        let json = pdo_json_decoded(&pdo, &decoded);
+        assert!(json.contains("\"schema\": \"ec-sim/pdo-v1\""));
+        assert!(json.contains("\"decoded\": ["));
+        assert!(json.contains("\"index\": \"0x6040\""));
+        assert!(json.contains("\"value\": 15"));
         assert!(json.trim_end().ends_with('}'));
     }
 
