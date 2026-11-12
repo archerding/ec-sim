@@ -1,5 +1,27 @@
 ---
 
+## 2026-11-13 03:45 班（低峰）— CI：**release 模式测试（Linux）**
+
+**做了什么**
+- `.github/workflows/ci.yml` 增加一步 **`cargo test --workspace --release`**，只在
+  `ubuntu-latest` 上跑（避免三平台矩阵时间翻倍，同时覆盖 release 与 debug 的差异：
+  溢出检查/断言/优化后行为）。
+- 本机先验证 release 模式全量测试通过，再提交 CI 改动。
+
+**验证结果**
+- 本机 `cargo test --workspace --release` → **208 passed**（esc-core 86 / esc-node 70 /
+  plugin-host 27 + 2 集成 / wire 23），与 debug 基线一致。
+- CI 改动为加一步（仅 Linux 生效）；远程结果需 push 后在 GitHub 查看。
+
+**卡点**
+- release 测试只在 Linux 跑；Windows/macOS 仍只有 debug 测试（刻意控制 CI 时间）。
+
+**下次开工第一件事**
+- B11：继续找 SV660N 默认 PDO 条目；或评估真实 DC 同步（SYNC0 脉冲）。
+
+---
+---
+
 ## 2026-11-13 03:43 班（低峰）— 预回归：**UDS 探针全量扫一遍（14/14 通过）**
 
 **做了什么**
