@@ -473,6 +473,11 @@ impl Responder {
         self.dc_time_ns
     }
 
+    /// 写入 DL 用户内存/过程数据（供控制面显式写操作使用；越界返回 false）。
+    pub fn write_process_data(&mut self, address: u16, data: &[u8]) -> bool {
+        self.memory.write(address, data)
+    }
+
     /// 读取 DL 用户内存/过程数据（只读快照，供控制面/WebUI 使用；越界补 0）。
     #[must_use]
     pub fn read_process_data(&self, address: u16, len: usize) -> Vec<u8> {

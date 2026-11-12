@@ -46,6 +46,7 @@ EXPECTED_PROBES = [
     "tap-live-state-probe.sh",
     "serve-web-probe.sh",
     "events-probe.sh",
+    "write-pdo-probe.sh",
 ]
 
 
@@ -74,6 +75,11 @@ if "history=1" not in bin_text:
     fail("代码缺少 /pdo?history=1 处理")
 if "slave" not in bin_text:
     fail("代码缺少 ?slave=N 处理")
+
+if "POST /pdo" in doc:
+    assert "--serve-write" in bin_text, "文档描述 POST /pdo，但代码缺少 --serve-write"
+    assert "--serve-write" in doc, "文档缺少 --serve-write 说明"
+    assert "write-pdo-probe.sh" in doc
 
 # 3) 文档引用的探针脚本必须存在。
 for probe in EXPECTED_PROBES:

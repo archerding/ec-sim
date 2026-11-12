@@ -235,6 +235,54 @@ const PDO_HISTORY_CAPACITY: usize = 256;
 
 /// `--serve <addr>`：只读 HTTP JSON API（`/state`、`/dict`；std `TcpListener`，无外部依赖）。
 /// 静态托管 `web/` 的少量白名单文件（`/`、`/index.html`、`/app.js`；只读、无目录遍历）。
+#[cfg(target_os = "linux")]
+fn read_http_request(stream: &mut std::net::TcpStream) -> Option<(String, String, Vec<u8>)> {
+    use std::io::Read;
+
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 2048];
+    let header_end = loop {
+        let read = stream.read(&mut chunk).ok()?;
+        if read == 0 {
+            return None;
+        }
+        buf.extend_from_slice(&chunk[..read]);
+        if let Some(position) = buf.windows(4).position(|window| window == b"\r\n\r\n") {
+            break position + 4;
+        }
+        if buf.len() > 64 * 1024 {
+            return None;
+        }
+    };
+    let head = String::from_utf8_lossy(&buf[..header_end]).to_string();
+    let mut lines = head.lines();
+    let request_line = lines.next().unwrap_or("");
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next().unwrap_or("GET").to_string();
+    let path = parts.next().unwrap_or("/").to_string();
+    let content_length = lines
+        .filter_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            if key.eq_ignore_ascii_case("content-length") {
+                value.trim().parse::<usize>().ok()
+            } else {
+                None
+            }
+        })
+        .next()
+        .unwrap_or(0)
+        .min(64 * 1024);
+    while buf.len() < header_end + content_length {
+        let read = stream.read(&mut chunk).ok()?;
+        if read == 0 {
+            break;
+        }
+        buf.extend_from_slice(&chunk[..read]);
+    }
+    let body = buf[header_end..buf.len().min(header_end + content_length)].to_vec();
+    Some((method, path, body))
+}
+
 fn static_web_response(path: &str, web_root: Option<&str>) -> Option<control_plane::HttpResponse> {
     let root = web_root?;
     let path = path.split('?').next().unwrap_or(path);
@@ -400,8 +448,9 @@ fn serve_live_http(
     esi: Option<plugin_host::esi::EsiDevice>,
     responders: std::sync::Arc<std::sync::Mutex<Vec<esc_node::Responder>>>,
     web_root: Option<String>,
+    serve_write: bool,
 ) {
-    use std::io::{Read, Write as _};
+    use std::io::Write as _;
     use std::net::TcpListener;
 
     let spec = match (&esi, &manifest) {
@@ -453,16 +502,11 @@ fn serve_live_http(
             Ok(stream) => stream,
             Err(_) => continue,
         };
-        let mut buf = [0u8; 2048];
-        let _ = stream.read(&mut buf);
-        let request = String::from_utf8_lossy(&buf);
-        let path = request
-            .lines()
-            .next()
-            .and_then(|line| line.split_whitespace().nth(1))
-            .unwrap_or("/");
-        let path_only = path.split('?').next().unwrap_or(path);
-        let slave_param = query_param(path, "slave");
+        let Some((method, path, body)) = read_http_request(&mut stream) else {
+            continue;
+        };
+        let path_only = path.split('?').next().unwrap_or(path.as_str());
+        let slave_param = query_param(&path, "slave");
         let slave_count = responders.lock().unwrap().len();
         let slave_index = match slave_param {
             Some(value) => value
@@ -471,9 +515,57 @@ fn serve_live_http(
                 .filter(|index| *index < slave_count),
             None => Some(0),
         };
-        let invalid_slave =
-            matches!(path_only, "/state" | "/pdo" | "/metrics") && slave_index.is_none();
+        let invalid_slave = matches!(path_only, "/state" | "/pdo" | "/metrics" | "/events")
+            && slave_index.is_none();
         let slave_index = slave_index.unwrap_or(0);
+        if method == "POST" {
+            let response = if path_only != "/pdo" {
+                control_plane::not_found_json("仅支持 POST /pdo")
+            } else if !serve_write {
+                control_plane::HttpResponse {
+                    status_line: "HTTP/1.1 405 Method Not Allowed",
+                    content_type: "application/json; charset=utf-8",
+                    body: "{\"error\": \"写操作未启用（需要 --serve-write）\"}".to_string(),
+                }
+            } else if body.is_empty() || body.len() > 1024 {
+                control_plane::not_found_json("请求体为空或过长（≤1024 字节）")
+            } else {
+                let (sm2_address, sm2_len) = pdo_layout(&manifest, "out", 0x1100, 2);
+                let write_len = body.len().min(sm2_len);
+                let mut guard = responders.lock().unwrap();
+                match guard.get_mut(slave_index) {
+                    Some(responder) => {
+                        if responder.write_process_data(sm2_address, &body[..write_len]) {
+                            let written: String = body[..write_len]
+                                .iter()
+                                .map(|byte| format!("{byte:02x}"))
+                                .collect();
+                            control_plane::HttpResponse {
+                                status_line: "HTTP/1.1 200 OK",
+                                content_type: "application/json; charset=utf-8",
+                                body: format!(
+                                    "{{\"ok\": true, \"slave\": {slave_index}, \"sm2_address\": \"0x{sm2_address:04X}\", \"written_hex\": \"{written}\"}}"
+                                ),
+                            }
+                        } else {
+                            control_plane::not_found_json("写入失败（长度越界）")
+                        }
+                    }
+                    None => control_plane::not_found_json("从站不存在"),
+                }
+            };
+            let headers = format!(
+                "{}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: {}\r\nConnection: close\r\n\r\n",
+                response.status_line,
+                response.content_type,
+                response.body.len(),
+                control_plane::CORS_ALLOW_ORIGIN
+            );
+            let _ = stream.write_all(headers.as_bytes());
+            let _ = stream.write_all(response.body.as_bytes());
+            let _ = stream.flush();
+            continue;
+        }
         let state = {
             let guard = responders.lock().unwrap();
             match guard.get(slave_index) {
@@ -596,7 +688,7 @@ fn serve_live_http(
             }
         });
         if path_only == "/events" && !invalid_slave {
-            let interval_ms = query_param(path, "interval_ms")
+            let interval_ms = query_param(&path, "interval_ms")
                 .and_then(|value| value.parse::<u64>().ok())
                 .unwrap_or(500)
                 .clamp(100, 5000);
@@ -661,7 +753,7 @@ fn serve_live_http(
             }
             continue;
         }
-        let response = if let Some(response) = static_web_response(path, web_root.as_deref()) {
+        let response = if let Some(response) = static_web_response(&path, web_root.as_deref()) {
             response
         } else if invalid_slave {
             control_plane::not_found_json(&format!(
@@ -687,7 +779,7 @@ fn serve_live_http(
                             content_type: "application/json; charset=utf-8",
                             body,
                         },
-                        None => control_plane::handle_get(path, &state, dict_json.as_deref()),
+                        None => control_plane::handle_get(&path, &state, dict_json.as_deref()),
                     },
                 },
             }
@@ -725,6 +817,7 @@ fn main() -> std::process::ExitCode {
     let mut dump_state = false;
     let mut serve_addr: Option<String> = None;
     let mut web_root: Option<String> = None;
+    let mut serve_write = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--tap" => match args.next() {
@@ -804,6 +897,7 @@ fn main() -> std::process::ExitCode {
             "--dump-dict" => dump_dict = true,
             "--json" => dump_json = true,
             "--dump-state" => dump_state = true,
+            "--serve-write" => serve_write = true,
             "--web-root" => match args.next() {
                 Some(dir) => web_root = Some(dir),
                 None => {
@@ -945,6 +1039,7 @@ fn main() -> std::process::ExitCode {
             poll,
             live_serve,
             web_root.clone(),
+            serve_write,
         ),
         (Some(name), None) => run(
             &name,
@@ -957,6 +1052,7 @@ fn main() -> std::process::ExitCode {
             slave_count,
             live_serve,
             web_root.clone(),
+            serve_write,
         ),
         (None, None) => run(
             "ecsim0",
@@ -969,6 +1065,7 @@ fn main() -> std::process::ExitCode {
             slave_count,
             live_serve,
             web_root.clone(),
+            serve_write,
         ),
     }
 }
@@ -1103,6 +1200,7 @@ fn run_uds(
     poll: bool,
     serve: Option<String>,
     web_root: Option<String>,
+    serve_write: bool,
 ) -> std::process::ExitCode {
     use esc_node::DEFAULT_SIM_MAC;
     use std::io::Write;
@@ -1141,7 +1239,7 @@ fn run_uds(
         let shared = std::sync::Arc::clone(&responders);
         let root = web_root.clone();
         std::thread::spawn(move || {
-            serve_live_http(addr, http_manifest, http_esi, shared, root);
+            serve_live_http(addr, http_manifest, http_esi, shared, root, serve_write);
         });
     }
     let mut buf = [0u8; 2048];
@@ -1213,6 +1311,7 @@ fn run(
     slave_count: usize,
     serve: Option<String>,
     web_root: Option<String>,
+    serve_write: bool,
 ) -> std::process::ExitCode {
     use esc_node::DEFAULT_SIM_MAC;
     use std::io::Write;
@@ -1252,7 +1351,7 @@ fn run(
         let shared = std::sync::Arc::clone(&responders);
         let root = web_root.clone();
         std::thread::spawn(move || {
-            serve_live_http(addr, http_manifest, http_esi, shared, root);
+            serve_live_http(addr, http_manifest, http_esi, shared, root, serve_write);
         });
     }
     let mut buf = [0u8; 2048];
@@ -1301,6 +1400,7 @@ fn run(
     _slave_count: usize,
     _serve: Option<String>,
     _web_root: Option<String>,
+    _serve_write: bool,
 ) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)
@@ -1320,6 +1420,7 @@ fn run_uds(
     _poll: bool,
     _serve: Option<String>,
     _web_root: Option<String>,
+    _serve_write: bool,
 ) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)

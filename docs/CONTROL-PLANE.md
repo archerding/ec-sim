@@ -51,6 +51,7 @@ cargo run -q -p esc-node --bin ec-sim-esc -- \
 | `GET /pdo?slave=N`（可叠加 `history=1`） | 实时 | 同上 | 指定从站的 PDO/历史（各站独立缓冲） |
 | `GET /metrics?slave=N` | 实时 | Prometheus 文本 | 仅导出指定从站（默认全量） |
 | `GET /events` | 实时 | `text/event-stream` | SSE 推送 state-v1（默认 500ms，可 `?interval_ms=100..5000`；支持 `?slave=N`） |
+| `POST /pdo` | 实时（需 `--serve-write`） | （内联 JSON） | 写 SM2 原始字节（调试用；默认 405，见 §5） |
 | 其他路径 | 全部 | `{"error": ..., "routes": [...]}` | 404 |
 
 ## 3. 示例
@@ -132,7 +133,15 @@ curl -si http://127.0.0.1:8091/nope   # 404 JSON
 
 所有指标带标签 `slave="<index>"`、`station_address="0x...."`。
 
-## 5. 安全边界（务必遵守）
+## 5. 写操作（默认关闭）
+
+- 只有显式加 **`--serve-write`** 才启用 `POST /pdo`（其余 POST 返回 404；未启用时返回 405 JSON）。
+- 请求体 = 原始 SM2 字节（长度截断到 SM2 映射长度，≤1024 字节），`?slave=N` 选择从站；
+  服务端 `write_process_data` 只写对应 DL 用户内存，**不改变** ESM/SDO/邮箱语义。
+- 响应：`{"ok": true, "slave": N, "sm2_address": "0x1100", "written_hex": "beef"}`。
+- 用途：自动化测试/调试；默认关闭，生产/共享环境不要开启。写操作仍**无鉴权**，只应在回环或受信环境使用。
+
+## 6. 安全边界（务必遵守）
 
 - **只读**：没有任何写路由；不会触发 SDO 写/PDO 写/ESM 迁移。
 - **静态文件白名单**：`--web-root` 只映射上面三个路径，不拼接用户路径、无目录遍历风险；
@@ -141,14 +150,15 @@ curl -si http://127.0.0.1:8091/nope   # 404 JSON
 - 默认示例都绑定 `127.0.0.1`；如需远程访问，应自行加反向代理/鉴权，并注意泄漏面。
 - `--serve` 与 `--uds`/`--tap` 同进程时只增加一个 HTTP 线程；实时路径仍由线缆层主循环驱动，HTTP 请求仅加锁读快照（不改变实时语义）。
 - 快照是**观测值**：`/state` 的 `live`、`/pdo`、`/metrics` 均为读取时刻的近似值，不构成实时性/一致性保证。
+- 写操作（`POST /pdo`）默认关闭；启用 `--serve-write` 后仍无鉴权，需自行限定网络范围。
 
-## 6. 与 WebUI 的关系
+## 7. 与 WebUI 的关系
 
 `web/` 是零依赖只读页面：可载入 `--dump-state` / `--dump-dict --json` 生成的 JSON 文件，也可用 `--web-root web`
 同源托管（`http://127.0.0.1:<port>/`），或另起静态服务器后填 API 地址，从本控制面拉取
 `/state`、`/dict`、`/pdo`、`/pdo?history=1`、`/topology`、`/metrics`；支持“从站 N”切换、拓扑行点击切换、1s 实时轮询与 PDO Canvas 波形。
 
-## 7. 验证
+## 8. 验证
 
 | 检查 | 方式 |
 | --- | --- |
@@ -156,6 +166,7 @@ curl -si http://127.0.0.1:8091/nope   # 404 JSON
 | 静态服务 | `scripts/spikes/http-state-probe.sh` |
 | 同源托管 web/ | `scripts/spikes/serve-web-probe.sh` |
 | SSE 推送 | `scripts/spikes/events-probe.sh` |
+| 写操作（默认关闭） | `scripts/spikes/write-pdo-probe.sh` |
 | 实时状态/PDO/历史/拓扑/逐站/指标 | `live-state-probe.sh`、`pdo-live-probe.sh`、`pdo-history-probe.sh`、`pdo-decode-probe.sh`、`topology-probe.sh`、`slave-select-probe.sh`、`metrics-probe.sh`、`metrics-filter-probe.sh`（Linux/UDS） |
 | TAP 实时 | `scripts/spikes/tap-live-state-probe.sh`（root，验证机） |
 | 文档与代码路由一致 | `python3 scripts/spikes/control-plane-doc-check.py` |

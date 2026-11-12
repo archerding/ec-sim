@@ -1,5 +1,35 @@
 ---
 
+## 2026-11-13 06:56 班（低峰）— **B35：控制面写操作第一批 `--serve-write` + `POST /pdo`（默认关闭）**
+
+**做了什么**
+- 实时 `--serve` 新增显式开关 **`--serve-write`** 与 **`POST /pdo`**：请求体 = 原始 SM2 字节
+  （截断到 SM2 映射长度、≤1024 字节；`?slave=N`）；默认（无开关）返回 405 JSON，其他路径 POST 返回 404。
+- `Responder::write_process_data`：只写 DL 用户内存（对应 SM2 起始地址），不改变 ESM/SDO/邮箱语义。
+- HTTP 服务从“只读第一行”升级为 `read_http_request`（解析 method / Content-Length / 正文，最多 64KB）。
+- `docs/CONTROL-PLANE.md` 新增“写操作（默认关闭）”章节、路由表 `POST /pdo` 行与安全边界说明；
+  `control-plane-doc-check.py` 增 `--serve-write`/`POST /pdo` 一致性断言与新探针。
+- 新增 `scripts/spikes/write-pdo-probe.sh`：默认 405 且 PDO 不变；`--serve-write` 后 slave0=beef、
+  slave1=1234；`POST /state` 404。
+- AGENTS：B35 完成、新增 B36（M2 退出清单与路线图对齐）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **223 passed**；
+  `control-plane-doc-check.py` EXIT=0（12 路由 / 13 探针）。
+- 验证机：`cargo build --release -p esc-node` 0 error / 0 warning；`write-pdo-probe.sh` **EXIT=0**
+  （默认拒绝 + 开启后写入生效）；`serve-web-probe.sh` 与 `events-probe.sh` 路径未变（前班已通过）。
+
+**卡点**
+- 写操作仍无鉴权（文档已注明仅回环/受信环境）；VM 未安装 clippy，Linux clippy 未在验证机复跑
+  （以 `-D warnings` 语义由本机 Windows clippy + VM 无警告 release build 覆盖）。
+
+**下次开工第一件事**
+- **B36**：`docs/plan/M2-exit-checklist.md`（控制面只读 API/SSE/Web/指标/写开关/安全边界逐项勾选与
+  验证命令），STATUS/AGENTS/README 互链，doc-check 扩展清单存在性检查。
+
+---
+---
+
 ## 2026-11-13 06:47 班（低峰）— **B34：SSE `/events` 推送 + Web EventSource**
 
 **做了什么**
