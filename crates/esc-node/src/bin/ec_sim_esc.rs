@@ -337,6 +337,105 @@ fn serve_http(
     std::process::ExitCode::SUCCESS
 }
 
+#[cfg(target_os = "linux")]
+fn serve_live_http(
+    addr: String,
+    manifest: Option<plugin_host::manifest::PluginManifest>,
+    esi: Option<plugin_host::esi::EsiDevice>,
+    responders: std::sync::Arc<std::sync::Mutex<Vec<esc_node::Responder>>>,
+) {
+    use std::io::{Read, Write as _};
+    use std::net::TcpListener;
+
+    let spec = match (&esi, &manifest) {
+        (Some(device), Some(manifest)) => {
+            plugin_host::esi::sii_spec_from_esi_and_manifest(device, manifest)
+        }
+        (Some(device), None) => plugin_host::esi::sii_spec_from_esi(device),
+        (None, Some(manifest)) => plugin_host::sii_gen::sii_spec_from_manifest(manifest),
+        (None, None) => Ok(esc_core::sii::simulated_spec()),
+    };
+    let spec = match spec {
+        Ok(spec) => spec,
+        Err(err) => {
+            eprintln!("ec-sim-esc: 实时 --serve 构建快照失败：{err}");
+            return;
+        }
+    };
+    let (dict_objects, profile, dict_json) = match &manifest {
+        Some(manifest) => match plugin_host::dict_gen::dictionary_from_manifest(manifest) {
+            Ok(dict) => (
+                Some(dict.objects().len()),
+                Some((manifest.id.as_str(), manifest.name.as_str())),
+                Some(control_plane::dict_json(&dict)),
+            ),
+            Err(err) => {
+                eprintln!("ec-sim-esc: 实时 --serve 构建字典失败：{err}");
+                return;
+            }
+        },
+        None => (None, None, None),
+    };
+    let listener = match TcpListener::bind(&addr) {
+        Ok(listener) => listener,
+        Err(err) => {
+            eprintln!("ec-sim-esc: 实时 --serve 绑定 {addr} 失败：{err}");
+            return;
+        }
+    };
+    println!("SERVE (live) http://{addr} routes=/state,/dict");
+    let _ = std::io::stdout().flush();
+    for stream in listener.incoming() {
+        let mut stream = match stream {
+            Ok(stream) => stream,
+            Err(_) => continue,
+        };
+        let mut buf = [0u8; 2048];
+        let _ = stream.read(&mut buf);
+        let request = String::from_utf8_lossy(&buf);
+        let path = request
+            .lines()
+            .next()
+            .and_then(|line| line.split_whitespace().nth(1))
+            .unwrap_or("/");
+        let state = {
+            let guard = responders.lock().unwrap();
+            match guard.first() {
+                Some(responder) => {
+                    let stats = responder.stats();
+                    let live = control_plane::LiveState {
+                        station_address: responder.station_address(),
+                        al_status: responder.al_status(),
+                        al_status_code: responder.al_status_code(),
+                        dc_time_ns: responder.dc_time_ns(),
+                        frames_in: stats.frames_in,
+                        frames_out: stats.frames_out,
+                        frames_dropped: stats.frames_dropped,
+                        datagrams_hit: stats.datagrams_hit,
+                        mailbox_requests: stats.mailbox_requests,
+                        mailbox_responses: stats.mailbox_responses,
+                        dc_reg_reads: stats.dc_reg_reads,
+                        dc_reg_writes: stats.dc_reg_writes,
+                    };
+                    control_plane::live_state_json(&spec, dict_objects, profile, &live)
+                }
+                None => "{\"schema\": \"ec-sim/state-v1\", \"live\": null}".to_string(),
+            }
+        };
+        let response = control_plane::handle_get(path, &state, dict_json.as_deref());
+        let headers = format!(
+            "{}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: {}\r\nConnection: close\r\n\r\n",
+            response.status_line,
+            response.content_type,
+            response.body.len(),
+            control_plane::CORS_ALLOW_ORIGIN
+        );
+        let _ = stream.write_all(headers.as_bytes());
+        let _ = stream.write_all(response.body.as_bytes());
+        let _ = stream.flush();
+    }
+}
+
 fn main() -> std::process::ExitCode {
     let mut args = std::env::args().skip(1);
     let mut tap_name: Option<String> = None;
@@ -473,8 +572,16 @@ fn main() -> std::process::ExitCode {
         return dump_dict_and_exit(manifest_path.as_deref(), esi_path.as_deref(), dump_json);
     }
 
+    let mut live_serve: Option<String> = None;
     if let Some(addr) = serve_addr.as_deref() {
-        return serve_http(manifest_path.as_deref(), esi_path.as_deref(), addr);
+        if uds_path.is_some() {
+            live_serve = Some(addr.to_string());
+        } else if tap_name.is_some() {
+            eprintln!("ec-sim-esc: 实时 --serve 仅支持 --uds（TAP 暂不支持）");
+            return std::process::ExitCode::from(2);
+        } else {
+            return serve_http(manifest_path.as_deref(), esi_path.as_deref(), addr);
+        }
     }
 
     if dump_state {
@@ -557,6 +664,7 @@ fn main() -> std::process::ExitCode {
             fault,
             slave_count,
             poll,
+            live_serve,
         ),
         (Some(name), None) => run(
             &name,
@@ -709,6 +817,7 @@ fn run_uds(
     fault: Option<u16>,
     slave_count: usize,
     poll: bool,
+    serve: Option<String>,
 ) -> std::process::ExitCode {
     use esc_node::DEFAULT_SIM_MAC;
     use std::io::Write;
@@ -726,7 +835,9 @@ fn run_uds(
     println!("READY uds={path}");
     let _ = std::io::stdout().flush();
 
-    let mut responders = match build_responders(
+    let http_manifest = manifest.clone();
+    let http_esi = esi.clone();
+    let responders = match build_responders(
         manifest.as_ref(),
         esi.as_ref(),
         behavior.as_deref(),
@@ -740,6 +851,11 @@ fn run_uds(
             return std::process::ExitCode::from(7);
         }
     };
+    let responders = std::sync::Arc::new(std::sync::Mutex::new(responders));
+    if let Some(addr) = serve {
+        let shared = std::sync::Arc::clone(&responders);
+        std::thread::spawn(move || serve_live_http(addr, http_manifest, http_esi, shared));
+    }
     let mut buf = [0u8; 2048];
     if poll {
         if let Err(err) = socket.set_nonblocking(true) {
@@ -767,12 +883,14 @@ fn run_uds(
         if verbose {
             eprintln!("RX uds {len} bytes from {peer:?}");
         }
-        for responder in &mut responders {
-            responder.tick(now_ms());
-        }
-        let Some(reply) =
-            esc_node::handle_frame_chain(&mut responders, &buf[..len], DEFAULT_SIM_MAC)
-        else {
+        let reply = {
+            let mut guard = responders.lock().unwrap();
+            for responder in guard.iter_mut() {
+                responder.tick(now_ms());
+            }
+            esc_node::handle_frame_chain(&mut guard, &buf[..len], DEFAULT_SIM_MAC)
+        };
+        let Some(reply) = reply else {
             if verbose {
                 eprintln!("DROP uds {len} bytes（非 EtherCAT 或非法帧）");
             }
@@ -786,7 +904,10 @@ fn run_uds(
             eprintln!("ec-sim-esc: 写回 UDS 失败（对端可能已退出）: {err}");
             continue;
         }
-        maybe_print_stats(&responders[0], verbose);
+        {
+            let guard = responders.lock().unwrap();
+            maybe_print_stats(&guard[0], verbose);
+        }
         let _ = DEFAULT_SIM_MAC;
     }
 }
@@ -888,6 +1009,7 @@ fn run_uds(
     _fault: Option<u16>,
     _slave_count: usize,
     _poll: bool,
+    _serve: Option<String>,
 ) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)

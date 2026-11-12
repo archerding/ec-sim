@@ -216,6 +216,8 @@ document.getElementById("load-api").addEventListener("click", async () => {
     loadJson(await stateResponse.text(), `${base}/state`);
     const dictResponse = await fetch(`${base}/dict`);
     if (dictResponse.ok) loadJson(await dictResponse.text(), `${base}/dict`);
+    liveBase = base;
+    if (document.getElementById("live").checked) startLive();
   } catch (error) {
     message.textContent = `API 载入失败：${error.message}`;
   }
@@ -228,4 +230,9 @@ Promise.all([tryFetchJson("state.json"), tryFetchJson("dict.json")]).then(() => 
       "请选择 --dump-state（state-v1）或 --dump-dict --json（dict-v1）生成的 JSON，或放置 web/state.json、web/dict.json。";
     renderAll();
   }
+});
+
+document.getElementById("live").addEventListener("change", (event) => {
+  if (event.target.checked) startLive();
+  else stopLive();
 });

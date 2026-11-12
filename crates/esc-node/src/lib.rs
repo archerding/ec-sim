@@ -461,6 +461,18 @@ impl Responder {
         self.regs.read_u16(reg::STATION_ADDRESS).unwrap_or(0)
     }
 
+    /// AL Status Code（`0x0134`，只读）。
+    #[must_use]
+    pub fn al_status_code(&self) -> u16 {
+        self.regs.read_u16(reg::AL_STATUS_CODE).unwrap_or(0)
+    }
+
+    /// 模拟 DC 系统时间（ns，帧驱动时钟；非真实同步）。
+    #[must_use]
+    pub fn dc_time_ns(&self) -> u64 {
+        self.dc_time_ns
+    }
+
     /// 帧驱动时钟 tick：由线缆层每收到一帧调用一次（TAP/UDS 均如此）。
     ///
     /// 检查 SM 过程数据看门狗：任一过程数据 SM（SM2/SM3）已激活、control bit6 = 1 且

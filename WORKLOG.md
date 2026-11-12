@@ -1,5 +1,36 @@
 ---
 
+## 2026-11-13 05:46 班（低峰）— **B22：`--serve` 实时状态模式（UDS + HTTP 同进程）**
+
+**做了什么**
+- `--serve <addr>` 与 `--uds` 组合时进入**实时模式**：UDS 循环与 HTTP 线程共享
+  `Arc<Mutex<Vec<Responder>>>`（每帧加锁处理；HTTP 请求时加锁读取），`/state` 动态返回
+  `live` 字段（站地址/AL 状态/AL 状态码/DC 模拟时间/帧与邮箱/DC 统计）；`--tap` 实时模式
+  暂不支持（显式报错），无 `--uds/--tap` 时仍是启动时静态快照服务。
+- `control-plane` 新增 `LiveState` 与 `live_state_json`（在 state-v1 末尾注入 `live` 对象），
+  新增 1 个单元测试（6 个 control-plane 测试）。
+- `web/` 增加**实时刷新（1s）**开关：API 载入后按秒轮询 `/state` 刷新状态。
+- 新增 `scripts/spikes/live-state-probe.sh`：启动 `--uds --esm-lax --serve`，初始
+  `live.al_status=0x01`；合成主站 APWR AL Control 0x02 后轮询 `/state`，断言
+  `live.al_status=0x02`（PREOP）且 `live.stats.frames_in>=1`。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **216 passed**
+  （control-plane 6 / esc-core 86 / esc-node 71 / plugin-host 27+3 / wire 23）；
+  `node --check web/app.js` 通过。
+- 验证机：重建后 `live-state-probe.sh` **EXIT=0**——`OK: 实时 /state 反映 AL=0x02（PREOP）、
+  frames_in=1`；此前的静态 `http-state-probe.sh` 仍保持通过路径不变（静态模式未改动）。
+
+**卡点**
+- `/state` 的 live 仅 AL/统计与 DC 时间；PDO 原始数据/波形属 B23；TAP 实时模式未实现。
+
+**下次开工第一件事**
+- **B23**：`--serve` 实时 PDO 快照（`/pdo` 返回 SM2/SM3 原始字节 + WKC/AL），`web/` 增加
+  PDO 十六进制/按位视图并轮询；探针校验 PDO 随主站写入变化。
+
+---
+---
+
 ## 2026-11-13 05:41 班（低峰）— **B21：`--serve` 只读 HTTP JSON API（/state、/dict）**
 
 **做了什么**

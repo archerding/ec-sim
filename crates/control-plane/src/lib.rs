@@ -281,6 +281,64 @@ pub fn handle_get(path: &str, state: &str, dict: Option<&str>) -> HttpResponse {
     }
 }
 
+/// 运行时实时状态（`--serve` 实时模式从 `Responder` 读取；只读快照，非实时承诺）。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LiveState {
+    /// 配置站地址。
+    pub station_address: u16,
+    /// AL Status（0x0130）。
+    pub al_status: u8,
+    /// AL Status Code（0x0134）。
+    pub al_status_code: u16,
+    /// 模拟 DC 系统时间（ns，帧驱动）。
+    pub dc_time_ns: u64,
+    /// 收帧数。
+    pub frames_in: u64,
+    /// 发帧数。
+    pub frames_out: u64,
+    /// 丢弃帧数。
+    pub frames_dropped: u64,
+    /// 命中 datagram 数。
+    pub datagrams_hit: u64,
+    /// 邮箱请求数。
+    pub mailbox_requests: u64,
+    /// 邮箱响应数。
+    pub mailbox_responses: u64,
+    /// DC 寄存器读次数。
+    pub dc_reg_reads: u64,
+    /// DC 寄存器写次数。
+    pub dc_reg_writes: u64,
+}
+
+/// 生成带 `live` 字段的 state-v1 JSON（在 `state_json` 基础上插入运行时状态）。
+#[must_use]
+pub fn live_state_json(
+    spec: &SiiSpec,
+    dict_objects: Option<usize>,
+    profile: Option<(&str, &str)>,
+    live: &LiveState,
+) -> String {
+    let mut out = state_json(spec, dict_objects, profile);
+    let insert_at = out.rfind('}').unwrap_or(out.len());
+    let live_json = format!(
+        ",\n  \"live\": {{\"station_address\": \"0x{:04X}\", \"al_status\": \"0x{:02X}\", \"al_status_code\": \"0x{:04X}\", \"dc_time_ns\": {}, \"stats\": {{\"frames_in\": {}, \"frames_out\": {}, \"frames_dropped\": {}, \"datagrams_hit\": {}, \"mailbox_requests\": {}, \"mailbox_responses\": {}, \"dc_reg_reads\": {}, \"dc_reg_writes\": {}}}}}\n",
+        live.station_address,
+        live.al_status,
+        live.al_status_code,
+        live.dc_time_ns,
+        live.frames_in,
+        live.frames_out,
+        live.frames_dropped,
+        live.datagrams_hit,
+        live.mailbox_requests,
+        live.mailbox_responses,
+        live.dc_reg_reads,
+        live.dc_reg_writes
+    );
+    out.insert_str(insert_at, &live_json);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -311,6 +369,32 @@ mod tests {
         let health = handle_get("/health", state, Some(dict));
         assert_eq!(health.status_line, "HTTP/1.1 200 OK");
         assert!(health.body.contains("ec-sim-control-plane"));
+    }
+    #[test]
+    fn live_state_json_injects_runtime_state() {
+        let live = LiveState {
+            station_address: 0x1001,
+            al_status: 0x04,
+            al_status_code: 0x0000,
+            dc_time_ns: 1234567,
+            frames_in: 42,
+            frames_out: 41,
+            frames_dropped: 1,
+            datagrams_hit: 84,
+            mailbox_requests: 2,
+            mailbox_responses: 2,
+            dc_reg_reads: 3,
+            dc_reg_writes: 4,
+        };
+        let json = live_state_json(&simulated_spec(), Some(15), Some(("p", "P")), &live);
+        assert!(json.contains("\"schema\": \"ec-sim/state-v1\""));
+        assert!(json.contains("\"live\": {"));
+        assert!(json.contains("\"station_address\": \"0x1001\""));
+        assert!(json.contains("\"al_status\": \"0x04\""));
+        assert!(json.contains("\"dc_time_ns\": 1234567"));
+        assert!(json.contains("\"frames_in\": 42"));
+        assert!(json.contains("\"dc_reg_writes\": 4"));
+        assert!(json.trim_end().ends_with('}'));
     }
     #[test]
     fn routes_are_registered_and_dispatch() {
