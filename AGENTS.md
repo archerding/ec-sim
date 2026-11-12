@@ -64,10 +64,11 @@ user.email = deepseek-harness@users.noreply.github.com
 
 1. 读 `WORKLOG.md` 顶部条目与"下次开工第一件事"。
 2. 从 §6 的 backlog 里取**顶部未完成项**；若顶部项被阻塞，取下一个并在 WORKLOG 记录原因。
-3. 实现 → 本地验证（`cargo test` / `cargo fmt --check` / `cargo clippy`，没有代码时跳过）→ 单次提交。
-4. 更新 `WORKLOG.md`：在顶部插入一条，含 `日期 / 做了什么 / 验证结果 / 卡点 / 下次开工第一件事`。
-5. 若某项完成，把它从 §6 移入"已完成"，并补充下一项。
-6. 结束时给出一段 ≤10 行的中文总结（做了什么、验证了什么、下一步）。
+3. 实现 → 本地验证（`cargo test` / `cargo fmt --check` / `cargo clippy`，没有代码时跳过）。
+4. 更新 `WORKLOG.md`：在顶部插入一条，含 `日期 / 做了什么 / 验证结果 / 卡点 / 下次开工第一件事`；完成项从 §6 移入"已完成"并补下一项。
+5. **单次提交**（提交信息含 WORKLOG 变更）。
+6. **自动推送**：`git push`（`origin main`，normal fast-forward）。失败重试一次；仍失败则把原因写进 WORKLOG 的"卡点"并正常退出——**不得 `--force`，不得为推送而改写历史**。
+7. 结束时给出一段 ≤10 行的中文总结（做了什么、验证了什么、是否已推送、下一步）。
 
 **禁止行为**：不要一次跨多个 backlog 项；不要为了"看起来有产出"而写空壳代码或假测试；不要在未验证的情况下更新 §6 的完成状态。
 
@@ -114,3 +115,12 @@ tests-gpl/      只跑 GPL 主站的夹具（独立目录、独立许可、不�
   - R5 每个插件必须有 `sources` 证据链（标题 + URL + 访问日期）。
 - 插件默认**声明式**（manifest 描述对象字典/PDO/SM），只有行为逻辑才写 WASM；闭源插件的源码不入库。
 - 市场/审核/定价/免责声明细则见 docs/DEVICE-PLUGINS.md §5–§6。
+
+## 10. 自动推送规则（2026-11-12 启用）
+
+- 仓库是 **public**：`https://github.com/archerding/ec-sim`（remote `origin` 走 SSH：`git@github.com:archerding/ec-sim.git`）。
+- 每一班在**验证通过并提交后**自动 `git push`；早上的 `git log` / GitHub 页面应能看到夜间进度。
+- **前置条件**：本次改动必须有可复现验证（测试/脚本输出/证据文档）；没有验证的改动不许提交，更不许推送。
+- **禁止**：`--force`、`-f`、改写已推送历史、绕过测试直接推、推送未完成半成品、改 `origin` 地址。
+- **推送失败**（网络/认证）：重试一次；仍失败就在 WORKLOG 卡片记录原因并退出，下一班继续（本地提交保留，不丢工作）。
+- 合并冲突/非 fast-forward 时**停止**，在 WORKLOG 记录为卡点，等人处理——不要自动 merge/rebase。
