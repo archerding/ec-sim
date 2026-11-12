@@ -924,6 +924,22 @@ impl Responder {
     /// 由当前 SII 声明与 SM 寄存器推导 ESM 前置条件（见 [`Responder::with_esm_preconditions`]）。
     fn esm_preconditions(&self) -> EsmPreconditions {
         let sii = self.eeprom.image();
+        let outputs_declared = sii
+            .category_bytes(esc_core::sii::category::RX_PDO)
+            .is_some();
+        let outputs_configured = Self::sync_manager_configured(&self.regs, 2);
+        let inputs_declared = sii
+            .category_bytes(esc_core::sii::category::TX_PDO)
+            .is_some();
+        let inputs_configured = Self::sync_manager_configured(&self.regs, 3);
+        let outputs_mapping_valid = !outputs_declared
+            || !outputs_configured
+            || self.process_data_mapping_bits(0x1C12)
+                == SyncManager::read(&self.regs, 2).map(|sm| u32::from(sm.length) * 8);
+        let inputs_mapping_valid = !inputs_declared
+            || !inputs_configured
+            || self.process_data_mapping_bits(0x1C13)
+                == SyncManager::read(&self.regs, 3).map(|sm| u32::from(sm.length) * 8);
         EsmPreconditions {
             mailbox_declared: sii.mailbox_protocols() != 0,
             mailbox_out_configured: Self::sync_manager_configured(&self.regs, 0),
@@ -931,15 +947,38 @@ impl Responder {
             process_data_declared: sii.declares_process_data_sync_managers(),
             process_data_configured: (2..=3)
                 .any(|index| Self::sync_manager_configured(&self.regs, index)),
-            outputs_declared: sii
-                .category_bytes(esc_core::sii::category::RX_PDO)
-                .is_some(),
-            outputs_configured: Self::sync_manager_configured(&self.regs, 2),
-            inputs_declared: sii
-                .category_bytes(esc_core::sii::category::TX_PDO)
-                .is_some(),
-            inputs_configured: Self::sync_manager_configured(&self.regs, 3),
+            outputs_declared,
+            outputs_configured,
+            inputs_declared,
+            inputs_configured,
+            outputs_mapping_valid,
+            inputs_mapping_valid,
         }
+    }
+
+    /// 计算 `0x1C12`/`0x1C13` 分配的 PDO 映射位长总和（用于 OP 的映射一致性检查）。
+    ///
+    /// 读取分配对象（0x1C12/0x1C13 子 0 条目数 + 各子 PDO 索引），再读每个 PDO 映射对象
+    /// （子 0 条目数 + 各映射字 `index<<16 | sub<<8 | bits`），累加最低字节的位长。
+    fn process_data_mapping_bits(&self, assign_index: u16) -> Option<u32> {
+        let count = *self.dict.value(assign_index, 0)?.first()?;
+        let mut total = 0u32;
+        for sub in 1..=count {
+            let pdo_bytes = self.dict.value(assign_index, sub)?;
+            if pdo_bytes.len() < 2 {
+                return None;
+            }
+            let pdo = u16::from_le_bytes([pdo_bytes[0], pdo_bytes[1]]);
+            let pdo_count = *self.dict.value(pdo, 0)?.first()?;
+            for entry_sub in 1..=pdo_count {
+                let word = self.dict.value(pdo, entry_sub)?;
+                if word.len() < 4 {
+                    return None;
+                }
+                total += u32::from_le_bytes([word[0], word[1], word[2], word[3]]) & 0x00FF;
+            }
+        }
+        Some(total)
     }
 
     /// SM 是否已配置：Activate bit0 置位且 Length > 0（与 IgH/SOEM 写入的 SM 页一致）。
@@ -2397,6 +2436,27 @@ mod tests {
             "SM3 配置后 OP 通过"
         );
         assert_eq!(al_status_code(&mut responder), 0);
+    }
+
+    #[test]
+    fn esm_strict_rejects_op_with_invalid_process_data_mapping() {
+        // 运行字典缺少 PDO 映射对象 → 映射一致性检查失败，OP 被拒绝（0x0024）。
+        let dict = ObjectDictionary::new(Vec::new(), Vec::new());
+        let mut responder = Responder::default()
+            .with_dictionary(dict)
+            .with_esm_preconditions(true);
+        configure_sync_managers(&mut responder, 4);
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x02]); // PREOP
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x04]); // SAFEOP
+        assert_eq!(al_status_byte(&mut responder) & 0x0F, 0x04);
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x08]); // OP
+        let status = al_status_byte(&mut responder);
+        assert_eq!(status & 0x0F, 0x04, "映射无效时状态保持 SAFEOP");
+        assert_eq!(status & 0x10, 0x10, "error 位必须置位");
+        assert_eq!(
+            al_status_code(&mut responder),
+            esc_core::al_status::NO_VALID_OUTPUT_CONFIGURATION
+        );
     }
 
     #[test]

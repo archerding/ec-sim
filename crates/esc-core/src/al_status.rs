@@ -32,6 +32,10 @@ pub const NO_VALID_INPUTS: u16 = 0x0018;
 pub const NO_VALID_OUTPUTS: u16 = 0x0019;
 /// SM 过程数据看门狗超时（见 [`crate::watchdog`]）。
 pub const SYNC_MANAGER_WATCHDOG: u16 = 0x001B;
+/// 无有效的输出配置（OP 前置条件；⚠️ 文本按 ETG.1000.6 Table 11 常见解释，待原文复核）。
+pub const NO_VALID_OUTPUT_CONFIGURATION: u16 = 0x0024;
+/// 无有效的输入配置（OP 前置条件；⚠️ 同上）。
+pub const NO_VALID_INPUT_CONFIGURATION: u16 = 0x0025;
 /// 无有效输入与输出。
 pub const NO_VALID_INPUTS_AND_OUTPUTS: u16 = 0x002B;
 
@@ -51,6 +55,8 @@ pub const fn name(code: u16) -> &'static str {
         INVALID_SYNC_MANAGER_CONFIGURATION => "Invalid sync manager configuration",
         NO_VALID_INPUTS => "No valid inputs available",
         NO_VALID_OUTPUTS => "No valid outputs",
+        NO_VALID_OUTPUT_CONFIGURATION => "No valid output configuration",
+        NO_VALID_INPUT_CONFIGURATION => "No valid input configuration",
         SYNC_MANAGER_WATCHDOG => "Sync manager watchdog",
         NO_VALID_INPUTS_AND_OUTPUTS => "No valid inputs and outputs",
         _ => "unknown",
@@ -72,6 +78,8 @@ mod tests {
         assert_eq!(INVALID_SYNC_MANAGER_CONFIGURATION, 0x0017);
         assert_eq!(NO_VALID_INPUTS, 0x0018);
         assert_eq!(NO_VALID_OUTPUTS, 0x0019);
+        assert_eq!(NO_VALID_OUTPUT_CONFIGURATION, 0x0024);
+        assert_eq!(NO_VALID_INPUT_CONFIGURATION, 0x0025);
         assert_eq!(SYNC_MANAGER_WATCHDOG, 0x001B);
         assert_eq!(NO_VALID_INPUTS_AND_OUTPUTS, 0x002B);
     }

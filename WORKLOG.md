@@ -6,6 +6,42 @@
 
 ---
 
+## 2026-11-12 23:57 班（低峰）— B5 子项：**映射类 OP 前置条件**（AL Status Code 0x0024/0x0025）
+
+**做了什么**
+- `esc-core::al_status` 新增 **0x0024** `No valid output configuration` / **0x0025**
+  `No valid input configuration`（文本按 ETG.1000.6 Table 11 常见解释，⚠️ 待原文复核）。
+- `EsmPreconditions` 增加 `outputs_mapping_valid`/`inputs_mapping_valid`；`failure_for(Op)`
+  在"已配置"之后继续检查映射一致性：输出映射无效 → **0x0024**，输入映射无效 → **0x0025**
+  （优先级：0x0018/0x0019 存在性错误先于 0x0024/0x0025）。
+- `esc-node::Responder` 新增 `process_data_mapping_bits(assign_index)`：读
+  `0x1C12`/`0x1C13` 分配条目 → 各 PDO 映射对象条目数 → 映射字
+  `index<<16 | sub<<8 | bits` 的最低位长求和；与 SM2/SM3 的 `length × 8` 比较得出映射一致性
+  （字典缺映射对象/长度不一致 → 无效）。
+- 新增单测：esc-core `checked_esm_rejects_op_with_invalid_mapping`；esc-node
+  `esm_strict_rejects_op_with_invalid_process_data_mapping`（空字典 → OP 拒绝 0x0024，
+  状态保持 SAFEOP）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **168 passed**（esc-core 79 / esc-node 51 / plugin-host 21 + 1 集成 / wire 16）。
+- Linux 验证机（重建后）回归（默认前置条件开启）：
+  - `soem-process-data.sh` **EXIT=0**：SOEM OP、1055 轮 WKC=3、无 WKC 不符；
+  - `generic-cia402-probe.sh` **EXIT=0**：CiA 402 画像扫描/OP 正常；
+  - `igh-el2008-op-probe.sh` **EXIT=0**：IgH `al_states=0x08`、EL2008 画像 OP。
+
+**卡点**
+- 映射一致性只比较**总位长**：未校验分配顺序/子索引合法性/条目是否重复或越界
+  （0x0024/0x0025 的更细语义待原文与主站行为核对）。
+- 0x0024/0x0025 的文本与"何时使用"仍按常见解释，⚠️ 待 ETG.1000.6 原文复核。
+- 与既有 0x0015/0x0017/0x0018/0x0019 一样为"配置存在性/一致性"近似。
+
+**下次开工第一件事**
+- 细化映射校验（条目/顺序/越界）或继续 B11（9/11 字节 PDO → CSV、SV660N 手册核对）；
+  B6 FMMU/DC 原文核实仍待条件。
+
+---
+
 ## 2026-11-12 23:52 班（低峰）— B5 子项：**SAFEOP→OP 前置条件**（AL Status Code 0x0018/0x0019/0x002B）
 
 **做了什么**

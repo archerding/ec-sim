@@ -200,6 +200,10 @@ pub struct EsmPreconditions {
     pub inputs_declared: bool,
     /// SM3（输入过程数据）是否已配置：activate bit0 且 length > 0。
     pub inputs_configured: bool,
+    /// 输出映射是否与 SM2 长度一致（未配置/未声明时视为真）。
+    pub outputs_mapping_valid: bool,
+    /// 输入映射是否与 SM3 长度一致（未配置/未声明时视为真）。
+    pub inputs_mapping_valid: bool,
 }
 
 impl EsmPreconditions {
@@ -232,6 +236,19 @@ impl EsmPreconditions {
             }
             AlState::Op if self.inputs_declared && !self.inputs_configured => {
                 Some(al_status::NO_VALID_INPUTS)
+            }
+            // 映射类：已配置但映射对象内容与 SM 长度不一致（0x0024/0x0025）。
+            AlState::Op
+                if self.outputs_declared
+                    && self.outputs_configured
+                    && !self.outputs_mapping_valid =>
+            {
+                Some(al_status::NO_VALID_OUTPUT_CONFIGURATION)
+            }
+            AlState::Op
+                if self.inputs_declared && self.inputs_configured && !self.inputs_mapping_valid =>
+            {
+                Some(al_status::NO_VALID_INPUT_CONFIGURATION)
             }
             _ => None,
         }
@@ -584,7 +601,40 @@ mod tests {
             outputs_configured: true,
             inputs_declared: true,
             inputs_configured: true,
+            outputs_mapping_valid: true,
+            inputs_mapping_valid: true,
         }
+    }
+
+    #[test]
+    fn checked_esm_rejects_op_with_invalid_mapping() {
+        let mut al = EscAl {
+            state: AlState::SafeOp,
+            error: false,
+            status_code: 0,
+        };
+        let bad_outputs = EsmPreconditions {
+            outputs_mapping_valid: false,
+            ..configured_preconditions()
+        };
+        assert!(al.handle_control_checked(AlControl::from_byte(0x08), &bad_outputs));
+        assert_eq!(al.state, AlState::SafeOp);
+        assert_eq!(al.status_code, al_status::NO_VALID_OUTPUT_CONFIGURATION);
+        assert!(al.handle_control_checked(AlControl::from_byte(0x18), &bad_outputs));
+        assert!(!al.error);
+
+        let bad_inputs = EsmPreconditions {
+            inputs_mapping_valid: false,
+            ..configured_preconditions()
+        };
+        assert!(al.handle_control_checked(AlControl::from_byte(0x08), &bad_inputs));
+        assert_eq!(al.status_code, al_status::NO_VALID_INPUT_CONFIGURATION);
+        assert!(al.handle_control_checked(AlControl::from_byte(0x18), &bad_inputs));
+
+        let good = configured_preconditions();
+        assert!(al.handle_control_checked(AlControl::from_byte(0x08), &good));
+        assert_eq!(al.state, AlState::Op);
+        assert_eq!(al.status_code, al_status::NO_ERROR);
     }
 
     #[test]

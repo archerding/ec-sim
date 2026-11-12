@@ -140,9 +140,14 @@ user.email = deepseek-harness@users.noreply.github.com
     验证机回归 `soem-process-data.sh`（OP 1055 轮 WKC=3）、`generic-cia402-probe.sh`、
     `igh-el2008-op-probe.sh`（IgH OP）全部 EXIT=0。
     ⚠️ 以 SM 配置近似"有效输出/输入"，未检查映射对象内容（0x0024/0x0025 待实现）。
-  - 待做：映射类前置条件 0x0024/0x0025（映射对象内容与 SM 长度一致性）；SM 配置合法性校验
-    （地址越界/区间重叠/类型方向）；无独立硬件定时器（帧驱动时钟）；0x0410 PDI watchdog
-    仅保留读写语义。
+  - 进度（2026-11-12 23:57 班）：**映射类 OP 前置条件已实现**——`EsmPreconditions` 增加
+    `outputs_mapping_valid/inputs_mapping_valid`；`esc-node` 由 `0x1C12/0x1C13` 分配 +
+    PDO 映射字位长与 SM2/SM3 长度比较；失败返回 **0x0024**（输出配置无效）/ **0x0025**
+    （输入配置无效，文本 ⚠️ 待 ETG.1000.6 原文复核）。测试 **168 passed**；验证机回归
+    `soem-process-data.sh`（OP 1055 轮 WKC=3）、`generic-cia402-probe.sh`、
+    `igh-el2008-op-probe.sh`（IgH al_states=0x08）全部 EXIT=0。
+  - 待做：映射校验细化（分配顺序/重复/越界）；SM 配置合法性校验（地址越界/区间重叠/类型方向）；
+    无独立硬件定时器（帧驱动时钟）；0x0410 PDI watchdog 仅保留读写语义。
 - [ ] **B6 SII 生成器**：ESI XML → SII 镜像（含固定区 CRC-8（**word 0x0007**，覆盖 0x0000–0x0006，已实现）、category 链 0x0029/0x0032/0x0033、0xFFFF 终止）。
   - 进度（2026-11-12 19:26 班）：**SM 类别 0x0029 + TxPDO 0x0032 + RxPDO 0x0033 已实现**
     （SM0/SM1 = mailbox、SM2 输出 0x1100、SM3 输入 0x1110；PDO 0x1A00/0x1600，
