@@ -32,6 +32,35 @@
 
 ---
 
+## 2026-11-13 02:02 班（低峰）— B7：**分段下载数据超长 → Abort 0x06070010**
+
+**做了什么**
+- `esc-core::mailbox` 新增 `SDO_ABORT_LENGTH_MISMATCH = 0x06070010`（CiA 301：
+  数据长度与服务参数不匹配）。
+- `esc-node` 两处改为**显式 Abort**（此前是静默 `truncate`，可能掩盖主站错误）：
+  - `handle_download_initiate`：initiate 自带数据 > 声明 `total_size` → Abort；
+  - `handle_download_segment`：累计段数据 > `total_size` → Abort（清空分段状态，
+    不写入对象，避免部分写）。
+- 新增单测 `segmented_download_overflow_is_aborted_with_length_mismatch`：
+  20 字节对象先收 8+7 字节，再收 7 字节（22>20）→ Abort 0x06070010、`download` 清空、
+  `object_writes` 为空；另测 initiate 自带 8 字节但声明 4 字节 → Abort。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **198 passed**（esc-core 85 / esc-node 62 / plugin-host 27 + 1 集成 / wire 23）。
+- Linux 验证机（重建后）：`sdo-ca-probe.sh` **EXIT=0**、`cia402-sdo-download-probe.sh`
+  **EXIT=0**（合法分段/CA 下载路径无回归）。
+
+**卡点**
+- 仅覆盖分段下载；分段上传没有"超长"概念（服务器按对象长度返回），未改。
+- Abort 后主站需重新 initiate（不保留可续传状态）。
+
+**下次开工第一件事**
+- B6：最小 DC 仿真（activate/cycle 寄存器 + tick 驱动）并在测试画像验证；或 B11
+  SV660N 默认 PDO 条目查找（公开资料暂无列表）。
+
+---
+
 ## 2026-11-13 01:58 班（低峰）— B6：**manifest `dc` 时序字段接入 SII DC 类别**
 
 **做了什么**

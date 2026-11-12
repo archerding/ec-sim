@@ -259,6 +259,10 @@ user.email = deepseek-harness@users.noreply.github.com
     校验全部子索引（存在/可写/长度和）再写入，避免"写入一部分后 Abort"留下部分状态；新增
     单测 `complete_access_download_is_all_or_nothing`（子 2 只读 → Abort 0x06010002 且 object_writes 为空）。
     验证机 sdo-ca-probe / cia402-sdo-download-probe 均 EXIT=0。测试 **192 passed**。
+  - 进度（2026-11-13 02:02 班）：**分段下载数据超长 → Abort 0x06070010**——新增
+    `SDO_ABORT_LENGTH_MISMATCH`；`handle_download_initiate`（initiate 自带数据超声明长度）与
+    `handle_download_segment`（累计段数据超总长）都会回 Abort 并清空分段状态，避免静默截断/部分写；
+    新增单测覆盖两处。验证机 sdo-ca-probe/cia402-sdo-download-probe 均 EXIT=0。测试 **198 passed**。
   - 待做：CA 部分写/顺序语义细化（IgH 侧仍无法验证 CA）。
   - 进度（2026-11-13 01:16 班）：**分段传输 toggle 校验**——`SegmentedUpload`/`SegmentedDownload`
     增加期望 toggle（initiate 后 0，每成功一段取反），请求 toggle 不符回 Abort

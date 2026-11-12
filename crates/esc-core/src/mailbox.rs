@@ -258,6 +258,9 @@ pub const SDO_ABORT_PROTOCOL_TIMEOUT: u32 = 0x0504_0000;
 /// Toggle 位未按 CiA 301 交替（0x05030000，分段传输的 toggle 错误）。
 pub const SDO_ABORT_TOGGLE: u32 = 0x0503_0000;
 
+/// 数据长度与服务参数不匹配（0x06070010，分段传输的数据量超过声明总长）。
+pub const SDO_ABORT_LENGTH_MISMATCH: u32 = 0x0607_0010;
+
 /// SDO 命令字节：expedited download（1 字节数据）。
 const SDO_COMMAND_DOWNLOAD_1: u8 = 0x2F;
 /// SDO 命令字节：expedited download（2 字节数据）。

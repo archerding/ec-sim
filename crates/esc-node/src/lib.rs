@@ -863,6 +863,13 @@ impl Responder {
         }
         let total = usize::try_from(initiate.total_size).unwrap_or(usize::MAX);
         let mut data = initiate.data;
+        if data.len() > total {
+            return mailbox::sdo_abort_payload(
+                initiate.index,
+                initiate.subindex,
+                mailbox::SDO_ABORT_LENGTH_MISMATCH,
+            );
+        }
         data.truncate(total);
         if data.len() >= total {
             self.object_writes
@@ -899,9 +906,15 @@ impl Responder {
                 mailbox::SDO_ABORT_TOGGLE,
             );
         }
-        state.data.extend_from_slice(&segment.data);
         let total = usize::try_from(state.total_size).unwrap_or(usize::MAX);
-        state.data.truncate(total);
+        if state.data.len() + segment.data.len() > total {
+            return mailbox::sdo_abort_payload(
+                state.index,
+                state.subindex,
+                mailbox::SDO_ABORT_LENGTH_MISMATCH,
+            );
+        }
+        state.data.extend_from_slice(&segment.data);
         if segment.last || state.data.len() >= total {
             let response = if state.complete_access {
                 // CA：先按子索引拆分写入；成功仍回 **segment response**（CiA 301 对末段
@@ -2683,6 +2696,82 @@ mod tests {
         let response = read_tx_mailbox(&mut responder);
         assert_eq!(response[8], 0x41);
         assert_eq!(&response[16..21], &[0x01, 0x08, 0x00, 0x00, 0x70]);
+    }
+
+    #[test]
+    fn segmented_download_overflow_is_aborted_with_length_mismatch() {
+        use esc_core::obj_dict::{RuntimeEntry, RuntimeObject};
+
+        let dict = ObjectDictionary::new(
+            vec![RuntimeObject {
+                index: 0x2100,
+                max_subindex: 0,
+                object_code: esc_core::obj_dict::object_code::VAR,
+                data_type: esc_core::obj_dict::data_type::VISIBLE_STRING,
+                name: "Writable string".to_string(),
+            }],
+            vec![RuntimeEntry {
+                index: 0x2100,
+                subindex: 0,
+                value: vec![0u8; 20],
+                data_type: esc_core::obj_dict::data_type::VISIBLE_STRING,
+                bit_length: 160,
+                access: esc_core::obj_dict::access::READ_WRITE_PREOP,
+                value_info: 0,
+                name: "Writable string".to_string(),
+                writable: true,
+            }],
+        );
+        let mut responder = Responder::default().with_dictionary(dict);
+
+        // initiate：声明 20 字节，首段 8 字节。
+        let mut service = vec![0x00, 0x20, 0x21];
+        service.extend_from_slice(&0x2100u16.to_le_bytes());
+        service.push(0x00);
+        service.extend_from_slice(&20u32.to_le_bytes());
+        service.extend_from_slice(&[0xAA; 8]);
+        write_mailbox(&mut responder, mailbox_service_payload(&service));
+        let response = read_tx_service(&mut responder);
+        assert_eq!(response[2], mailbox::SDO_COMMAND_DOWNLOAD_RESPONSE);
+        assert!(responder.download.is_some());
+
+        // 第一段 7 字节（累计 15）。
+        let mut segment = vec![0x00, 0x20, 0x20];
+        segment.extend_from_slice(&[0xBB; 7]);
+        write_mailbox(&mut responder, mailbox_service_payload(&segment));
+        let response = read_tx_service(&mut responder);
+        assert_eq!(
+            response[2] & 0xE0,
+            0x20,
+            "segment download response 0x20|toggle<<4"
+        );
+
+        // 第二段 7 字节：15+7=22 > 20 → Abort 0x06070010，状态清空、无写入。
+        let mut segment = vec![0x00, 0x20, 0x30]; // toggle=1
+        segment.extend_from_slice(&[0xCC; 7]);
+        write_mailbox(&mut responder, mailbox_service_payload(&segment));
+        let response = read_tx_service(&mut responder);
+        assert_eq!(response[2], mailbox::SDO_COMMAND_ABORT);
+        assert_eq!(
+            u32::from_le_bytes([response[6], response[7], response[8], response[9]]),
+            mailbox::SDO_ABORT_LENGTH_MISMATCH
+        );
+        assert!(responder.download.is_none(), "Abort 后清空分段状态");
+        assert!(responder.object_writes.is_empty(), "Abort 时不得写入对象");
+
+        // initiate 自身数据超过声明长度 → 同样 Abort 0x06070010。
+        let mut service = vec![0x00, 0x20, 0x21];
+        service.extend_from_slice(&0x2100u16.to_le_bytes());
+        service.push(0x00);
+        service.extend_from_slice(&4u32.to_le_bytes());
+        service.extend_from_slice(&[0xDD; 8]);
+        write_mailbox(&mut responder, mailbox_service_payload(&service));
+        let response = read_tx_service(&mut responder);
+        assert_eq!(response[2], mailbox::SDO_COMMAND_ABORT);
+        assert_eq!(
+            u32::from_le_bytes([response[6], response[7], response[8], response[9]]),
+            mailbox::SDO_ABORT_LENGTH_MISMATCH
+        );
     }
 
     #[test]
