@@ -40,7 +40,7 @@ Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/
   5B=0x0410、SV660N=0x03AD 公开实测）。详见 [cia402-modes-matrix.md](plugins/cia402-modes-matrix.md)。
 - **设备画像**：`generic-io`、`beckhoff-el2008`、`generic-cia402-servo`、
   `generic-cia402-csv-servo`、`generic-cia402-cst-servo`（均自有 VID/PID + SIMULATED），
-  `inovance-sv660n` 兼容画像（researching）。
+  `inovance-sv660n` 兼容画像（默认可变 PDO 已按公开手册核对：RPDO 8B / TPDO 22B + DC）。
 
 ## 验证证据（详见 [docs/VERIFICATION.md](VERIFICATION.md)）
 
@@ -56,7 +56,7 @@ Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/
 | 差距 | 影响 | 现状 |
 | --- | --- | --- |
 | **DC 无真实同步** | SV660N 画像已声明 DC（`Has DC: 1`）；SOEM `ecx_configdc()` 与 IgH `ecrt_slave_config_dc()` 路径均已验证（`dc_rd/dc_wr>0`、仍进 OP），但只有 Tier0 帧驱动模拟时钟；无 SYNC0 脉冲/漂移补偿/传播延迟测量 | DC 寄存器+模拟时钟已实现；真实同步待硬件级仿真 |
-| SV660N 默认 PDO 具体条目未知 | 画像用 Tier0 7 字节布局，非厂商默认映射 | 公开文本无来源；facts.md 已标 ⚠️ |
+| SV660N 固定映射未生成 | 默认可变映射已按公开手册写入（RPDO 8B / TPDO 22B）；固定映射 0x1701..0x1705 / 0x1B01..0x1B04 仅记录事实、未生成对象 | 手册事实见 facts.md；固定映射位长为推算，⚠️ 待逐项核对 |
 | CA 部分写/子索引顺序语义 | 主站异常 CA 序列的细节行为未覆盖 | 已做 all-or-nothing；顺序语义未实现 |
 | 无独立硬件定时器 | watchdog/DC 由帧驱动，停帧不主动超时 | 设计选择，已文档化 |
 | IgH SDO 上传/下载在验证机阻塞 | IgH 侧 SDO 行为只能用 SOEM/合成主站验证 | 环境问题（ecrt ioctl），⚠️ 待验证 |
@@ -79,6 +79,6 @@ cargo test --workspace
 
 ## 下一步（按优先级）
 
-1. B11：继续找 SV660N 默认 PDO 条目；厂商扩展对象核对。
+1. B11：固定映射（0x1701..0x1705/0x1B01..0x1B04）生成与位长逐项核对；厂商扩展对象核对。
 2. DC 仿真（寄存器 + SYNC0/tick），实现后在测试画像上验证再声明 SII DC。
 3. CA 部分写/子索引顺序语义完善；fuzz 升级。

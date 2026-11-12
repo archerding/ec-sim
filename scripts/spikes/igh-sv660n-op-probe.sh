@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# B11 验证：**IgH 侧 CiA 402 CST+DC 画像 + **显式 DC 配置**（`ecrt_slave_config_dc` 0x0300/1ms）进 OP，验证 IgH DC 配置路径**。
+# B11 验证：**IgH 侧 SV660N 画像（公开手册默认 RPDO 8B / TPDO 22B + DC）进 OP**。
 #
 # 前置（Linux 验证机上，环境相关路径见本地 .local/ops.md，不入库）：
 #   - `cargo build --release -p esc-node`
@@ -9,13 +9,13 @@
 #   - 以 root 运行
 #
 # 断言：
-#   1. 应用运行中 `ethercat slaves`：`OP` + 身份 `0x00000ec5:0x0000e5e2`；
+#   1. 应用运行中 `ethercat slaves`：`OP` + 身份 `0x00000ec5:0x0000e5f1`；
 #   2. `RESULT al_states=0x08`；
-#   3. `STATUS sw=... modes_display=8 pos=12345`：Operation enabled(bit2)、
-#      模式显示 10（CST）、实际转矩镜像目标转矩 300（Tier0）；
+#   3. `STATUS sw=... error=0x0000 pos=...`：未启用 behavior 时不校验状态字/位置语义；
+#      （默认 PDO 不含模式对象，行为验证见通用 CiA 402/CST/CSV 画像）；
 #   4. 应答器侧 `al=0x08`。
 #
-# 用法：sudo ./igh-cia402-cst-op-probe.sh
+# 用法：sudo ./igh-sv660n-op-probe.sh
 set -euo pipefail
 
 TAP="${TAP:-escsim0}"
@@ -52,7 +52,7 @@ cleanup() {
 trap cleanup EXIT
 
 cleanup
-"$BIN" --tap "$TAP" --verbose --manifest "$MANIFEST" --behavior cia402 >"$ESC_LOG" 2>&1 &
+"$BIN" --tap "$TAP" --verbose --manifest "$MANIFEST" >"$ESC_LOG" 2>&1 &
 sleep 0.7
 ip link set "$TAP" address "$MAC"
 ip link set "$TAP" up
@@ -65,7 +65,7 @@ sleep 2
 echo "=== IgH ethercat slaves（应用前）==="
 "$IGH_BIN" slaves
 
-echo "=== ecrt 应用（SV660N/CSP：写目标位置、读实际位置/状态字）==="
+echo "=== ecrt 应用（SV660N 默认映射：写控制字/目标位置，读状态字/位置）==="
 timeout 60 "$IGH_APP_BIN" 2 >"$APP_OUT" 2>&1 &
 APP_PID=$!
 sleep 1
@@ -75,15 +75,10 @@ grep -qE "^0[[:space:]]+0:0[[:space:]]+OP" /tmp/igh-sv660n-slaves-op.txt \
 wait "$APP_PID" || fail "ecrt 应用退出码非 0（见 $APP_OUT）"
 cat "$APP_OUT"
 grep -q "RESULT al_states=0x08" "$APP_OUT" || fail "从站未进入 OP"
-grep -q "modes_display=8" "$APP_OUT" || fail "模式显示不是 10（CST）"
-grep -q "pos=12345" "$APP_OUT" || fail "实际转矩不是 300（行为未生效？）"
+
+
 SW=$(grep -oE "sw=0x[0-9A-Fa-f]{4}" "$APP_OUT" | head -1 | cut -d= -f2)
 [ -n "$SW" ] || fail "未读到状态字"
-python3 - "$SW" <<'PY' || fail "状态字缺 Operation enabled"
-import sys
-sw = int(sys.argv[1], 16)
-sys.exit(0 if sw & 0x0004 else 1)
-PY
 grep -q "al=0x08" "$ESC_LOG" || { tail -n 5 "$ESC_LOG"; fail "应答器侧未进入 OP"; }
 
 # 应答器侧确认 DC 寄存器被 IgH 访问（--verbose STATS 里的 dc_rd/dc_wr）。
@@ -93,4 +88,4 @@ echo "STATS: $STATS_LINE"
 DC_WR=$(printf '%s\n' "$STATS_LINE" | sed -n 's/.*dc_wr=\([0-9]*\).*/\1/p')
 [ -n "$DC_WR" ] && [ "$DC_WR" -gt 0 ] || fail "IgH 未写 DC 配置寄存器（dc_wr=0）"
 
-echo "OK: IgH 零补丁 + DC 配置（0x0300/1ms）仍进 OP（sw=$SW, pos=12345, dc_wr=$DC_WR）"
+echo "OK: IgH 零补丁 + SV660N 默认映射（8B/22B）+ DC 配置仍进 OP（sw=$SW, dc_wr=$DC_WR）"

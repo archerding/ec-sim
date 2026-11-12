@@ -1,5 +1,42 @@
 ---
 
+## 2026-11-13 03:46 班（低峰）— B11：**SV660N 默认可变 PDO 已按公开手册核对并落地**
+
+**做了什么**
+- 公开 SV660N 通信手册（PDF，**不入库**）本地文本提取成功（Python 标准库解压 Flate 流 +
+  ToUnicode CMap 解码），据此核对默认 PDO/固定映射/DC 事实。
+- `plugins/inovance-sv660n/plugin.yaml` 改为**手册默认可变映射**（仍用自有 VID/PID）：
+  - RPDO `0x1600` = `6040h`(16) + `607Ah`(32) + `60B8h`(16) → SM2 **8 字节**；
+  - TPDO `0x1A00` = `603Fh`(16) + `6041h`(16) + `6064h`(32) + `60BCh`(32) + `60B9h`(16) +
+    `60BAh`(32) + `60FDh`(32) → SM3 **22 字节**；
+  - 默认映射**不含** `6060h` 模式对象（模式经 SDO/固定映射），新增 60B8/60B9/60BA/60BC/60FD
+    对象；6060/6061 保留为 SDO 可读写但不再进 PDO。
+- `facts.md` 增补手册事实：5 个固定 RPDO（0x1701..0x1705）与 4 个固定 TPDO
+  （0x1B01..0x1B04）的对象/字节数、`0x1C12/0x1C13` 选择规则、映射条目格式、DC 寄存器
+  （0x910/0x920/0x990/0x981=0x03、错误码 0x2D）；标注固定映射位长为推算值。
+- 更新探针：`sv660n-capability-probe.sh` 期望 **64/176 bits**；
+  `igh-sv660n-op-probe.sh` 改为真映射 + 无 behavior（ecrt 夹具重写，验证机本地）。
+- 更新验证文档（SV660N 追加更新节）、`docs/VERIFICATION.md`、`docs/STATUS.md`、
+  `docs/plugins/cia402-modes-matrix.md`、AGENTS B11。
+
+**验证结果**
+- 本机：`cargo fmt --check` 通过；`cargo test --workspace` **208 passed**（插件守卫含新映射）。
+- Linux 验证机：
+  - `sv660n-capability-probe.sh` **EXIT=0**：SOEM `Output size: 64bits` /
+    `Input size: 176bits`、`Has DC: 1`、`CoE details: 0d`、`MBX 04`；IgH PREOP+身份 `0xe5f1`；
+  - `igh-sv660n-op-probe.sh` **EXIT=0**：IgH 按默认映射（8B/22B）+ DC（0x0300/1ms）仍进 OP：
+    `al_states=0x08 slaves_responding=1 link_up=1`、`dc_wr=8`。
+
+**卡点**
+- 固定映射对象尚未生成；其位长为按 CiA 402 标准对象的**推算值**（手册表未给逐项位长）。
+- 厂商扩展对象（0x2000 段）、`0x603F` 故障码表仍未收录。
+
+**下次开工第一件事**
+- B11：固定映射（0x1701..0x1705/0x1B01..0x1B04）生成 + 位长逐项核对；或厂商扩展对象核对。
+
+---
+---
+
 ## 2026-11-13 03:45 班（低峰）— CI：**release 模式测试（Linux）**
 
 **做了什么**

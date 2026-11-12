@@ -2,7 +2,7 @@
 # B11 预回归：**Inovance SV660N 兼容画像**（SIMULATED）在未修改 SOEM / IgH 下的
 # 能力位 / PDO / 状态验证，重点复核画像是否如实反映公开事实：
 #   - 设备**不响应 SDO Info** → SII 通用类别 `CoE details` bit1 必须为 0（`0x0D`）；
-#   - 每方向一个 PDO、7 字节 Tier0 通用布局 → SOEM 看到 56/56 bits；
+#   - 默认 RPDO 8 字节 / TPDO 22 字节（手册默认映射）→ SOEM 看到 64/176 bits；
 #   - **DC 声明**（真实设备默认开 DC；模拟器提供 Tier0 帧驱动模拟时钟）→ `Has DC: 1`。
 #
 # 前置（Linux 验证机上，环境相关路径见本地 .local/ops.md，不入库）：
@@ -11,7 +11,7 @@
 #   - 以 root 运行
 #
 # 断言：
-#   1. SOEM `slaveinfo`：`Man: 00000ec5 ID: 0000e5f1`、56/56 bits、`MBX protocols : 04`、
+#   1. SOEM `slaveinfo`：`Man: 00000ec5 ID: 0000e5f1`、64/176 bits、`MBX protocols : 04`、
 #      `CoE details: 0d`（bit1=0 → 不声明 SDO Info）、`Has DC: 1`（DC 已声明）；
 #   2. IgH `ethercat slaves`：`PREOP` + 身份 `0x00000ec5:0x0000e5f1`。
 #
@@ -55,8 +55,8 @@ timeout 60 "$SOEM_SLAVEINFO" "$TAP" >/tmp/soem-sv660n.out 2>&1 || true
 tr '\r' '\n' </tmp/soem-sv660n.out >/tmp/soem-sv660n.lines
 grep -E "Man:|Output size|Input size|MBX protocols|CoE details|Has DC" /tmp/soem-sv660n.lines | head -10 || true
 grep -q "Man: $EXPECT_VID ID: $EXPECT_PID" /tmp/soem-sv660n.lines || fail "SOEM 身份不是 $EXPECT_VID:$EXPECT_PID"
-grep -q "Output size: 56bits" /tmp/soem-sv660n.lines || fail "SOEM 未识别 56 位输出（Tier0 7 字节）"
-grep -q "Input size: 56bits" /tmp/soem-sv660n.lines || fail "SOEM 未识别 56 位输入（Tier0 7 字节）"
+grep -q "Output size: 64bits" /tmp/soem-sv660n.lines || fail "SOEM 未识别 64 位输出（手册默认 RPDO）"
+grep -q "Input size: 176bits" /tmp/soem-sv660n.lines || fail "SOEM 未识别 176 位输入（手册默认 TPDO）"
 grep -qE "MBX protocols *: *04" /tmp/soem-sv660n.lines || fail "SOEM 未识别 CoE 邮箱"
 grep -q "CoE details: 0d" /tmp/soem-sv660n.lines || fail "CoE details 不是 0x0D（应不声明 SDO Info，bit1=0）"
 grep -q "Has DC: 1" /tmp/soem-sv660n.lines || fail "画像应声明 DC（Has DC 应为 1）"
@@ -74,4 +74,4 @@ sleep 2
 "$IGH_BIN" slaves | grep -q "0x${EXPECT_VID}:0x${EXPECT_PID}" || fail "IgH 未看到 SV660N 画像身份"
 "$IGH_BIN" slaves | grep -q "PREOP" || fail "IgH 未把从站配置到 PREOP"
 
-echo "OK: SV660N 兼容画像能力位/PDO 复核通过（SOEM 56/56 bits、CoE details=0x0D 不声明 SDO Info、Has DC=1、MBX 04；IgH PREOP + 身份 0x${EXPECT_VID}:0x${EXPECT_PID}）"
+echo "OK: SV660N 兼容画像能力位/PDO 复核通过（SOEM 64/176 bits、CoE details=0x0D 不声明 SDO Info、Has DC=1、MBX 04；IgH PREOP + 身份 0x${EXPECT_VID}:0x${EXPECT_PID}）"

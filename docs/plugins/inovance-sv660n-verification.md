@@ -138,3 +138,26 @@ ecrt 夹具（验证机本地、不入库）按 SV660N 画像的 Tier0 7 字节 
   位置跟随正确）；
 - 应答器 `STATS ... dc_rd=3 dc_wr=7 al=0x08`。
 - ⚠️ 默认 PDO 具体条目仍是 Tier0 通用布局（非厂商默认映射）；DC 仅配置路径验证。
+
+## 2026-11-13 03:46 更新：默认 PDO 已按公开手册核对
+
+> 本节**取代**上文早期"Tier0 7 字节通用布局"的临时画像说明；早期记录保留为历史。
+
+公开手册（SV660N Servo Communication Guide）文本已本地提取核对（PDF **未入库**），据此：
+
+- **默认可变映射**已写入 `plugins/inovance-sv660n/plugin.yaml`：
+  - RPDO `0x1600` = `6040h`(16) + `607Ah`(32) + `60B8h`(16) → **8 字节**；
+  - TPDO `0x1A00` = `603Fh`(16) + `6041h`(16) + `6064h`(32) + `60BCh`(32) + `60B9h`(16) +
+    `60BAh`(32) + `60FDh`(32) → **22 字节**；
+  - 默认映射**不含** `6060h` 模式对象（模式经 SDO 或固定映射）。
+- 手册另有固定映射 `0x1701..0x1705`（RPDO）与 `0x1B01..0x1B04`（TPDO），条目/字节数已记录在
+  [facts.md](facts.md)；Tier0 画像暂不生成固定映射对象。
+- 验证（2026-11-13 03:46 班，Linux 验证机）：
+  - `sv660n-capability-probe.sh` **EXIT=0**：SOEM `Output size: 64bits` / `Input size: 176bits`、
+    `Has DC: 1`、`CoE details: 0d`、`MBX protocols : 04`；IgH PREOP + 身份 `0xe5f1`；
+  - `igh-sv660n-op-probe.sh` **EXIT=0**：IgH ecrt 按默认映射（8B/22B）配置 + DC
+    （0x0300/1ms）仍进 OP：`al_states=0x08`、`slaves_responding=1`、`dc_wr=8`；
+  - ⚠️ 默认映射不含模式对象，`--behavior cia402` 的行为验证改用通用 CiA 402/CST/CSV 画像。
+
+**仍待核实**：固定映射对象的逐项位长（表里位长按 CiA 402 标准对象推算）、厂商扩展对象、
+`0x603F` 故障码表。

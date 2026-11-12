@@ -28,7 +28,7 @@
 | `generic-cia402-servo` | 7 | `0x01C1` | pp(1)/hm(6)/ip(7)/csp(8) |
 | `generic-cia402-csv-servo` | 11 | `0x03CD` | pp(1)/vl(2)/pv(3)/hm(6)/ip(7)/csp(8)/csv(9) |
 | `generic-cia402-cst-servo` | 5 | `0x0410` | tq(4)/cst(10) |
-| `inovance-sv660n`（兼容画像） | 7（Tier0 通用） | `0x03AD` | 公开实测厂商默认支持模式（不随布局变化） |
+| `inovance-sv660n`（兼容画像） | 8 / 22（公开手册默认映射） | `0x03AD` | 公开实测厂商默认支持模式；**默认映射不含 6060h**，Tier0 模式行为不适用于该画像 |
 
 守卫测试：`crates/plugin-host/tests/plugin_manifests.rs`；端到端 SDO 验证：
 `scripts/spikes/cia402-modes-probe.sh`。

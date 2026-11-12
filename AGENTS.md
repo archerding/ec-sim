@@ -378,6 +378,7 @@ user.email = deepseek-harness@users.noreply.github.com
   - 进度（2026-11-13 03:28 班）：**IP（插补位置，模式 7）Tier0**——7 字节布局复用 CSP 位置跟随语义；新增 `--cia402-ip` 探针与 `cia402-ip-probe.sh`；验证机 **EXIT=0**。至此 **CiA 402 常用模式全覆盖（Tier0 简化）**：PP(1)/PV(3)/VL(2)/TQ(4)/IP(7)/CSP(8)/CSV(9)/CST(10)/HM(6)。测试 **207 passed**。
   - 进度（2026-11-13 03:32 班）：**`0x6502` 与各画像 PDO 布局一致**——7 字节 `0x01C1`（pp/hm/ip/csp）、11 字节 `0x03CD`（pp/vl/pv/hm/ip/csp/csv）、5 字节 `0x0410`（tq/cst）、SV660N 保留公开实测 `0x03AD`；新增守卫测试遍历 4 个画像。测试 **208 passed**。
   - 进度（2026-11-13 03:36 班）：**`0x6502` 经 SDO 上传验证**——新增 `--expect-6502=<hex>` 探针参数与 `scripts/spikes/cia402-modes-probe.sh`，对 7B/11B/5B 三个画像分别 SDO 上传 `0x6502` 并比对（0x01C1/0x03CD/0x0410）；验证机 **EXIT=0**。测试 208 passed。
+  - 进度（2026-11-13 03:46 班）：**SV660N 默认可变 PDO 已按公开手册核对并落地**——本地文本提取公开通信手册（PDF **不入库**）：RPDO `0x1600`=6040h/607Ah/60B8h（8B）、TPDO `0x1A00`=603Fh/6041h/6064h/60BCh/60B9h/60BAh/60FDh（22B）；固定映射 0x1701..1705/0x1B01..1B04 条目与 1C12/1C13 选择规则、DC 寄存器细节记入 facts.md（固定映射暂不生成）。验证机：`sv660n-capability-probe` **EXIT=0**（SOEM 64/176 bits、Has DC 1）、`igh-sv660n-op-probe` **EXIT=0**（IgH 默认映射 + DC 仍进 OP、al_states=0x08、dc_wr=8）。⚠️ 固定映射位长为推算、厂商扩展对象/故障码表未收录。
 - [ ] **B11 CiA402 行为插件**：以 Inovance SV660N 兼容画像为第一个目标，实现 CSP 状态机（Tier0/内置 profile 起步）。
   - 依赖 B10 已完成（声明式画像 + `--manifest` + 验证脚本可复用）；先 facts.md + 声明式画像，
     行为 WASM 只做 Tier0 状态机骨架。
