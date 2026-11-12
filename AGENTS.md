@@ -395,8 +395,10 @@ user.email = deepseek-harness@users.noreply.github.com
     `ethercat upload/download` 可读写对象字典。
   - 断言脚本：`soem-process-data.sh`、`soem-mailbox-probe.sh`、`sdo-upload-probe.sh`、
     `igh-op-probe.sh`、`minimal-esc-responder.sh`。
-  - 已知限制（见 spike-4 §6）：单从站；过程数据内容静态（无 PDI 回环）；DC/SM watchdog/
-    OP 下 AL 错误恢复未实现；无 GUI 截图（以脱敏文本输出为证据）；SDO Info/CA/分段未实现。
+  - 已知限制（见 spike-4 §6，2026-11-13 已更新）：单从站；过程数据内容静态（无 PDI 回环）；
+    DC 未实现（无 SII DC 类别）；SM watchdog 已实现（SET/ACK+0x001B）；OP 下 AL 错误恢复
+    仅基础 ACK；无 GUI 截图（以脱敏文本输出为证据）；SDO Info/分段/Complete Access 均已实现
+    并验证（IgH 侧 SDO 上传/下载在验证机仍受 ecrt ioctl 阻塞，⚠️ 属于环境问题）。
 
 ## 7. 目录约定
 

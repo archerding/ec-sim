@@ -142,9 +142,15 @@ WORKLOG 19:53 班条目中；`igh-op-probe.sh` 在二进制缺失时以 exit 2 �
 
 - **单从站**：两条主站证据都只有 1 个从站；多从站链/分支的拓扑、WKC、FMMU 组合未验证。
 - **过程数据内容静态**：模拟器无 PDI/应用层，输出只写内存、输入恒 0；无 PDO 数据回环逻辑。
-- **DC / SM watchdog / OP 下的 AL 错误恢复**未实现/未验证；SII 缺 FMMU 类别与 DC 类别。
-- **SDO 不完整**：无 SDO Info、Complete Access、分段传输；`ethercat sdos` / `slaveinfo -sdo` 会超时。
-  Download 只对配置对象开放且值不持久（进程内）。
+- **DC 未实现**：无分布式时钟、无 SII DC 类别（0x003C）；FMMU 类别（0x0028）也未加入 SII
+  （IgH 不使用；SOEM 仅用于 eepFMMU 默认值，语义待 ETG 原文复核）。
+- **SM watchdog 已实现（2026-11-12 之后）**：SET 模式下按 `0x0400 × 0x0420 × 40 ns` 计时，
+  超时置 AL Status Code 0x001B、ACK 清错；详见 `scripts/spikes/uds_master_probe.py` 的
+  SM watchdog 用例。OP 下 AL 错误恢复仍只做基础 ACK，未做完整错误诊断。
+- **SDO 能力（2026-11-13 状态）**：expedited/segmented upload+download、SDO Info、
+  Complete Access（CA）上传/下载（含单帧与分段）均已实现并在验证机用合成主站/主站夹具验证；
+  `ethercat sdos` / `slaveinfo -sdo` 可用（SOEM 侧偶发 UINT8 子索引读取缺陷见 §6 其它条目）。
+  Download 仍只对可写对象开放，写入值仅在进程内持久（重启即复位为 manifest 初值）。
 - **无 GUI 截图**：验证机为无图形界面的远端环境，本页以脱敏文本输出作为证据；
   若需要截图，可在图形环境重跑 §4 脚本抓取。
 - **非认证**：以上为"用例映射 / 预回归"，**不构成**一致性测试或 CTT 认证结论。

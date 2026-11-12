@@ -32,6 +32,36 @@
 
 ---
 
+## 2026-11-13 01:12 班（低峰）— 文档真实性修正 + **B11 手册访问再次受阻记录**
+
+**做了什么**
+- **B11 前置尝试（再次受阻）**：再次用 web_search 查 SV660N 默认 PDO 与 EtherCAT 手册；
+  结果仍只有 PDF（`application/pdf` 不支持 web_fetch）与非 SV660N 的通用伺服手册；
+  GitHub raw 仍不可达。**未改动 SV660N manifest**（真实性红线），继续记录为阻塞。
+- **修正过期文档（真实性问题）**：
+  - `docs/spikes/spike-4-dual-master-op.md` §6 原文称"无 SDO Info、Complete Access、
+    分段传输；SII 缺 FMMU/DC 类别"——这些能力已在 2026-11-12/13 各班实现并验证。
+    更新为当前状态：SDO Info/分段/CA 上传/下载（含分段）已实现并验证；SM watchdog 已实现；
+    DC 仍未实现（无 SII DC 类别）、FMMU 类别（0x0028）未加入（IgH 不使用、SOEM 语义待原文复核）；
+    Download 仍仅对可写对象开放、值仅进程内持久。
+  - `AGENTS.md` B8 的"已知限制"同步更新（去掉过期的"SDO Info/CA/分段未实现"）。
+- **Backlog 核对**：B2b 此前已被标记完成（证据齐全），本次仅确认无需重复改动。
+
+**验证结果**
+- 文档改动为纯文本；`git diff` 逐行核对：只删除/改写过期结论，未删除既有证据章节。
+- 本班未改代码：`cargo fmt --check`、`cargo test --workspace` 基线不变（**185 passed**，
+  上一条班次最后记录），无需重跑 VM。
+
+**卡点**
+- B11 SV660N 手册仍**无可用文本来源**：PDF 无法经 web_fetch 提取、GitHub raw 不可达；
+  下一步可尝试在线手册 HTML（如厂商在线文档站）、或把手册页文本/截图放到本地后人工确认。
+
+**下次开工第一件事**
+- 继续尝试 SV660N HTML 在线手册；若仍不可达，转 B6 FMMU/DC 类别（需 ETG 原文或更多开源
+  实现证据）或 B3 Spike 4（SOEM oshw UDS shim）。
+
+---
+
 ## 2026-11-13 01:03 班（低峰）— B11：**CiA 402 故障注入 CLI（`--fault`）+ 验证**
 
 **做了什么**
