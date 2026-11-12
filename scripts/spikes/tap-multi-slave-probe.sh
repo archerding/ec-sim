@@ -45,7 +45,15 @@ trap cleanup EXIT
 cleanup
 ip tuntap add dev "$TAP" mode tap
 ip link set "$TAP" address "$MAC"
-"$BIN" --tap "$TAP" --slaves "$N" >"$LOG" 2>&1 &
+# 可选：SIM_CPU/SIM_RT 绑核/实时（如 SIM_CPU=2 SIM_RT=50），SOEM_CPU/SOEM_RT 同理。
+SIM_CPU="${SIM_CPU:-}"
+SIM_RT="${SIM_RT:-0}"
+SOEM_CPU="${SOEM_CPU:-}"
+SOEM_RT="${SOEM_RT:-0}"
+sim_cmd=("$BIN" --tap "$TAP" --slaves "$N")
+if [ -n "$SIM_CPU" ]; then sim_cmd=(taskset -c "$SIM_CPU" "${sim_cmd[@]}"); fi
+if [ "$SIM_RT" != "0" ]; then sim_cmd=(chrt -f "$SIM_RT" "${sim_cmd[@]}"); fi
+"${sim_cmd[@]}" >"$LOG" 2>&1 &
 ec_pid=$!
 sleep 0.8
 ip link set "$TAP" up
@@ -64,7 +72,10 @@ slave_blocks=$(grep -c "^Slave:" "$SLAVEINFO_OUT" || true)
 echo "OK: TAP slaveinfo 报告 $N 个从站（workcounter 24）"
 
 echo "=== SOEM simple_ng（TAP，$N 从站链，8 秒）==="
-timeout 8 stdbuf -oL "$SOEM_SIMPLE_NG" "$TAP" >"$SIMPLE_NG_OUT" 2>&1 || true
+soem_simple_cmd=(stdbuf -oL "$SOEM_SIMPLE_NG" "$TAP")
+if [ -n "$SOEM_CPU" ]; then soem_simple_cmd=(taskset -c "$SOEM_CPU" "${soem_simple_cmd[@]}"); fi
+if [ "$SOEM_RT" != "0" ]; then soem_simple_cmd=(chrt -f "$SOEM_RT" "${soem_simple_cmd[@]}"); fi
+timeout 8 "${soem_simple_cmd[@]}" >"$SIMPLE_NG_OUT" 2>&1 || true
 grep -q "mapped 8O+8I" "$SIMPLE_NG_OUT" || fail "simple_ng 未映射 8O+8I"
 grep -q "WKC 24" "$SIMPLE_NG_OUT" || fail "simple_ng 未出现 WKC 24"
 iterations=$(grep -o "Iteration" "$SIMPLE_NG_OUT" | wc -l || true)

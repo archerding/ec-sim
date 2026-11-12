@@ -54,7 +54,7 @@
 | `uds-multi-slave-probe.sh` | `--slaves 8` 多从站链：广播 WKC=8、逐站地址分配、配置地址寻址 | **EXIT=0** |
 | `podman-unprivileged-probe.sh` | 无特权容器（podman，无 `--privileged/--network=host`）内跑 `--slaves 8` UDS shim：容器内启动、广播 WKC/地址分配、UDS 全链路通过 | **EXIT=0** |
 | `tap-multi-slave-probe.sh` | TAP 上 8 从站链：SOEM `slaveinfo` 报 `8 slaves found`/WKC 24、`simple_ng` 映射 8O+8I 且 WKC 24；实测循环 ≈425 Hz（未隔离 CPU） | **EXIT=0** |
-| `shim-latency.sh` | UDS shim 延迟基准：1 从站 p50≈110µs / p99≈201µs；8 从站 p50≈112µs / p99≈191µs（非隔离 CPU，仅回归对比） | **EXIT=0** |
+| `shim-latency.sh` | UDS shim 延迟基准（支持 SIM_CPU/PROBE_CPU/RT）：未绑核 p50≈111µs/p99≈196µs；`isolcpus=2,3` + RT（sim CPU2 `-f 50`、probe CPU3 `-f 80`）p50≈101µs/p99≈172µs；8 从站 RT p99≈181µs | **EXIT=0** |
 | `soem-multi-slave-probe.sh` | 未修改 SOEM 经 UDS shim 数到 **8 从站**并 OP：`8 slaves found`、`mapped 8O+8I`、WKC 24 | **EXIT=0** |
 | `soem-uds-probe.sh` | SOEM over UDS shim 的探索性夹具（以脚本内注记状态为准） | 见脚本注记 |
 

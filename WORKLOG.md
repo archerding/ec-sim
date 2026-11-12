@@ -1,5 +1,40 @@
 ---
 
+## 2026-11-13 05:01 班（低峰）— **B15：隔离 CPU 下 1kHz/p99 复测（未达标，记录限制）**
+
+**做了什么**
+- 验证机配置 **`isolcpus=2,3`**（`grubby --update-kernel=ALL --args=...`，备份
+  `/etc/default/grub` 到 `/tmp/grub.bak.ecsim`；重启后 `/sys/devices/system/cpu/isolated`
+  = `2-3`）。
+- `scripts/bench/shim-latency.sh` 增加 **SIM_CPU / PROBE_CPU / SIM_RT / PROBE_RT**：
+  可分别对模拟器与探测进程做 `taskset` 绑核与 `chrt -f` 实时优先级；默认行为不变。
+- `scripts/spikes/tap-multi-slave-probe.sh` 增加 **SIM_CPU/SIM_RT、SOEM_CPU/SOEM_RT**。
+- 更新 `docs/VERIFICATION.md`、`docs/plan/M1-exit-checklist.md`（第 2/3 项实测数据）、
+  AGENTS（B15 完成（未达标记录）、新增 B16）。
+
+**验证结果**
+- UDS shim 延迟（1 从站、2000 帧）：
+  - 未绑核/未 RT：p50≈110.7µs / p99≈195.7µs；
+  - `isolcpus` + 绑核（sim CPU2 / probe CPU3）：p50≈108.1µs / p99≈183.7µs；
+  - 绑核 + probe RT80：p50≈101.2µs / p99≈179.7µs；
+  - 绑核 + sim RT50 / probe RT80：p50≈101.1µs / **p99≈172.2µs**（最佳，仍 >100µs）；
+  - 8 从站 RT/绑核：p50≈108.8µs / p99≈180.8µs。
+- TAP 8 从站：`isolcpus` + sim RT50/CPU2、SOEM RT80/CPU3 下 `simple_ng` 仍
+  **≈425 Hz**（1392 轮 / 3.27 s，约 2.35 ms/帧），**1 kHz 未达成**。
+- 本机：仅脚本/文档改动；`cargo fmt --check` 通过；测试基线 **210 passed** 不变。
+
+**卡点 / 结论**
+- M1 的 8 从站 @1kHz 与 shim p99<100µs 在当前 "TAP/UDS + SOEM/Python 探测" 组合下达不到：
+  TAP 8 站单帧开销 ≈2.35 ms；UDS 往返 ~100µs 主要由 syscall/调度/Python 开销构成。
+- 需要原生（C/Rust）探测与帧处理优化，或写 ADR 说明目标仅在隔离 CPU + 原生主站下有意义（B16）。
+
+**下次开工第一件事**
+- **B16**：优化 TAP 8 从站单帧处理（热点定位：TAP 读写/链式 8 次 Responder 处理）或
+  写 ADR 记录"M1 1kHz/p99 仅隔离 CPU + 原生主站可达"的限制与复现命令。
+
+---
+---
+
 ## 2026-11-13 04:45 班（低峰）— **B14：无特权容器跑通（podman；Docker 兼容）**
 
 **做了什么**
