@@ -106,6 +106,7 @@ sudo bash scripts/spikes/sv660n-capability-probe.sh
   `Input size: 56bits`、`MBX protocols : 04`、`CoE details: 0d`
   （bit0 SDO=1、**bit1 SDO Info=0**、bit2/3 PDO assign/config=1）——与公开事实
   "设备不响应 SDO Information" 一致；
-- `Has DC: 0` —— 画像**不声明 DC**（模拟器未实现 DC 同步）。⚠️ 真实 SV660N 默认启用 DC
-  （`assignActivate 0x300`），这是**已知能力差距**，等 DC 仿真实现后再声明；
+- `Has DC: 1` —— 画像**声明 DC**（真实 SV660N 默认启用 DC：`assignActivate 0x300`）。模拟器
+  提供 **Tier0 帧驱动模拟时钟**（0x0900–0x0917 随帧前进，见 `dc-clock-probe.sh`），但
+  ⚠️ **无真实 SYNC0 脉冲/漂移补偿/传播延迟测量**；
 - IgH `ethercat slaves`：`PREOP + 0x00000ec5:0x0000e5f1`。

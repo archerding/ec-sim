@@ -169,6 +169,8 @@ struct Cia402Behavior {
     torque_actual: i16,
 }
 
+/// 模拟 DC 系统时间每帧前进的步长（ns）。Tier0：帧驱动、无真实硬件时钟/SYNC0 脉冲。
+pub const DC_TICK_NS: u64 = 1_000;
 /// 单从站最小 ESC 应答器。
 #[derive(Debug, Clone)]
 pub struct Responder {
@@ -180,6 +182,8 @@ pub struct Responder {
     object_writes: BTreeMap<(u16, u8), Vec<u8>>,
     /// 帧驱动时钟的当前时间（毫秒，由 [`Responder::tick`] 更新）。
     now_ms: u64,
+    /// 模拟 DC 系统时间（ns，每 tick 前进 [`DC_TICK_NS`]；由 0x0900–0x0917 读出）。
+    dc_time_ns: u64,
     /// 最近一次收到过程数据的时刻（毫秒）；`None` 表示尚未收到过。
     last_process_data_ms: Option<u64>,
     /// 是否启用 ESM 状态迁移前置条件检查（默认**开启**，见
@@ -218,6 +222,7 @@ impl Responder {
             memory: DlUserMemory::new(),
             object_writes: BTreeMap::new(),
             now_ms: 0,
+            dc_time_ns: 0,
             last_process_data_ms: None,
             esm_preconditions: true,
             dict: ObjectDictionary::simulated(),
@@ -431,6 +436,8 @@ impl Responder {
     /// ⚠️ 本模拟器没有独立硬件定时器：没有帧到达时时钟不前进（停止收帧不会主动报超时）。
     pub fn tick(&mut self, now_ms: u64) {
         self.now_ms = now_ms;
+        // 模拟 DC 系统时间：每帧前进固定步长（Tier0：无真实时钟/SYNC0 脉冲）。
+        self.dc_time_ns = self.dc_time_ns.wrapping_add(DC_TICK_NS);
         // Tier0 行为：每帧推进一次 CiA 402 状态机（SM2 控制字 → SM3 状态字）。
         self.step_cia402_behavior();
         if !self.watchdog_enabled() {
@@ -697,6 +704,15 @@ impl Responder {
             let addr = address.wrapping_add(i as u16);
             if let Some(value) = self.regs.read_u8(addr) {
                 *byte = value;
+            }
+        }
+        // DC 时间寄存器（0x0900–0x0917）由模拟时钟动态回填：
+        // 0x0900–0x090F 为各端口接收时间、0x0910–0x0917 为系统时间（Tier0 简化：同值）。
+        let dc_bytes = self.dc_time_ns.to_le_bytes();
+        for (i, byte) in out.iter_mut().enumerate() {
+            let addr = address.wrapping_add(i as u16);
+            if (0x0900..=0x0917).contains(&addr) {
+                *byte = dc_bytes[usize::from(addr - 0x0900) % 8];
             }
         }
         out
@@ -3176,6 +3192,27 @@ mod tests {
             .flat_map(|sm| sm.to_bytes())
             .collect();
         write_regs(responder, esc_core::sm::SYNC_MANAGER_ADDRESS, bytes);
+    }
+
+    #[test]
+    fn dc_system_time_advances_with_ticks() {
+        let mut responder = Responder::default();
+        let read_time = |r: &mut Responder, address: u16| {
+            u64::from_le_bytes(
+                r.read_registers(address, 8)
+                    .try_into()
+                    .expect("8 bytes of DC time"),
+            )
+        };
+        assert_eq!(read_time(&mut responder, 0x0910), 0);
+        responder.tick(1);
+        let t2 = read_time(&mut responder, 0x0910);
+        assert_eq!(t2, crate::DC_TICK_NS);
+        responder.tick(2);
+        let t3 = read_time(&mut responder, 0x0910);
+        assert_eq!(t3, t2 + crate::DC_TICK_NS);
+        // 0x0900 端口接收时间由同一模拟时钟回填（Tier0 简化）。
+        assert_eq!(read_time(&mut responder, 0x0900), t3);
     }
 
     #[test]

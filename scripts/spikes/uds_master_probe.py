@@ -320,6 +320,7 @@ def main():
     sdo_ca_download_multi = False
     cia402_fault = False
     cia402_cst = False
+    dc_clock = False
     sdo_retransmit = False
     for arg in sys.argv[1:]:
         if arg.startswith("--timeout="):
@@ -340,6 +341,8 @@ def main():
             sdo_ca = True
         if arg == "--sdo-retransmit":
             sdo_retransmit = True
+        if arg == "--dc-clock":
+            dc_clock = True
         if arg == "--cia402-cst":
             cia402_cst = True
         if arg == "--cia402-fault":
@@ -476,6 +479,17 @@ def main():
                 f"CA 下载后回读 {data.hex()} != 01 08 00 00 70",
             )
             print("OK: Complete Access 下载（0x1600 写入全部子索引并回读一致）通过")
+
+        # 5j) 可选：DC 模拟时钟（0x0910 系统时间随帧前进）。
+        if dc_clock:
+            def read_dc_time():
+                reply = master.transact([(CMD["APRD"], 0, 0x0910, bytes(8))])
+                return struct.unpack("<Q", reply[0][3][:8])[0]
+
+            t1 = read_dc_time()
+            t2 = read_dc_time()
+            check(t2 > t1, f"DC 系统时间未前进：{t1} -> {t2}")
+            print(f"OK: DC 模拟时钟前进（0x0910：{t1} -> {t2}）")
 
         # 5k) 可选：CiA 402 CST（5 字节 PDO，转矩模式，Tier0 镜像）。
         if cia402_cst:

@@ -68,7 +68,16 @@ objects:
   - {index: 0x607A, sub: 0, name: Target position, dtype: INT32, access: rw, value: 0, pdo: rx}
 
 # 真实 SV660N 通常启用 DC；本 Tier0 画像暂不声明（⚠️ 待核实 DC 参数）。
-dc: {supported: false, sync0: false}
+# 真实 SV660N 默认启用 DC（assignActivate 0x300、SYNC0 跟应用周期，公开实测文档）；
+# 本模拟器只提供 Tier0 模拟时钟（0x0900–0x0917 帧驱动前进），无真实 SYNC0 脉冲/漂移补偿。
+dc:
+  supported: true
+  cycle_time0: 1000000
+  shift_time0: 0
+  shift_time1: 0
+  sync0_cycle_factor: 1
+  sync1_cycle_factor: -1
+  assign_activate: 0x0300
 
 sources:
   - {title: "Inovance — SV660N 伺服驱动器产品页（公开）", url: "https://www.inovance.com/", accessed: "2026-11-12"}

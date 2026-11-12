@@ -33,7 +33,7 @@ SOEM 2.0.0 与 IgH 1.6.13** 可发现从站并进入 OP（IgH 无应用时到 PR
 - **CoE**：expedited + segmented SDO 上传/下载、SDO Info、Complete Access（上传/单帧+
   分段下载/重发幂等/超长 Abort 0x06070010）、Abort 码、PDO assign/map 对象
   （0x1C12/0x1C13/0x1600/0x1A00）、CA 下载 all-or-nothing。
-- **CiA 402 Tier0**：CSP（位置跟随 + Target reached）、CSV（速度累加）、**CST**（实际
+- **DC Tier0**：ESC Support 声明 DC（0x0008 bit2）、0x0900–0x0917 帧驱动模拟时钟、\n  SV660N 画像声明 SII DC 类别（assignActivate 0x300）。\n- **CiA 402 Tier0**：CSP（位置跟随 + Target reached）、CSV（速度累加）、**CST**（实际
   转矩镜像目标转矩）、`--fault` 故障注入与复位、`0x6502=0x3AD`。
 - **设备画像**：`generic-io`、`beckhoff-el2008`、`generic-cia402-servo`、
   `generic-cia402-csv-servo`、`generic-cia402-cst-servo`（均自有 VID/PID + SIMULATED），
@@ -52,7 +52,7 @@ SOEM 2.0.0 与 IgH 1.6.13** 可发现从站并进入 OP（IgH 无应用时到 PR
 
 | 差距 | 影响 | 现状 |
 | --- | --- | --- |
-| **DC 同步未实现** | 无任何画像声明 DC（SV660N 真实设备默认开 DC，画像 `Has DC: 0`） | SII DC 类别生成 + manifest `dc` 字段已就绪，等 DC 仿真后再声明 |
+| **DC 无真实同步** | SV660N 画像已声明 DC（`Has DC: 1`），但只有 Tier0 帧驱动模拟时钟（0x0900–0x0917 随帧前进）；无 SYNC0 脉冲/漂移补偿/传播延迟测量 | DC 寄存器+模拟时钟已实现；真实同步待硬件级仿真 |
 | SV660N 默认 PDO 具体条目未知 | 画像用 Tier0 7 字节布局，非厂商默认映射 | 公开文本无来源；facts.md 已标 ⚠️ |
 | CA 部分写/子索引顺序语义 | 主站异常 CA 序列的细节行为未覆盖 | 已做 all-or-nothing；顺序语义未实现 |
 | 无独立硬件定时器 | watchdog/DC 由帧驱动，停帧不主动超时 | 设计选择，已文档化 |

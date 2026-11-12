@@ -32,6 +32,43 @@
 
 ---
 
+## 2026-11-13 02:27 班（低峰）— B11/B6：**DC Tier0 落地（声明 + 模拟时钟）**
+
+**做了什么**
+- `esc-core`：ESC Support 寄存器（0x0008）声明 **DC 支持**（bit2=0x04，现在模拟器确有
+  Tier0 DC 时钟）；新增单测 `esc_features_declare_dc_support`。
+- `esc-node`：`Responder` 新增 `dc_time_ns` 模拟 DC 系统时间，每 `tick` 前进
+  `DC_TICK_NS = 1000 ns`（帧驱动）；读寄存器时对 **0x0900–0x0917** 动态回填
+  （0x0900–0x090F 端口接收时间、0x0910–0x0917 系统时间，Tier0 简化同值）。
+  新增单测 `dc_system_time_advances_with_ticks`。
+- `plugins/inovance-sv660n/plugin.yaml`：`dc` 块改为声明 DC（`supported: true`、
+  `cycle_time0: 1000000`、`assign_activate: 0x0300`、`sync0_cycle_factor: 1`、
+  `sync1_cycle_factor: -1`），SII 生成 DC 类别（0x003C）——真实 SV660N 默认开 DC，
+  画像不再有该能力差距。
+- 新增 `scripts/spikes/dc-clock-probe.sh` + `uds_master_probe.py --dc-clock`（APRD 0x0910
+  两次断言系统时间前进）；更新 `sv660n-capability-probe.sh` 期望 `Has DC: 1`。
+- 文档同步：SV660N 验证文档/`facts.md`、`docs/STATUS.md`、`docs/VERIFICATION.md`、
+  AGENTS B6/B11。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **201 passed**（esc-core 86 / esc-node 64 / plugin-host 27 + 1 集成 / wire 23）。
+- Linux 验证机（重建后）：
+  - `sv660n-capability-probe.sh` **EXIT=0**：SOEM `Has DC: 1`、56/56 bits、
+    `CoE details: 0d`、`MBX 04`；IgH PREOP + 身份 `0xe5f1`；
+  - `dc-clock-probe.sh` **EXIT=0**：`0x0910` 系统时间 `1000 -> 8000`（随帧前进）；
+  - `soem-process-data.sh` **EXIT=0**：SOEM `simple_ng` 仍进 OP、WKC=3（无回归）。
+
+**卡点**
+- ⚠️ DC 仅 **Tier0**：帧驱动模拟时钟，**无真实 SYNC0 脉冲/漂移补偿/传播延迟测量**；
+  声明 DC 后若主站应用真的做 DC 同步（ecx_configdc / IgH DC 配置），时序精度不保证。
+- SII DC 类别只对 SV660N 画像启用；其它画像仍 `dc.supported=false`（有意保守）。
+
+**下次开工第一件事**
+- B11：继续找 SV660N 默认 PDO 条目；或评估 DC 真实同步（SYNC0 脉冲）是否值得做。
+
+---
+
 ## 2026-11-13 02:27 班（低峰）— 文档：**新增 `docs/STATUS.md` 状态快照**
 
 **做了什么**

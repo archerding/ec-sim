@@ -168,7 +168,7 @@ user.email = deepseek-harness@users.noreply.github.com
   - 进度（2026-11-13 01:56 班）：**DC 类别（0x003C）生成已实现**——`SiiDc` 结构按公开资料
     文档化布局（cycleTime0/shiftTime0/1、sync1/0CycleFactor、assignActivate、name/desc、
     reserved，24 字节）编码；`SiiSpec.dc = Some(..)` 时在 FMMU 后插入 DC 类别；新增 2 单测。
-    ⚠️ 内置镜像/manifest/ESI 均**不声明** DC（模拟器尚未实现 DC 同步），因此不影响 SOEM/IgH；
+    ⚠️ 内置镜像/ESI 仍不声明 DC；**SV660N 画像自 2026-11-13 02:27 起声明 DC**（Tier0 帧驱动模拟时钟，无真实 SYNC0/漂移）；
   - 进度（2026-11-13 01:58 班）：**manifest `dc` 时序字段已接入 SII DC 类别**——新增
     `DcConfig{ supported, cycle_time0, shift_time0/1, sync0/1_cycle_factor, assign_activate }`，
     `sii_gen` 在 `supported && cycle_time0>0` 时写入 DC 类别；`validate()` 拒绝缺 cycle_time0；
@@ -366,6 +366,7 @@ user.email = deepseek-harness@users.noreply.github.com
   - 进度（2026-11-13 02:13 班）：**CST 画像双主站验证**——`scripts/spikes/cia402-cst-op-probe.sh` 在未修改 SOEM/IgH 下 **EXIT=0**：SOEM `40/40 bits`、`5O+5I` 进 OP、`WKC 3`；`-map` 见 `0x6071`/`0x6077`；IgH PREOP + 身份 `0x00000ec5:0x0000e5e2`。记录见 `docs/plugins/generic-cia402-cst-verification.md`。
   - 进度（2026-11-13 02:17 班）：**IgH ecrt CST 进 OP 验证**——`scripts/spikes/igh-cia402-cst-op-probe.sh`（ecrt 夹具为验证机本地文件，不入库）**EXIT=0**：`ethercat slaves` 显示 `OP`、`al_states=0x08`、`sw=0x0237`、`modes_display=10`、`0x6077=300`；记录见 CST 验证文档。
   - 进度（2026-11-13 02:21 班）：**SV660N 画像能力位复核**——`scripts/spikes/sv660n-capability-probe.sh` **EXIT=0**：SOEM 56/56 bits、`CoE details=0d`（不声明 SDO Info，符合公开事实）、`Has DC: 0`（⚠️ 与真实设备默认开 DC 有差距）、MBX 04；IgH PREOP + 身份 `0xe5f1`。
+  - 进度（2026-11-13 02:27 班）：**DC Tier0 落地**——ESC Support(0x0008) 声明 DC、0x0900–0x0917 帧驱动模拟时钟（`DC_TICK_NS=1000`）、SV660N 画像声明 SII DC 类别（assignActivate 0x300）；新增 `dc-clock-probe.sh`。验证机：SOEM `Has DC: 1`、`dc-clock-probe.sh` EXIT=0（0x0910 前进）、`soem-process-data.sh` 仍 OP/WKC 3 无回归；测试 **201 passed**。⚠️ 无真实 SYNC0 脉冲/漂移/传播延迟测量。
 - [ ] **B11 CiA402 行为插件**：以 Inovance SV660N 兼容画像为第一个目标，实现 CSP 状态机（Tier0/内置 profile 起步）。
   - 依赖 B10 已完成（声明式画像 + `--manifest` + 验证脚本可复用）；先 facts.md + 声明式画像，
     行为 WASM 只做 Tier0 状态机骨架。

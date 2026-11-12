@@ -40,7 +40,7 @@
 - **SDO Info**：该设备**不响应 SDO Information 服务**（主站显示 `Enable SDO Info: no`），
   `ethercat sdos` 无输出；读取当前条目数以上的子索引以 `0x06090011` 中止——`0x1600:00`/
   `0x1A00:00` 的计数是唯一可直接读到的信息。本画像因此设置 `coe.sdo_info: false`。
-- **DC**：设备默认启用 DC（`assignActivate 0x300`，SYNC0 跟随应用周期）；参考时钟在链上
+- **DC**：设备默认启用 DC（`assignActivate 0x300`，SYNC0 跟随应用周期）；本画像因此声明\n  `dc.supported: true`（SII DC 类别）；模拟器仅提供 Tier0 帧驱动模拟时钟，⚠️ 无真实 SYNC0\n  脉冲/漂移补偿。参考时钟在链上
   **第一个支持 DC 的从站**。
 - **支持的模式**：`0x6502 = 0x3AD`（pp, pv, tq, hm, csp, csv, cst）；本画像已加该对象。
 - **厂商参数映射**：手册 "Hgg-pp" 参数 = CoE 索引 `0x2000 + 0xgg`、子索引 `0xpp + 1`

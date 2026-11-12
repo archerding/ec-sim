@@ -384,6 +384,9 @@ impl Registers {
             mem: Box::new([0u8; REG_SPACE_LEN]),
         };
         // 识别类寄存器对主站只读，初始化必须走内部写。
+        // ESC Support（0x0008）：bit2 = DC 支持。本模拟器自 2026-11-13 起提供 Tier0 帧驱动
+        // 模拟 DC 时钟（0x0900–0x0917 动态回填），因此声明 DC 支持；SII 是否带 DC 类别由画像决定。
+        regs.set_internal(reg::FEATURES, &[0x04]);
         regs.set_internal(reg::TYPE, &[0x01]); // ESC 类型（任意非 0）
         regs.set_internal(reg::REVISION, &[0x01]);
         regs.set_internal(reg::FMMU_COUNT, &[8]);
@@ -831,6 +834,13 @@ mod tests {
         assert!(al.handle_control_checked(AlControl::from_byte(0x02), &EsmPreconditions::default()));
         assert_eq!(al.state, AlState::PreOp);
         assert!(!al.error);
+    }
+
+    #[test]
+    fn esc_features_declare_dc_support() {
+        // ESC Support（0x0008）bit2 = DC 支持；模拟器提供 Tier0 帧驱动 DC 时钟。
+        let regs = Registers::new();
+        assert_eq!(regs.read_u16(reg::FEATURES), Some(0x0004));
     }
 
     #[test]

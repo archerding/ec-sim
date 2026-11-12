@@ -19,6 +19,7 @@
 | `cia402-cst-op-probe.sh` | CST 画像双主站：SOEM 40/40 bits、`0x6071`/`0x6077` 映射、`5O+5I` 进 OP；IgH PREOP+身份 `0xe5e2` | **EXIT=0** |
 | `cia402-cst-probe.sh` | 5 字节 PDO CST：状态机序列 + 实际转矩镜像 `0x6071`→`0x6077`、禁用后归零 | **EXIT=0** |
 | `cia402-fault-probe.sh` | `--fault 0x7500`：Fault bit、控制字 bit7 复位、`0x603F` 回读 | **EXIT=0** |
+| `dc-clock-probe.sh` | 模拟 DC 时钟：0x0910 系统时间随帧前进（Tier0 帧驱动） | **EXIT=0** |
 | `cia402-sdo-download-probe.sh` | 20 字节可写配置字符串 `0x2100` 的分段 SDO 下载 + 回读一致 | **EXIT=0** |
 
 ## 需要 Linux TAP + root（真实主站/内核模块）
@@ -35,7 +36,7 @@
 | `manifest-slave-probe.sh` | `--manifest` 画像：SOEM 扫描身份、8 位 I/O、OP、WKC 3、`slaveinfo -sdo` | **EXIT=0** |
 | `esi-manifest-op-probe.sh` | `--esi`+`--manifest` 组合：SOEM/IgH 双双正常（SOEM mapped 1O+1I、OP、WKC 3；IgH PREOP+身份） | **EXIT=0** |
 | `beckhoff-el2008-probe.sh` | EL2008 兼容画像：SOEM 扫描/OP、IgH 身份 | **EXIT=0** |
-| `sv660n-capability-probe.sh` | SV660N 画像能力位复核：SOEM 56/56、`CoE details=0x0d`（无 SDO Info）、`Has DC: 0`；IgH PREOP+身份 `0xe5f1` | **EXIT=0** |
+| `sv660n-capability-probe.sh` | SV660N 画像能力位复核：SOEM 56/56、`CoE details=0x0d`（无 SDO Info）、`Has DC: 1`（DC 声明）；IgH PREOP+身份 `0xe5f1` | **EXIT=0** |
 | `generic-cia402-probe.sh` | 通用 CiA 402 画像：SOEM 56/56 bits、OP、WKC 3；IgH PREOP+身份 | **EXIT=0** |
 | `igh-op-probe.sh` / `igh-el2008-op-probe.sh` | IgH ecrt 夹具（本地构建）配置 domain → OP（`al_states=0x08`、WKC） | **EXIT=0** |
 | `igh-cia402-op-probe.sh` | IgH ecrt 7B CiA402：OP + 状态字/模式/位置 | **EXIT=0** |
