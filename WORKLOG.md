@@ -6,6 +6,37 @@
 
 ---
 
+## 2026-11-12 23:18 班（低峰）— B11 第二步：**CiA 402 状态机骨架（Tier0 行为插件基础）**
+
+**做了什么**
+- 新增 `crates/esc-node/src/cia402.rs`（`esc_node::cia402`）：
+  - 控制字 `0x6040` / 状态字 `0x6041` 的位常量（公开 CiA 402 profile 子集）；
+  - `Cia402State` 状态枚举 + 每状态状态字编码；
+  - `Cia402StateMachine`：`new()`（初始 Switch on disabled）、`update(cw) -> statusword`、
+    `inject_fault()`；实现 shutdown / switch on / enable operation / disable voltage /
+    quick stop / fault reset 的标准转换；
+  - 6 个单测：初始状态、标准使能序列、Operation enabled→shutdown 回 Ready、
+    quick stop / disable voltage 路径、故障+复位恢复、无效控制字保持状态。
+- 新增 `docs/plugins/cia402-state-machine.md`：控制字/状态字位表、状态编码、已实现转换、
+  ⚠️ 未实现项（PDO 数据通路、Ti=0/1 时序、模式位、错误码触发、fault reset 上升沿）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`cargo clippy -D warnings` exit 0；
+  `cargo test --workspace` **158 passed**（esc-core 76 / esc-node 44 / plugin-host 21 + 1 集成 /
+  wire 16），其中 `esc-node` 由 38 → 44（新增 6 个状态机单测）。
+
+**卡点**
+- 状态机**尚未接入运行时 PDO 数据**（纯逻辑模块）：下一班把它接到 SM2/SM3 过程数据，
+  并让 `0x6041` 随 `0x6040` 变化（先走内置 Tier0，不做 WASM）。
+- 未实现 Ti=0/1 时序、模式相关位、错误码触发、fault reset 上升沿检测（文档已列明）。
+
+**下次开工第一件事**
+- 把 `Cia402StateMachine` 接入 `esc-node::Responder` 的过程数据通路（CIA402 通用画像
+  `SM2 0x1100` controlword → `SM3 0x1110` statusword），并提供 `--behavior cia402`
+  （或按 manifest `profile: cia402` 自动启用）；在验证机上用 SOEM/IgH 读回状态字变化。
+
+---
+
 ## 2026-11-12 23:12 班（低峰）— B11 第一步：**通用 CiA 402 伺服声明式画像** + 双主站扫描/OP 验证
 
 **做了什么**

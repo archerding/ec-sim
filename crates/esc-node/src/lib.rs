@@ -23,6 +23,8 @@
 
 use std::collections::BTreeMap;
 
+pub mod cia402;
+
 use esc_core::eeprom::EepromInterface;
 use esc_core::fmmu::{Fmmu, FMMU_MAX};
 use esc_core::mailbox::{self, MailboxHeader, SdoInfoRequest, SdoRequest};
