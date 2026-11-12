@@ -6,6 +6,38 @@
 
 ---
 
+## 2026-11-12 23:47 班（低峰）— B7 验证：**分段 SDO 下载（合成主站）** + 可写配置字符串对象
+
+**做了什么**
+- 给通用 CiA 402 / SV660N 画像增加**可写配置字符串对象** `0x2100:00`
+  （VISIBLE_STRING，`rw`，20 字节；用于验证分段下载，值带 SIMULATED 说明）。
+- 合成主站 `scripts/spikes/uds_master_probe.py` 新增 `--sdo-segmented-download`：
+  initiate download（`0x21` + Size u32 + 首段 8B）→ segment 请求（`0x20|toggle<<4|
+  unused<<1|last`，7B+5B 两段）→ 再经 **分段 SDO 上传** 回读并逐字节比对。
+- 新增验证脚本 `scripts/spikes/cia402-sdo-download-probe.sh`（UDS，无需 root）。
+- 扩展验证机本地 ecrt 夹具做 IgH 侧 SDO 下载尝试（源码不入库）：`ecrt_master_sdo_download`
+  在本验证机上**再次复现阻塞**（与 23:20 班 IgH SDO 上传问题同类，expedited 也受影响）→
+  已把 IgH 脚本里的 SDO 断言撤回（不把不可复现内容留在仓库脚本），IgH 侧 SDO 下载标 ⚠️ 待验证。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **164 passed**；插件守卫测试通过新画像对象。
+- Linux 验证机：`bash scripts/spikes/cia402-sdo-download-probe.sh` → **EXIT=0**：
+  `OK: segmented SDO download 写入 0x2100 并回读一致（20 字节）`；UDS 原套件
+  （BRD/APRD/APWR/FPRD/M 位、SM watchdog、ESM 前置条件）继续通过。
+  → 分段下载协议 + esc-node 下载状态机经**独立合成主站**端到端验证。
+
+**卡点**
+- **IgH 侧 SDO（上传/下载）在该验证机上阻塞**（内核 ecrt ioctl 路径，已复现两次）；
+  分段下载的 IgH 真机验证 ⚠️ 待验证（可能需要重装/升级 IgH 或换验证机）。
+- Complete Access 下载未实现；分段下载只写 `object_writes`，不做类型/长度校验。
+
+**下次开工第一件事**
+- 排查/恢复验证机 IgH SDO ioctl（换 IgH 版本或重装内核模块）后补 IgH 侧分段上传/下载；
+  或继续 B11（9/11 字节 PDO → CSV、SV660N 手册核对）；B6 FMMU/DC 原文核实仍待条件。
+
+---
+
 ## 2026-11-12 23:44 班（低峰）— B7 补缺口：**分段 SDO 下载**（segmented download）
 
 **做了什么**

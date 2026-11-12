@@ -16,7 +16,7 @@
   （用于验证声明式 manifest 画像的设备名）。
 
 用法：python3 uds_master_probe.py [socket_path] [--timeout 2.0] [--lax]
-        [--sdo-segmented] [--expect-string=<text>] [--cia402]
+        [--sdo-segmented] [--sdo-segmented-download] [--expect-string=<text>] [--cia402]
 退出码 0 = 全部断言通过。
 """
 import os
@@ -213,6 +213,7 @@ def main():
     timeout = 2.0
     lax = False
     sdo_segmented = False
+    sdo_segmented_download = False
     expect_string = None
     cia402 = False
     for arg in sys.argv[1:]:
@@ -224,6 +225,8 @@ def main():
         # `--sdo-segmented`：额外验证 >4 字节对象（0x1008 设备名）的 segmented SDO 上传。
         if arg == "--sdo-segmented":
             sdo_segmented = True
+        if arg == "--sdo-segmented-download":
+            sdo_segmented_download = True
         if arg == "--cia402":
             cia402 = True
         if arg.startswith("--expect-string="):
@@ -271,6 +274,44 @@ def main():
             if expect_string is not None:
                 check(text == expect_string, f"SDO 分段读取 {text!r} != 期望 {expect_string!r}")
             print(f"OK: segmented SDO 读到 0x1008 = {text!r}（{len(value)} 字节）")
+
+        # 5d) 可选：segmented download（>4 字节对象，写后回读）。
+        if sdo_segmented_download:
+            payload = b"EC-Sim SDO download!"
+            first = payload[:8]
+            service = (
+                b"\x00\x20\x21"
+                + struct.pack("<H", 0x2100)
+                + b"\x00"
+                + struct.pack("<I", len(payload))
+                + first
+            )
+            response = mailbox_exchange(master, service)
+            check(
+                len(response) >= 6 and response[2] == 0x60,
+                f"download initiate 响应 {response[2]:#04x} != 0x60",
+            )
+            offset = len(first)
+            toggle = 0
+            while offset < len(payload):
+                remaining = len(payload) - offset
+                take = min(7, remaining)
+                last = offset + take >= len(payload)
+                unused = 7 - take
+                chunk = payload[offset : offset + take].ljust(7, b"\x00")
+                command = 0x20 | (toggle << 4) | (unused << 1) | (1 if last else 0)
+                service = b"\x00\x20" + bytes([command]) + chunk
+                response = mailbox_exchange(master, service)
+                check(
+                    len(response) >= 3 and (response[2] & 0xE0) == 0x20,
+                    "segment download 响应命令不是 0x20",
+                )
+                check(((response[2] >> 4) & 1) == toggle, "segment download toggle 未回显")
+                offset += take
+                toggle ^= 1
+            value = sdo_upload_segmented(master, 0x2100, 0x00)
+            check(value == payload, f"SDO 回读 {value!r} != {payload!r}")
+            print("OK: segmented SDO download 写入 0x2100 并回读一致（20 字节）")
 
         # 5c) 可选：CiA 402 状态机行为（完整 7 字节 RxPDO/TxPDO，Tier0）。
         if cia402:

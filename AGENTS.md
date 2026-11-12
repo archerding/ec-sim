@@ -211,7 +211,12 @@ user.email = deepseek-harness@users.noreply.github.com
     布局按 IgH `fsm_coe.c` 的 `prepare_down_start`/`prepare_segment_request` 复核）；
     `esc-node` 增加分段下载状态与写入（只读/未知对象 Abort）。测试 **164 passed**。
     ⚠️ 仅 datagram 级单测，**未在验证机用真实主站验证**（需长数据夹具）。
-  - 待做：IgH 侧分段上传/下载验证（环境/夹具）、Complete Access（CA）。
+  - 进度（2026-11-12 23:47 班）：**分段下载已用合成主站端到端验证**——通用 CiA 402 /
+    SV660N 画像新增可写配置字符串 `0x2100:00`（20B）；`uds_master_probe.py`
+    `--sdo-segmented-download`（initiate `0x21` + 7B/5B 分段 + 分段上传回读比对），
+    验证机 `scripts/spikes/cia402-sdo-download-probe.sh` **EXIT=0**。IgH 侧 SDO
+    （上传/下载）在该验证机上仍**阻塞**（ecrt ioctl，已复现两次）→ ⚠️ 待验证。
+  - 待做：IgH 侧分段上传/下载验证（环境恢复后）、Complete Access（CA）。
 - [x] ~~**B9 声明式插件加载器**~~ ✅ **2026-11-12 21:25 班完成**：`plugin-host` 零依赖解析
   `plugin.yaml`（YAML 子集 + R2/R5 校验）→ `sii_gen` 生成 SII 镜像、`dict_gen` 生成运行时
   对象字典（0x1018 身份 / 0x1C00 SM 类型 / 0x1C12+0x1C13 分配 / PDO 映射 / 用户对象）；
