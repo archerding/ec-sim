@@ -1,4 +1,4 @@
-﻿//! EtherCAT 邮箱协议最小实现（B7 子项 1）：邮箱头解析 + CoE SDO Abort 应答。
+//! EtherCAT 邮箱协议最小实现（B7 子项 1）：邮箱头解析 + CoE SDO Abort 应答。
 //!
 //! 目的：让主站能通过 SM0/SM1 邮箱与从站跑通 **CoE SDO 数据链路**：
 //! 对 `0x40`（initiate upload）请求从 [`crate::obj_dict`] 查表回 expedited upload 响应，

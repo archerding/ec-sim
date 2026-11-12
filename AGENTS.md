@@ -184,10 +184,21 @@ user.email = deepseek-harness@users.noreply.github.com
   - 已知限制：SOEM `slaveinfo -sdo` 对 UINT8 子索引 0 的 2 字节读取有未初始化高位（偶发
     段错误，属 SOEM 工具夹具缺陷，脚本重试规避）；manifest 初值仅 8/16/32 位整数；
     FMMU 仍由主站配置阶段写入；DC 未实现。
-- [ ] **B10 首个 P0 设备插件**：Beckhoff EL2008 兼容 8DO（声明式），完成 `facts.md`（含来源 URL）、manifest、双主站扫描验证记录（`docs/plugins/`）。
-  - 依赖 B9 已完成：`ec-sim-esc --manifest` + `scripts/spikes/manifest-slave-probe.sh` 可直接
-    用于验证设备画像；按 DEVICE-PLUGINS R1–R5 走（公开资料、自有 VID/PID、sources、SIMULATED）。
+- [x] ~~**B10 首个 P0 设备插件**~~ ✅ **2026-11-12 21:33 班完成**：`plugins/beckhoff-el2008/`
+  声明式画像（自有 VID/PID `0x00000EC5`/`0x0000E5D2`，名称带 SIMULATED；8 通道输出、
+  0 输入、SM2 输出 1 字节、默认 RxPDO `0x1600`..`0x1607` 各映射 1 bit 输出对象
+  `0x7000:01`..`0x7070:01`）；`facts.md` 记录公开资料事实与来源（R5：Beckhoff 产品页 /
+  Information System / linuxcnc-ethercat esi-data，访问日期 2026-11-12），未入库厂商文件（R1）。
+  Linux 验证机：SOEM 扫描身份 `00000ec5:0000e5d2`、`Output 8bits/Input 0bits`、`-map`
+  显示 `SM2 outputs` 与 8 个 BOOLEAN 输出映射、`simple_ng` 进 OP（`mapped 1O+0I`）；
+  IgH 扫描 PREOP/拓扑/身份正常。证据：[验证记录](docs/plugins/beckhoff-el2008-verification.md)、
+  `scripts/spikes/beckhoff-el2008-probe.sh`；`plugin-host` 增加仓库插件 manifest 守卫测试。
+  - 遗留 ⚠️：SOEM `simple_ng` expected WKC 比实际多 1（SOEM 把 SM1 状态寄存器映射为 FMMU 并在
+    无输入时 `inputsWKC++`；本模拟器未做寄存器空间 FMMU，ESC 是否允许待核实）；
+    IgH 侧只验扫描（OP 需 outputs-only ecrt 夹具）；电气特性/DC 未模拟。
 - [ ] **B11 CiA402 行为插件**：以 Inovance SV660N 兼容画像为第一个目标，实现 CSP 状态机（Tier0/内置 profile 起步）。
+  - 依赖 B10 已完成（声明式画像 + `--manifest` + 验证脚本可复用）；先 facts.md + 声明式画像，
+    行为 WASM 只做 Tier0 状态机骨架。
 - [x] ~~**B8 双主站冒烟**~~ ✅ **2026-11-12 19:56 班完成（单从站 8 位 I/O 画像）**：
   **未修改的 SOEM 与 IgH 都在本模拟器上看到从站进入 OP**，输出可复现脚本见
   [spike-4](docs/spikes/spike-4-dual-master-op.md)：

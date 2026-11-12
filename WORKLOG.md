@@ -6,6 +6,65 @@
 
 ---
 
+## 2026-11-12 21:33 班（低峰）— B10 完成：首个 P0 设备插件「Beckhoff EL2008 兼容 8DO（SIMULATED）」
+
+**做了什么**
+- 公开资料调研（R1：只取接口事实，不入库厂商文件）：Beckhoff EL2008 产品页、Beckhoff
+  Information System（EL20xx/EL2124 文档）与 linuxcnc-ethercat `esi-data`（公开 ESI 整理
+  数据）→ 提取事实并记来源/访问日期（R5）：8 通道数字输出、0 输入、24 V DC/0.5 A、
+  进程映像 8 outputs、无 DC、无配置；默认 **RxPDO `0x1600`..`0x1607`**，每个映射 1 bit
+  输出对象 **`0x7000:01` / `0x7010:01` / … / `0x7070:01`**。
+- 新插件 `plugins/beckhoff-el2008/`：
+  - `plugin.yaml`：自有 Vendor ID/Product Code `0x00000EC5`/`0x0000E5D2`（R2）、名称带
+    `SIMULATED`、3 个 SM（邮箱 ×2 + SM2 输出 1 字节）、8 个 RxPDO、8 个 BOOL 输出对象、
+    CoE SDO/SDO Info、无 DC、`compatibility` 免责声明（R3）、3 条 `sources`（R5）；
+  - `facts.md`：接口事实表 + 来源（含"厂商 PID 仅参考、不用于身份"说明）+ 已/未模拟清单；
+  - `README.md`：使用方式、免责声明、已模拟/未模拟清单。
+- `plugins/catalog.yaml`：EL2008 状态 `planned` → `ready`（附交付物路径）。
+- 新验证脚本 `scripts/spikes/beckhoff-el2008-probe.sh`（SOEM 身份/SII-PDO/-map/OP/字典 +
+  IgH 扫描；对 SOEM `-sdo` 偶发段错误做重试）。
+- 新增 `crates/plugin-host/tests/plugin_manifests.rs`：遍历 `plugins/*/plugin.yaml`
+  （跳过 `_template`）做**守卫测试**——解析、R2/R5 校验、SII 生成（CRC）、运行时字典生成、
+  每个 PDO 都有映射对象。
+- 验证记录 `docs/plugins/beckhoff-el2008-verification.md`（命令、关键输出、限制、⚠️）。
+- 顺带修复两处历史文件的 UTF-8 BOM（`esc-core/src/mailbox.rs`、`esc-node/bin/ec_sim_esc.rs`）。
+
+**验证结果**
+- 本机 Windows：`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets
+  -- -D warnings` exit 0；`cargo test --workspace` **142 passed**
+  （esc-core 75 / esc-node 37 / plugin-host 14 / wire 16）。
+- Linux 验证机：`bash scripts/spikes/beckhoff-el2008-probe.sh` →
+  `OK: EL2008 兼容 8DO 画像端到端通过`：
+  - SOEM `slaveinfo`：`Man: 00000ec5 ID: 0000e5d2 Rev: 00010000`、`Output size: 8bits`、
+    `Input size: 0bits`、`1 slaves found and configured`；
+  - SOEM `slaveinfo -map`：`SM2 outputs`，`0x7000:0x01 … BOOLEAN Output 1` …
+    `0x7070:0x01 … Output 8`（与公开资料默认映射一致）；
+  - SOEM `simple_ng`：`mapped 1O+0I bytes`、`all slaves are now operational`、WKC 2；
+  - SOEM `slaveinfo -sdo`：`0x1C12` maxsub 8、`0x1600` 映射值 `0x70000101`、
+    `0x7000`/`0x7070` 输出对象可见；
+  - IgH `ethercat slaves`：`0  0:0  PREOP  +  0x00000ec5:0x0000e5d2`，拓扑计算无报错。
+- 默认内置画像回归（默认/strict 两种模式）**6/6 EXIT=0**（插件改动不影响既有画像）。
+
+**卡点**
+- **SOEM `simple_ng` 的 expected WKC 比实际多 1**：SOEM 2.0 对"无输入且带邮箱"的从站会把
+  SM1 状态寄存器（`ECT_REG_SM1STAT` = 0x080D）映射成进程数据 FMMU 并在 `src/ec_config.c`
+  里 `if (!Ibytes) inputsWKC++`；本模拟器只做 DL 用户内存（0x1000–0xFFFF）的 FMMU 物理映射，
+  未模拟寄存器空间映射 → simple_ng 报 `WKC 2 wrong (expected 3)`（OP/过程数据本身正常）。
+  ⚠️ 待核实：ESC Sec.II 是否允许 FMMU 物理映射寄存器空间。
+- IgH 侧只验证扫描（PREOP/拓扑/身份）；OP 需 outputs-only 的 ecrt 夹具。
+- SOEM `slaveinfo -sdo` 偶发段错误属工具夹具缺陷（UINT8 子索引 0 用 2 字节读取），脚本重试规避。
+- 电气特性（0.5 A 驱动/短路/开关时间）与 DC 未模拟（已在 README 诚实清单列出）。
+
+**下次开工第一件事**
+- 先补 B10 缺口：核实 **ESC FMMU 能否物理映射寄存器空间**（ESC Sec.II / ETG.1000.4）；
+  若允许，实现"寄存器空间 FMMU 读"使 EL2008 画像在 SOEM 下 expected WKC 一致（同时重跑
+  内置画像回归确认 expected WKC 不受影响）；再写 **outputs-only 的 IgH ecrt 夹具**把
+  EL2008 推入 OP，补完 `docs/plugins/beckhoff-el2008-verification.md`。
+- 之后进入 **B11 CiA402 行为插件**（Inovance SV660N 兼容画像）：先 facts.md + 声明式画像
+  + 双主站扫描（行为 WASM 只做 Tier0 状态机骨架）。
+
+---
+
 ## 2026-11-12 21:25 班（低峰）— B9 完成：声明式插件画像端到端（`--manifest` → SII + 对象字典 → 双主站扫描/OP）
 
 **做了什么**

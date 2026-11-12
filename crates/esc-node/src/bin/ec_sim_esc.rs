@@ -1,4 +1,4 @@
-﻿//! `ec-sim-esc`：Linux 上运行的最小 ESC 从站应答器（两种线缆层）。
+//! `ec-sim-esc`：Linux 上运行的最小 ESC 从站应答器（两种线缆层）。
 //!
 //! 用法（需 root 或 CAP_NET_ADMIN；UDS 模式不需要 root）：
 //! ```text

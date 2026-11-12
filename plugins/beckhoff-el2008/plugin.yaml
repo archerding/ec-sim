@@ -1,0 +1,81 @@
+# EC-Sim 声明式设备插件：Beckhoff EL2008 兼容 8 通道数字输出（SIMULATED）
+#
+# 合规说明（docs/DEVICE-PLUGINS.md R1–R5）：
+# - 只使用公开资料提取接口事实（对象索引/位宽/PDO 映射），未把厂商 ESI/PDF/固件/示例代码入库；
+# - 设备身份使用**我方自有** Vendor ID / Product Code（R2），名称带 SIMULATED；
+# - 不声称与 Beckhoff 存在任何隶属、背书或认证关系（R3）；EL2008 的厂商 PID 仅作为
+#   `compatibility` 事实记录，不用于 identity。
+schema: ecsim.plugin/v1
+id: com.ecsim.compat.beckhoff-el2008
+name: "EL2008-compatible 8-channel digital output (SIMULATED)"
+version: 0.1.0
+kind: device
+license: Apache-2.0 OR MIT
+pricing: {model: free, amount: 0, currency: CNY}
+
+compatibility:
+  brands: ["Beckhoff"]
+  models: ["EL2008"]
+  disclaimer: "Independent re-implementation from public documentation. Not affiliated with, endorsed by, or certified by Beckhoff Automation."
+
+identity:
+  vendor_id: 0x00000EC5
+  product_code: 0x0000E5D2
+  revision: 0x00010000
+  simulated: true
+
+profile: generic-io
+mailbox:
+  coe: {sdo: true, sdo_info: true, complete_access: false}
+
+# EL2008 无输入；SM0/SM1 = 邮箱、SM2 = 8 位输出（1 字节）。
+sm:
+  - {index: 0, dir: mbox-in,  start: 0x1000, len: 128}
+  - {index: 1, dir: mbox-out, start: 0x1080, len: 128}
+  - {index: 2, dir: out,      start: 0x1100, len: 1}
+
+# 公开资料（esi-data 由 Beckhoff ESI 处理而来）：EL2008 默认 RxPDO 为
+# 0x1600..0x1607 共 8 个通道 PDO，每个映射一个 1 bit 输出对象 0x7000:01 / 0x7010:01 / ... / 0x7070:01。
+pdo:
+  rx:
+    - index: 0x1600
+      entries:
+        - {index: 0x7000, sub: 1, bits: 1}
+    - index: 0x1601
+      entries:
+        - {index: 0x7010, sub: 1, bits: 1}
+    - index: 0x1602
+      entries:
+        - {index: 0x7020, sub: 1, bits: 1}
+    - index: 0x1603
+      entries:
+        - {index: 0x7030, sub: 1, bits: 1}
+    - index: 0x1604
+      entries:
+        - {index: 0x7040, sub: 1, bits: 1}
+    - index: 0x1605
+      entries:
+        - {index: 0x7050, sub: 1, bits: 1}
+    - index: 0x1606
+      entries:
+        - {index: 0x7060, sub: 1, bits: 1}
+    - index: 0x1607
+      entries:
+        - {index: 0x7070, sub: 1, bits: 1}
+
+objects:
+  - {index: 0x7000, sub: 1, name: Output 1, dtype: BOOL, access: ro, pdo: rx}
+  - {index: 0x7010, sub: 1, name: Output 2, dtype: BOOL, access: ro, pdo: rx}
+  - {index: 0x7020, sub: 1, name: Output 3, dtype: BOOL, access: ro, pdo: rx}
+  - {index: 0x7030, sub: 1, name: Output 4, dtype: BOOL, access: ro, pdo: rx}
+  - {index: 0x7040, sub: 1, name: Output 5, dtype: BOOL, access: ro, pdo: rx}
+  - {index: 0x7050, sub: 1, name: Output 6, dtype: BOOL, access: ro, pdo: rx}
+  - {index: 0x7060, sub: 1, name: Output 7, dtype: BOOL, access: ro, pdo: rx}
+  - {index: 0x7070, sub: 1, name: Output 8, dtype: BOOL, access: ro, pdo: rx}
+
+dc: {supported: false, sync0: false}
+
+sources:
+  - {title: "Beckhoff EL2008 product page (technical data: 8 outputs, 24 V DC, 0.5 A, bit width 8 outputs)", url: "https://www.beckhoff.com/en-en/products/i-o/ethercat-terminals/el-ed2xxx-digital-output/el2008.html", accessed: "2026-11-12"}
+  - {title: "Beckhoff Information System — EL20xx/EL2124 documentation, EL2008 LEDs and connection", url: "https://infosys.beckhoff.com/content/1033/el20xx_el2124/1636470795.html", accessed: "2026-11-12"}
+  - {title: "linuxcnc-ethercat esi-data — EL2008 (PDO mapping: RxPDO 0x1600..0x1607, 0x7000:01..0x7070:01 BOOL; PID/revisions reference only)", url: "https://linuxcnc-ethercat.github.io/esi-data/devices/EL2008", accessed: "2026-11-12"}
