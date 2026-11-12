@@ -32,6 +32,37 @@
 
 ---
 
+## 2026-11-13 01:03 班（低峰）— B11：**CiA 402 故障注入 CLI（`--fault`）+ 验证**
+
+**做了什么**
+- `ec-sim-esc` 新增 `--fault <hex>`（需与 `--behavior cia402` 搭配）：启动即调用
+  `inject_cia402_fault(code)`，打印 `FAULT cia402 error_code=0xNNNN`；无 behavior 时忽略并提示。
+- 合成主站 `uds_master_probe.py` 新增 `--cia402-fault`：断言初始状态字 Fault bit、
+  控制字 bit7 故障复位后 Fault 位清除、`0x603F` 回读注入错误码。
+- 新脚本 `scripts/spikes/cia402-fault-probe.sh`（CSV/CiA402 画像 + `--behavior cia402
+  --fault 0x7500`）；`docs/plugins/generic-cia402-verification.md` 增补故障注入记录。
+- 顺带修复 `build_responder` 中 `--manifest`+`--esi` 组合分支的 unreachable pattern（调换
+  match 臂顺序），VM 构建 **0 warning**。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **185 passed**（esc-core 80 / esc-node 57 / plugin-host 25 + 1 集成 / wire 22）。
+- Linux 验证机：`bash scripts/spikes/cia402-fault-probe.sh` → **EXIT=0**：
+  - `FAULT 0x0208`（Fault | SwitchOnDisabled 等）→ 复位后 `0x0240`（Fault 位清除）；
+  - `0x603F = 0x7500`（SDO expedited 回读一致）；
+  - 同套件 UDS 基础断言通过；`esc-node` release 构建 **0 warning**。
+
+**卡点**
+- 故障码清除时序仍是 Tier0 简化（错误码保留到上层再次写入，与真机不同）；
+  无故障历史/多故障码；`--fault` 仅作用于启动时刻（不支持运行中注入）。
+- 未做 IgH/SOEM 侧故障注入验证（两家主站无此注入点；合成主站覆盖）。
+
+**下次开工第一件事**
+- B11：换公开镜像/HTML 手册核对 SV660N 默认 PDO（PDF 与 GitHub raw 受阻已记录）；
+  或继续 B5/B6 剩余项（0x0410 PDI watchdog、FMMU/DC 类别）。
+
+---
+
 ## 2026-11-13 00:58 班（低峰）— B5 剩余：**SM 布局合法性检查**（0x0017 细化）
 
 **做了什么**

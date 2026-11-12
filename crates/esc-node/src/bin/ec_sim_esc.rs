@@ -33,6 +33,7 @@ fn main() -> std::process::ExitCode {
     let mut behavior: Option<String> = None;
     let mut verbose = false;
     let mut esm_preconditions = true;
+    let mut fault: Option<u16> = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--tap" => match args.next() {
@@ -76,6 +77,22 @@ fn main() -> std::process::ExitCode {
                     return std::process::ExitCode::from(2);
                 }
             },
+            "--fault" => match args.next() {
+                Some(text) => {
+                    let digits = text.trim_start_matches("0x").trim_start_matches("0X");
+                    match u16::from_str_radix(digits, 16) {
+                        Ok(code) => fault = Some(code),
+                        Err(_) => {
+                            eprintln!("ec-sim-esc: --fault 需要十六进制错误码（如 0x7500）");
+                            return std::process::ExitCode::from(2);
+                        }
+                    }
+                }
+                None => {
+                    eprintln!("ec-sim-esc: --fault 需要一个错误码");
+                    return std::process::ExitCode::from(2);
+                }
+            },
             "--verbose" | "-v" => verbose = true,
             "--esm-lax" => esm_preconditions = false,
             // 兼容旧参数名：前置条件已是默认行为。
@@ -83,7 +100,7 @@ fn main() -> std::process::ExitCode {
             "--help" | "-h" => {
                 println!(
                     "用法: ec-sim-esc [--tap <name> | --uds <path>] [--verbose] [--esm-lax] \
-                     [--manifest <plugin.yaml>] [--esi <file.esi.xml>] [--behavior cia402]"
+                     [--manifest <plugin.yaml>] [--esi <file.esi.xml>] [--behavior cia402]`n                     [--fault <hex>（需 --behavior cia402）]"
                 );
                 return std::process::ExitCode::SUCCESS;
             }
@@ -156,8 +173,24 @@ fn main() -> std::process::ExitCode {
     }
 
     match (tap_name, uds_path) {
-        (_, Some(path)) => run_uds(&path, verbose, esm_preconditions, manifest, esi, behavior),
-        (Some(name), None) => run(&name, verbose, esm_preconditions, manifest, esi, behavior),
+        (_, Some(path)) => run_uds(
+            &path,
+            verbose,
+            esm_preconditions,
+            manifest,
+            esi,
+            behavior,
+            fault,
+        ),
+        (Some(name), None) => run(
+            &name,
+            verbose,
+            esm_preconditions,
+            manifest,
+            esi,
+            behavior,
+            fault,
+        ),
         (None, None) => run(
             "ecsim0",
             verbose,
@@ -165,6 +198,7 @@ fn main() -> std::process::ExitCode {
             manifest,
             esi,
             behavior,
+            fault,
         ),
     }
 }
@@ -176,18 +210,19 @@ fn build_responder(
     esi: Option<&plugin_host::esi::EsiDevice>,
     behavior: Option<&str>,
     esm_preconditions: bool,
+    fault: Option<u16>,
 ) -> Result<esc_node::Responder, String> {
     let responder = match (manifest, esi) {
-        (Some(manifest), _) => {
-            let spec = plugin_host::sii_gen::sii_spec_from_manifest(manifest)?;
-            let sii = esc_core::sii::SiiImage::from_spec(&spec);
-            let dict = plugin_host::dict_gen::dictionary_from_manifest(manifest)?;
-            esc_node::Responder::new(sii).with_dictionary(dict)
-        }
         // `--manifest` 与 `--esi` 可以组合：ESI 提供 SII 描述（SM/PDO/邮箱），manifest 提供
         // 身份（R2 自有 VID/PID）与运行时对象字典（ESI 不含 OD）。
         (Some(manifest), Some(device)) => {
             let spec = plugin_host::esi::sii_spec_from_esi_and_manifest(device, manifest)?;
+            let sii = esc_core::sii::SiiImage::from_spec(&spec);
+            let dict = plugin_host::dict_gen::dictionary_from_manifest(manifest)?;
+            esc_node::Responder::new(sii).with_dictionary(dict)
+        }
+        (Some(manifest), _) => {
+            let spec = plugin_host::sii_gen::sii_spec_from_manifest(manifest)?;
             let sii = esc_core::sii::SiiImage::from_spec(&spec);
             let dict = plugin_host::dict_gen::dictionary_from_manifest(manifest)?;
             esc_node::Responder::new(sii).with_dictionary(dict)
@@ -223,6 +258,15 @@ fn build_responder(
     } else {
         responder
     };
+    let mut responder = responder;
+    if let Some(code) = fault {
+        if behavior == Some("cia402") {
+            responder.inject_cia402_fault(code);
+            println!("FAULT cia402 error_code=0x{code:04X}");
+        } else {
+            eprintln!("ec-sim-esc: --fault 需要 --behavior cia402，已忽略");
+        }
+    }
     Ok(responder.with_esm_preconditions(esm_preconditions))
 }
 
@@ -267,6 +311,7 @@ fn run_uds(
     manifest: Option<plugin_host::manifest::PluginManifest>,
     esi: Option<plugin_host::esi::EsiDevice>,
     behavior: Option<String>,
+    fault: Option<u16>,
 ) -> std::process::ExitCode {
     use esc_node::DEFAULT_SIM_MAC;
     use std::io::Write;
@@ -289,6 +334,7 @@ fn run_uds(
         esi.as_ref(),
         behavior.as_deref(),
         esm_preconditions,
+        fault,
     ) {
         Ok(responder) => responder,
         Err(error) => {
@@ -339,6 +385,7 @@ fn run(
     manifest: Option<plugin_host::manifest::PluginManifest>,
     esi: Option<plugin_host::esi::EsiDevice>,
     behavior: Option<String>,
+    fault: Option<u16>,
 ) -> std::process::ExitCode {
     use esc_node::DEFAULT_SIM_MAC;
     use std::io::Write;
@@ -362,6 +409,7 @@ fn run(
         esi.as_ref(),
         behavior.as_deref(),
         esm_preconditions,
+        fault,
     ) {
         Ok(responder) => responder,
         Err(error) => {
@@ -401,6 +449,7 @@ fn run(
     _manifest: Option<plugin_host::manifest::PluginManifest>,
     _esi: Option<plugin_host::esi::EsiDevice>,
     _behavior: Option<String>,
+    _fault: Option<u16>,
 ) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)
@@ -414,6 +463,7 @@ fn run_uds(
     _manifest: Option<plugin_host::manifest::PluginManifest>,
     _esi: Option<plugin_host::esi::EsiDevice>,
     _behavior: Option<String>,
+    _fault: Option<u16>,
 ) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)

@@ -377,6 +377,12 @@ user.email = deepseek-harness@users.noreply.github.com
     应用运行中 `ethercat slaves` = **OP** + `0x00000ec5:0x0000e5e1`，
     `RESULT al_states=0x08`，`STATUS sw=0x0237 modes_display=9 pos=2995 vel_actual=5`。
     证据：`docs/plugins/generic-cia402-csv-verification.md`。
+  - 进度（2026-11-13 01:03 班）：**CiA 402 故障注入 CLI 已上架**——`ec-sim-esc --fault <hex>`
+    （需 `--behavior cia402`）启动即注入故障（打印 `FAULT cia402 error_code=0xNNNN`）；
+    合成主站 `--cia402-fault` + 脚本 `cia402-fault-probe.sh` 验证机 **EXIT=0**
+    （Fault 0x0208 → 复位 0x0240、`0x603F=0x7500`）；顺带修复 `--manifest`+`--esi` 组合分支
+    unreachable pattern，VM 构建 0 warning。测试 **185 passed**。
+    ⚠️ 故障码清除时序仍 Tier0 简化、仅启动时注入，未做 IgH/SOEM 侧注入。
   - 待做：逐项核对 SV660N 公开手册 PDO/扩展对象；B6 FMMU/DC 原文核实；
     IgH SDO 环境阻塞（上传/下载，与 CSV 无关）。
 - [x] ~~**B8 双主站冒烟**~~ ✅ **2026-11-12 19:56 班完成（单从站 8 位 I/O 画像）**：

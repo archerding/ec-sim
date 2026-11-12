@@ -78,3 +78,20 @@ OK: IgH 零补丁把 CiA 402 画像推入 OP，且 TxPDO 状态字/模式显示/
 - 具体厂商兼容画像（Inovance SV660N 等）：在通用画像上按公开手册补默认 PDO/对象。
 - SDO 上传本画像设备名（`0x1008`，分段上传）在 IgH 侧尚未列入本脚本；SOEM 侧已验证
   （分段协议与 EL2008 用例相同，见 `sdo-segmented-upload-probe.sh`）。
+
+## 故障注入（`--fault <hex>`，2026-11-13 01:03 班）
+
+```bash
+cargo build --release -p esc-node
+bash scripts/spikes/cia402-fault-probe.sh   # 合成主站（UDS）
+```
+
+验证机 **EXIT=0**：
+
+```
+OK: CiA 402 故障注入（Fault 0x0208 → 复位 0x0240，0x603F=0x7500）通过
+```
+
+- 启动即 Fault（状态字 bit3 置位），控制字 bit7（fault reset）后回到 SwitchOnDisabled
+  （Fault 位清除）；`0x603F` 错误码可回读为注入值 `0x7500`。
+- ⚠️ 简化：错误码保留到上层再次写入（与真机清除时序不同）；仅 Tier0 行为、无故障历史。

@@ -17,7 +17,7 @@
 
 用法：python3 uds_master_probe.py [socket_path] [--timeout 2.0] [--lax]
         [--sdo-segmented] [--sdo-segmented-download] [--sdo-ca] [--sdo-ca-download]
-        [--sdo-ca-download-multi] [--expect-string=<text>] [--cia402]
+        [--sdo-ca-download-multi] [--expect-string=<text>] [--cia402] [--cia402-fault]
 退出码 0 = 全部断言通过。
 """
 import os
@@ -310,6 +310,7 @@ def main():
     sdo_ca = False
     sdo_ca_download = False
     sdo_ca_download_multi = False
+    cia402_fault = False
     for arg in sys.argv[1:]:
         if arg.startswith("--timeout="):
             timeout = float(arg.split("=", 1)[1])
@@ -327,6 +328,8 @@ def main():
             sdo_ca_download = True
         if arg == "--sdo-ca":
             sdo_ca = True
+        if arg == "--cia402-fault":
+            cia402_fault = True
         if arg == "--cia402-csv":
             cia402_csv = True
         if arg == "--cia402":
@@ -450,6 +453,26 @@ def main():
                 f"CA 下载后回读 {data.hex()} != 01 08 00 00 70",
             )
             print("OK: Complete Access 下载（0x1600 写入全部子索引并回读一致）通过")
+
+        # 5i) 可选：CiA 402 故障注入（需从站以 `--fault <code>` 启动）：断言初始 Fault
+        # bit、故障复位（控制字 bit7）清故障、0x603F 错误码可回读。
+        if cia402_fault:
+            reply = master.transact([(CMD["APRD"], 0, 0x1110, bytes(7))])
+            sw, modes_display, position = struct.unpack("<Hbi", reply[0][3][:7])
+            check(sw & 0x0008 != 0, f"注入故障后状态字 {sw:#06x} 缺 Fault bit")
+            # 故障复位：控制字 bit7 = 1（上升沿）。
+            master.transact([(CMD["APWR"], 0, 0x1100, struct.pack("<Hbi", 0x0080, 8, 0))])
+            reply = master.transact([(CMD["APRD"], 0, 0x1110, bytes(7))])
+            sw2, _, _ = struct.unpack("<Hbi", reply[0][3][:7])
+            check(sw2 & 0x0008 == 0, f"故障复位后状态字 {sw2:#06x} 仍有 Fault bit")
+            error_code = sdo_upload_segmented(master, 0x603F, 0)
+            check(
+                error_code == struct.pack("<H", 0x7500),
+                f"0x603F 错误码 {error_code.hex()} != 00 75",
+            )
+            print(
+                f"OK: CiA 402 故障注入（Fault {sw:#06x} → 复位 {sw2:#06x}，0x603F=0x7500）通过"
+            )
 
         # 5e) 可选：CiA 402 CSV（11 字节 PDO，速度模式，Tier0 累加）。
         if cia402_csv:
