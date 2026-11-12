@@ -342,6 +342,11 @@ fn serve_http(
 }
 
 #[cfg(target_os = "linux")]
+fn hex_encode(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+#[cfg(target_os = "linux")]
 fn pdo_layout(
     manifest: &Option<plugin_host::manifest::PluginManifest>,
     dir: &str,
@@ -445,6 +450,33 @@ fn serve_live_http(
         };
         let path_only = path.split('?').next().unwrap_or(path);
         let want_history = path_only == "/pdo" && path.contains("history=1");
+        let topology_body = if path_only == "/topology" {
+            let (sm2_address, sm2_len) = pdo_layout(&manifest, "out", 0x1100, 2);
+            let (sm3_address, sm3_len) = pdo_layout(&manifest, "in", 0x1110, 2);
+            let guard = responders.lock().unwrap();
+            let entries: Vec<control_plane::TopologyEntry> = guard
+                .iter()
+                .enumerate()
+                .map(|(index, responder)| {
+                    let stats = responder.stats();
+                    control_plane::TopologyEntry {
+                        index,
+                        station_address: responder.station_address(),
+                        al_status: responder.al_status(),
+                        al_status_code: responder.al_status_code(),
+                        frames_in: stats.frames_in,
+                        frames_out: stats.frames_out,
+                        sm2_address,
+                        sm2_hex: hex_encode(&responder.read_process_data(sm2_address, sm2_len)),
+                        sm3_address,
+                        sm3_hex: hex_encode(&responder.read_process_data(sm3_address, sm3_len)),
+                    }
+                })
+                .collect();
+            Some(control_plane::topology_json(&entries))
+        } else {
+            None
+        };
         let pdo_snapshot = if path_only == "/pdo" {
             let guard = responders.lock().unwrap();
             guard.first().map(|responder| {
@@ -484,13 +516,20 @@ fn serve_live_http(
                 control_plane::pdo_json_decoded(&pdo, &decoded)
             }
         });
-        let response = match pdo_response {
+        let response = match topology_body {
             Some(body) => control_plane::HttpResponse {
                 status_line: "HTTP/1.1 200 OK",
                 content_type: "application/json; charset=utf-8",
                 body,
             },
-            None => control_plane::handle_get(path, &state, dict_json.as_deref()),
+            None => match pdo_response {
+                Some(body) => control_plane::HttpResponse {
+                    status_line: "HTTP/1.1 200 OK",
+                    content_type: "application/json; charset=utf-8",
+                    body,
+                },
+                None => control_plane::handle_get(path, &state, dict_json.as_deref()),
+            },
         };
         let headers = format!(
             "{}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: {}\r\nConnection: close\r\n\r\n",

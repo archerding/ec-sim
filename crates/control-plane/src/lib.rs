@@ -529,6 +529,64 @@ pub fn pdo_json_decoded(pdo: &PdoSnapshot, decoded: &[PdoDecodedEntry]) -> Strin
     out
 }
 
+/// 多从站拓扑条目（每站只读摘要）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TopologyEntry {
+    /// 链上序号（0 = 首个从站）。
+    pub index: usize,
+    /// 配置站地址。
+    pub station_address: u16,
+    /// AL Status。
+    pub al_status: u8,
+    /// AL Status Code。
+    pub al_status_code: u16,
+    /// 收帧数。
+    pub frames_in: u64,
+    /// 发帧数。
+    pub frames_out: u64,
+    /// SM2 物理地址。
+    pub sm2_address: u16,
+    /// SM2 当前字节 hex。
+    pub sm2_hex: String,
+    /// SM3 物理地址。
+    pub sm3_address: u16,
+    /// SM3 当前字节 hex。
+    pub sm3_hex: String,
+}
+
+/// 生成 `topology-v1` JSON：链上所有从站摘要。
+#[must_use]
+pub fn topology_json(slaves: &[TopologyEntry]) -> String {
+    let mut out = format!(
+        "{{\n  \"schema\": \"ec-sim/topology-v1\",\n  \"tool\": \"ec-sim-esc {}\",\n  \"count\": {},\n  \"slaves\": [\n",
+        TOOL_VERSION,
+        slaves.len()
+    );
+    for (position, slave) in slaves.iter().enumerate() {
+        let tail = if position + 1 == slaves.len() {
+            ""
+        } else {
+            ","
+        };
+        let _ = writeln!(
+            out,
+            "    {{\"index\": {}, \"station_address\": \"0x{:04X}\", \"al_status\": \"0x{:02X}\", \"al_status_code\": \"0x{:04X}\", \"frames_in\": {}, \"frames_out\": {}, \"sm2\": {{\"address\": \"0x{:04X}\", \"hex\": \"{}\"}}, \"sm3\": {{\"address\": \"0x{:04X}\", \"hex\": \"{}\"}}}}{tail}",
+            slave.index,
+            slave.station_address,
+            slave.al_status,
+            slave.al_status_code,
+            slave.frames_in,
+            slave.frames_out,
+            slave.sm2_address,
+            slave.sm2_hex,
+            slave.sm3_address,
+            slave.sm3_hex
+        );
+    }
+    out.push_str("  ]\n}");
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -695,6 +753,30 @@ mod tests {
         assert!(json.contains("\"decoded\": ["));
         assert!(json.contains("\"index\": \"0x6040\""));
         assert!(json.contains("\"value\": 15"));
+        assert!(json.trim_end().ends_with('}'));
+    }
+
+    #[test]
+    fn topology_json_lists_all_slaves() {
+        let entry = |index: usize, station: u16| TopologyEntry {
+            index,
+            station_address: station,
+            al_status: 0x01,
+            al_status_code: 0,
+            frames_in: 10 + index as u64,
+            frames_out: 9,
+            sm2_address: 0x1100,
+            sm2_hex: "0000".to_string(),
+            sm3_address: 0x1110,
+            sm3_hex: "0000".to_string(),
+        };
+        let json = topology_json(&[entry(0, 1), entry(1, 2), entry(2, 3)]);
+        assert!(json.contains("\"schema\": \"ec-sim/topology-v1\""));
+        assert!(json.contains("\"count\": 3"));
+        assert!(json.contains("\"station_address\": \"0x0001\""));
+        assert!(json.contains("\"station_address\": \"0x0002\""));
+        assert!(json.contains("\"station_address\": \"0x0003\""));
+        assert!(json.contains("\"index\": 2"));
         assert!(json.trim_end().ends_with('}'));
     }
 

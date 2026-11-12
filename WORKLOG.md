@@ -1,5 +1,32 @@
 ---
 
+## 2026-11-13 06:15 班（低峰）— **B27：多从站拓扑 `/topology` + Web 拓扑表**
+
+**做了什么**
+- 实时 `--serve` 新增 **`GET /topology`**（topology-v1）：链上每站摘要——index、配置站地址、
+  AL 状态/状态码、收/发帧、SM2/SM3 地址与当前 hex（`--slaves 3` 时为 3 条）。
+- `control-plane` 新增 `TopologyEntry` + `topology_json` + 1 个单测（共 12 个）。
+- `web/` 新增“总线拓扑”表（#/站地址/AL/AL 码/收帧/发帧/SM2/SM3），API 载入与实时轮询同时拉取。
+- 新增 `scripts/spikes/topology-probe.sh`：初始 count=3、每站 AL=0x01/地址 0；按链上位置
+  ADP=-k 配置地址 1/2/3；写第 2 站 SM2=0xBEEF；断言摘要（第 2 站 beef、其余 0000）。
+- 更新 `docs/VERIFICATION.md`、`docs/STATUS.md`、AGENTS（B27 完成、新增 B28 多从站查看）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **222 passed**
+  （control-plane 12 / esc-core 86 / esc-node 71 / plugin-host 27+3 / wire 23）；`node --check web/app.js` 通过。
+- 验证机：重建后 `topology-probe.sh` **EXIT=0**——`OK: /topology 3 站（地址 1/2/3，第 2 站 SM2=beef，
+  其余 0000）`；`pdo-decode-probe.sh` 仍 **EXIT=0**。
+
+**卡点**
+- `/state`、`/pdo` 仍只看首个从站；逐站查看属 B28。
+
+**下次开工第一件事**
+- **B28**：`/state?slave=N` 与 `/pdo?slave=N`（默认 0、越界 404），`web/` 拓扑行点击切换查看
+  对应从站；探针校验 `--slaves 3` 下 N=1 的状态/PDO 与拓扑摘要一致。
+
+---
+---
+
 ## 2026-11-13 06:09 班（低峰）— **B26：`/pdo` 具名解码（按映射 + 字典）**
 
 **做了什么**
