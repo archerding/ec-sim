@@ -43,6 +43,27 @@
 
 ---
 
+## 2026-11-12（人工会话，补充推进）— B4 wire crate
+
+**做了什么**
+- 在低峰窗口剩余时间内继续推进（不等下一班），完成 **B4 `wire` crate**：
+  - 帧/datagram 编解码：帧头（Length 11bit + Type 4bit）、datagram 头（Cmd/Idx/ADP/ADO/Len+M/IRQ）、WKC；
+  - 一帧多 datagram（M 位）解析与编码；长度/越界/未知命令/非法帧类型全部返回错误而非 panic；
+  - 13 种命令的读写属性与 **WKC 增量规则**（读+1 / 写+1 / 读写+2）；
+  - 寻址：自增（ADP 递减语义）、配置站地址/别名匹配、广播、逻辑地址 + FMMU 区间相交判定；
+  - 从站侧自增寻址处理助手 `auto_increment_step`（ADP==1 处理，否则减 1 转发）。
+
+**验证结果**
+- `cargo test -p wire`：**16 tests passed**；
+- `cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets -- -D warnings` 均通过。
+
+**卡点**
+- 无。`wire` 目前零第三方依赖。
+
+**下次开工第一件事**
+- **B5 `esc-core` 最小 ESC**（寄存器阵列 + SM/FMMU + AL 状态机 INIT/PREOP 握手）。
+
+---
 ## 2026-11-12（人工会话）— 修正班次起始日
 
 **做了什么**
