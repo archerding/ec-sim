@@ -1,5 +1,35 @@
 ---
 
+## 2026-11-13 05:31 班（低峰）— **B19：`--dump-dict --json`（dict-v1）+ Web 对象字典视图**
+
+**做了什么**
+- `ec-sim-esc --dump-dict` 新增 **`--json`**：输出 **dict-v1** JSON（schema/tool/对象数/条目数/
+  objects[]：index、max_sub、code、name、entries[]（sub/type/bits/access/name/value_hex））——
+  仍是手写序列化，无新依赖；纯文本输出保持向后兼容。
+- `web/app.js` 扩展为同时支持 **state-v1** 与 **dict-v1**：单文件选择框可分别载入两份 JSON，
+  静态服务下自动尝试读取同目录 `state.json`/`dict.json`；新增对象字典表格（值显示为大端
+  hex + 原始小端 hex）。`web/index.html` 说明与 `multiple` 选择同步更新。
+- 新增 `scripts/spikes/dump-dict-probe.sh`：对 CST/SV660N 两个画像校验 dict-v1 schema、
+  对象/条目数、`0x6502` 值（0x0410/0x3AD 小端）、`0x6040` = rw/16，并校验纯文本 dump 仍可用。
+- 更新 `docs/STATUS.md` 快速开始、`docs/VERIFICATION.md` 索引、AGENTS（B19 完成、新增 B20
+  控制面最小 API 骨架）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **210 passed**；
+  `json.load` 校验 dict-v1（CST 15 对象/31 条目、SV 40/134）；`node --check web/app.js` 通过；
+  本地探针 3 条 OK。
+- 验证机：重建后 `dump-dict-probe.sh` **EXIT=0**（CST 15/31、SV660N 40/134、0x6502/0x6040 一致）。
+
+**卡点**
+- 仍是静态 JSON + 只读页；实时控制面 API 属后续（B20）。
+
+**下次开工第一件事**
+- **B20**：`control-plane` 最小 API 骨架（StateSnapshot/DictSnapshot + JSON 编解码 + `/state`、
+  `/dict` 路由表 + 单元测试），复用现有 dump 逻辑，为 HTTP/JSON API 与 Web 实时视图打基础。
+
+---
+---
+
 ## 2026-11-13 05:26 班（低峰）— **B18：`--dump-state` JSON + Web 只读状态页（M2 起点）**
 
 **做了什么**

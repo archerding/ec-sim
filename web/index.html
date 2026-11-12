@@ -30,13 +30,14 @@
   <div class="sub">
     数据源：<code>ec-sim-esc --dump-state</code> 生成的 JSON（M2 WebUI 的最小起点，只读）。
     可直接把 JSON 文件拖入下方，或先执行
-    <code>ec-sim-esc --dump-state --manifest plugins/… &gt; web/state.json</code> 后
+    <code>ec-sim-esc --dump-state --manifest plugins/… &gt; web/state.json</code> 或
+    <code>ec-sim-esc --dump-dict --json --manifest plugins/… &gt; web/dict.json</code> 后
     <code>python3 -m http.server 8080 --directory web</code>，页面会自动读取同目录 <code>state.json</code>。
   </div>
 
   <section>
     <h2>载入状态</h2>
-    <input id="file" type="file" accept="application/json,.json" />
+    <input id="file" type="file" accept="application/json,.json" multiple />
     <div id="message" class="sub"></div>
   </section>
 

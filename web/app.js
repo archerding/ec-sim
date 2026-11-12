@@ -1,9 +1,14 @@
 // EC-Sim 只读状态视图（M2 起点）：仅原生 JS，无第三方依赖。
-// 输入：`ec-sim-esc --dump-state` 输出的 state-v1 JSON（见 docs/DEVICE-PLUGINS.md / bin）。
+// 支持两类输入（也可同时载入，先状态后字典）：
+//   - `ec-sim-esc --dump-state` 的 state-v1 JSON；
+//   - `ec-sim-esc --dump-dict --json` 的 dict-v1 JSON。
 "use strict";
 
 const app = document.getElementById("app");
 const message = document.getElementById("message");
+
+let currentState = null;
+let currentDict = null;
 
 function el(tag, attrs, ...children) {
   const node = document.createElement(tag);
@@ -19,7 +24,11 @@ function el(tag, attrs, ...children) {
 
 function table(headers, rows) {
   const thead = el("thead", {}, el("tr", {}, ...headers.map((h) => el("th", {}, h))));
-  const tbody = el("tbody", {}, ...rows.map((row) => el("tr", {}, ...row.map((cell) => el("td", {}, cell)))));
+  const tbody = el(
+    "tbody",
+    {},
+    ...rows.map((row) => el("tr", {}, ...row.map((cell) => el("td", {}, cell)))),
+  );
   return el("table", {}, thead, tbody);
 }
 
@@ -37,14 +46,11 @@ function kvGrid(pairs) {
   );
 }
 
-function render(state) {
-  app.replaceChildren();
-
+function renderState(state) {
   if (state.schema !== "ec-sim/state-v1") {
-    app.append(el("section", {}, el("div", { class: "error" }, `未知 schema：${state.schema}`)));
+    app.append(section("状态", el("div", { class: "error" }, `未知 schema：${state.schema}`)));
     return;
   }
-
   const identity = state.identity || {};
   app.append(
     section(
@@ -86,7 +92,10 @@ function render(state) {
   ]);
   app.append(section("Sync Manager", table(["#", "起始地址", "长度", "Control", "Status", "Enable"], smRows)));
 
-  for (const [label, key] of [["RxPDO（主站 → 从站）", "pdo_rx"], ["TxPDO（从站 → 主站）", "pdo_tx"]]) {
+  for (const [label, key] of [
+    ["RxPDO（主站 → 从站）", "pdo_rx"],
+    ["TxPDO（从站 → 主站）", "pdo_tx"],
+  ]) {
     const rows = [];
     for (const pdo of state[key] || []) {
       const entries = (pdo.entries || [])
@@ -114,29 +123,95 @@ function render(state) {
       ),
     );
   }
-
-  app.append(el("p", { class: "sub" }, `由 ${state.tool} 生成；只读视图，不构成一致性/认证结论。`));
 }
 
-async function loadState(text, source) {
+function hexToBigEndian(hex) {
+  if (!hex) return "-";
+  const bytes = hex.match(/../g) || [];
+  return "0x" + bytes.reverse().join("");
+}
+
+function renderDict(dict) {
+  if (dict.schema !== "ec-sim/dict-v1") {
+    app.append(section("对象字典", el("div", { class: "error" }, `未知 schema：${dict.schema}`)));
+    return;
+  }
+  const rows = [];
+  for (const object of dict.objects || []) {
+    if (!object.entries || object.entries.length === 0) {
+      rows.push([object.index, "-", object.name, "", "", "", ""]);
+      continue;
+    }
+    for (const entry of object.entries) {
+      rows.push([
+        entry.sub === 0 ? object.index : "",
+        String(entry.sub).padStart(2, "0"),
+        entry.name || object.name,
+        entry.type,
+        entry.bits,
+        entry.access,
+        entry.value_hex === "" ? "-" : `${hexToBigEndian(entry.value_hex)} (${entry.value_hex})`,
+      ]);
+    }
+  }
+  app.append(
+    section(
+      "对象字典",
+      el(
+        "p",
+        { class: "sub" },
+        `对象 ${dict.object_count} 个 / 条目 ${dict.entry_count} 个（值按小端存储，显示为 0x 大端十六进制）。`,
+      ),
+      table(["索引", "子索引", "名称", "类型", "位长", "访问", "值"], rows),
+    ),
+  );
+}
+
+function renderAll() {
+  app.replaceChildren();
+  if (currentState) renderState(currentState);
+  if (currentDict) renderDict(currentDict);
+  if (!currentState && !currentDict) {
+    app.append(
+      section(
+        "载入状态",
+        el("p", { class: "sub" }, "请选择 --dump-state / --dump-dict --json 生成的 JSON（可分别载入，先状态后字典）。"),
+      ),
+    );
+  }
+  app.append(el("p", { class: "sub" }, "只读视图，不构成一致性/认证结论。"));
+}
+
+function loadJson(text, source) {
   try {
-    const state = JSON.parse(text);
+    const data = JSON.parse(text);
+    if (data.schema === "ec-sim/state-v1") currentState = data;
+    else if (data.schema === "ec-sim/dict-v1") currentDict = data;
+    else throw new Error(`未知 schema：${data.schema}`);
     message.textContent = `已载入：${source}`;
-    render(state);
+    renderAll();
   } catch (error) {
     message.textContent = `解析失败：${error.message}`;
   }
 }
 
 document.getElementById("file").addEventListener("change", async (event) => {
-  const file = event.target.files[0];
-  if (file) loadState(await file.text(), file.name);
+  const files = Array.from(event.target.files || []);
+  for (const file of files) loadJson(await file.text(), file.name);
 });
 
-// 若页面由静态服务器提供，则尝试同目录 state.json；file:// 下 fetch 会失败，忽略即可。
-fetch("state.json")
-  .then((response) => (response.ok ? response.text() : Promise.reject(new Error(String(response.status)))))
-  .then((text) => loadState(text, "state.json"))
-  .catch(() => {
-    if (!message.textContent) message.textContent = "请选择 --dump-state 生成的 JSON 文件（或放置 web/state.json）。";
-  });
+function tryFetchJson(name) {
+  return fetch(name)
+    .then((response) => (response.ok ? response.text() : Promise.reject(new Error(String(response.status)))))
+    .then((text) => loadJson(text, name))
+    .catch(() => {});
+}
+
+// 静态服务下尝试自动读取同目录 state.json / dict.json；file:// 下会失败，忽略即可。
+Promise.all([tryFetchJson("state.json"), tryFetchJson("dict.json")]).then(() => {
+  if (!currentState && !currentDict) {
+    message.textContent =
+      "请选择 --dump-state（state-v1）或 --dump-dict --json（dict-v1）生成的 JSON，或放置 web/state.json、web/dict.json。";
+    renderAll();
+  }
+});

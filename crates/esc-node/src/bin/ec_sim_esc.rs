@@ -6,7 +6,7 @@
 //! ec-sim-esc --uds /tmp/ecsim.sock [--verbose] [--esm-lax] [--manifest ...] [--slaves N]
 //! ec-sim-esc --tap escsim0 [--esi <file.esi.xml>]   # B6：ESI XML → SII
 //! ec-sim-esc --dump-sii [--manifest ... | --esi ...]  # 打印 SII hex/类别链后退出
-//! ec-sim-esc --dump-dict [--manifest ... | --esi ...] # 打印运行时对象字典后退出
+//! ec-sim-esc --dump-dict [--json] [--manifest ... | --esi ...] # 打印运行时对象字典（--json = dict-v1）后退出
 //! ec-sim-esc --dump-state [--manifest ... | --esi ...] # 打印只读状态 JSON（M2 WebUI 数据源）
 //! ec-sim-esc --version                                # 打印版本
 //!
@@ -33,6 +33,7 @@
 fn dump_dict_and_exit(
     manifest_path: Option<&str>,
     esi_path: Option<&str>,
+    json: bool,
 ) -> std::process::ExitCode {
     use esc_core::obj_dict::ObjectDictionary;
 
@@ -55,6 +56,69 @@ fn dump_dict_and_exit(
             return std::process::ExitCode::from(2);
         }
     };
+    if json {
+        use std::fmt::Write as _;
+        let entry_count: usize = dict
+            .objects()
+            .iter()
+            .map(|object| usize::from(object.max_subindex) + 1)
+            .sum();
+        let mut out = String::new();
+        let _ = writeln!(out, "{{");
+        let _ = writeln!(out, "  \"schema\": \"ec-sim/dict-v1\",");
+        let _ = writeln!(
+            out,
+            "  \"tool\": \"ec-sim-esc {}\",",
+            env!("CARGO_PKG_VERSION")
+        );
+        let _ = writeln!(out, "  \"object_count\": {},", dict.objects().len());
+        let _ = writeln!(out, "  \"entry_count\": {entry_count},");
+        let _ = writeln!(out, "  \"objects\": [");
+        for (object_pos, object) in dict.objects().iter().enumerate() {
+            let _ = writeln!(out, "    {{");
+            let _ = writeln!(out, "      \"index\": \"0x{:04X}\",", object.index);
+            let _ = writeln!(out, "      \"max_sub\": {},", object.max_subindex);
+            let _ = writeln!(out, "      \"code\": \"0x{:04X}\",", object.object_code);
+            let _ = writeln!(out, "      \"name\": \"{}\",", json_escape(&object.name));
+            let _ = writeln!(out, "      \"entries\": [");
+            let mut wrote_entry = false;
+            for subindex in 0..=object.max_subindex {
+                let Some(entry) = dict.entry(object.index, subindex) else {
+                    continue;
+                };
+                if wrote_entry {
+                    out.push_str(",\n");
+                }
+                let access = if entry.writable { "rw" } else { "ro" };
+                let value_hex: String = entry
+                    .value
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect();
+                let _ = write!(
+                    out,
+                    "        {{\"sub\": {subindex}, \"type\": \"0x{:04X}\", \"bits\": {}, \"access\": \"{access}\", \"name\": \"{}\", \"value_hex\": \"{value_hex}\"}}",
+                    entry.data_type,
+                    entry.bit_length,
+                    json_escape(&entry.name)
+                );
+                wrote_entry = true;
+            }
+            let _ = writeln!(out);
+            let tail = if object_pos + 1 == dict.objects().len() {
+                ""
+            } else {
+                ","
+            };
+            let _ = writeln!(out, "      ]");
+            let _ = writeln!(out, "    }}{tail}");
+        }
+        let _ = writeln!(out, "  ]");
+        let _ = writeln!(out, "}}");
+        print!("{out}");
+        return std::process::ExitCode::SUCCESS;
+    }
+
     println!(
         "ec-sim-esc dictionary dump: objects={} entries={}",
         dict.objects().len(),
@@ -355,6 +419,7 @@ fn main() -> std::process::ExitCode {
     let mut poll = false;
     let mut dump_sii = false;
     let mut dump_dict = false;
+    let mut dump_json = false;
     let mut dump_state = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -433,6 +498,7 @@ fn main() -> std::process::ExitCode {
             "--poll" => poll = true,
             "--dump-sii" => dump_sii = true,
             "--dump-dict" => dump_dict = true,
+            "--json" => dump_json = true,
             "--dump-state" => dump_state = true,
             "--version" | "-V" => {
                 println!("ec-sim-esc {}", env!("CARGO_PKG_VERSION"));
@@ -447,7 +513,7 @@ fn main() -> std::process::ExitCode {
                      [--manifest <plugin.yaml>] [--esi <file.esi.xml>] [--behavior cia402]
                      [--fault <hex>（需 --behavior cia402）] [--slaves <1..64>] [--poll]
                      调试：--dump-sii [--manifest <yaml>] [--esi <xml>] 打印 SII 镜像 hex/类别链后退出；
-                     --dump-dict [--manifest <yaml>] [--esi <xml>] 打印运行时对象字典后退出；
+                     --dump-dict [--json] [--manifest <yaml>] [--esi <xml>] 打印运行时对象字典后退出（--json 输出 dict-v1）；
                      --dump-state [--manifest <yaml>] [--esi <xml>] 打印只读状态 JSON（供 WebUI/工具消费）；
                      --version 打印版本。"
                 );
@@ -461,7 +527,7 @@ fn main() -> std::process::ExitCode {
     }
 
     if dump_dict {
-        return dump_dict_and_exit(manifest_path.as_deref(), esi_path.as_deref());
+        return dump_dict_and_exit(manifest_path.as_deref(), esi_path.as_deref(), dump_json);
     }
 
     if dump_state {
