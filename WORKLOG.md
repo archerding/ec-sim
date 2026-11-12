@@ -6,6 +6,55 @@
 
 ---
 
+## 2026-11-12 18:56 班（低峰）— IgH 拓扑计算修复：DL Status（0x0110）端口位按 ETG.1000.4 复核
+
+**做了什么**
+- 修正 `esc-node` 的 DL Status 初值：`0x503F` → `0x5610`，并新增 `dl_status_value()`（`const fn`）按
+  **ETG.1000.4 table 34** 的位布局拼装：bit0–2 = DL user operational / DL user watchdog /
+  extended link detection，bit3 保留；bit(4+i) = 端口 i 物理链路；bit(8+2i) = 端口 i `loop_back`；
+  bit(9+2i) = 端口 i `signal_detection`。
+- 证据链（两家主站源码交叉复核，只读参考、未复制代码）：
+  - IgH 1.6.13 `master/fsm_slave_scan.c: ec_fsm_slave_scan_state_datalink()`：
+    `link_up = dl_status & (1 << (4+i))`、`loop_closed = dl_status & (1 << (8+2i))`、
+    `signal_detected = dl_status & (1 << (9+2i))`；
+  - IgH 1.6.13 `master/master.c: ec_master_calc_topology_rec()`：按端口 **3 → 1 → 2**
+    （`next_table = {3,2,0,1}`）检查 `loop_closed`，为 0 即认为端口后还有从站；单从站时递归越界返回 -1
+    → `Failed to calculate bus topology`。旧值把端口 1 报成"环回开放"（bit10=0），故必现。
+    **旧注释"只对端口 3、2 检查"也是错的**（实际 3/1/2），一并更正；
+  - SOEM `src/ec_config.c: ecx_config_init()`：端口两位 `(0x3 << (8+2i)) == (0x2 << (8+2i))`
+    表示"端口开放且通信建立"，与"闭合端口 signal=0"一致。
+- 新增 4 条单测：位布局逐位断言、复刻 IgH 拓扑判定（端口 3/1/2 必须闭合）、复刻 SOEM
+  `topology/activeports` 提取（单链路 = `1`、`Activeports:1.0.0.0`）、APRD 0x0110 可读。
+- `scripts/spikes/minimal-esc-responder.sh` 升级为**断言脚本**：扫描前 `dmesg -C`，
+  扫描后若内核日志出现 `Failed to calculate bus topology` 则 FAIL & exit 1，否则打印
+  `OK: 单从站拓扑计算未报错`。
+- 文档同步：[spike-3](docs/spikes/spike-3-minimal-esc-responder.md) §3 证据 / §4 第 4 个真问题 /
+  §5 限制 / §6 下一步；`AGENTS.md` §6 B2b 行。
+
+**验证结果**
+- 本机 Windows（rustc 1.97.1）：`cargo fmt --all -- --check` exit 0；
+  `cargo clippy --workspace --all-targets -- -D warnings` exit 0；
+  `cargo test --workspace` **55 passed**（esc-core 25 / esc-node 14 / wire 16），本项新增 4 条。
+- Linux 验证机（**未修改的** IgH 1.6.13 + SOEM）：
+  - `dmesg` 本次扫描段：`Scanning bus.` → `Bus scanning completed in 6 ms.` → `No DC reference clock found.`，
+    **无** `Failed to calculate bus topology`（修正前必现，对照见 18:33/13:27 班记录）；
+  - IgH `ethercat slaves`：`0  0:0  PREOP  +  0x00000ec5:0x0000e5c1`（无回归）；
+  - SOEM `slaveinfo`：`1 slaves found and configured`、`Activeports:1.0.0.0`、`Man/ID` 不变（无回归）；
+  - 升级后脚本整体 `SPIKE_RC=0`，拓扑断言 `OK: 单从站拓扑计算未报错`。
+
+**卡点**
+- VM 锁 18:55:30 被其他 worker 占用，19:0x 释放后取得；期间先做本地实现 + 单测，未空等。
+- ⚠️ 只验证了**单从站**拓扑；多从站链/分支时各从站 `loop_closed` 必须按实际拓扑上报，
+  需 ≥2 从站才能验证，留到 B8。
+- 其余：无代码/网络卡点（push 正常）。
+
+**下次开工第一件事**
+- **B5 可独立子项（B8 的前置）**：`esc-core` 补 SM（0x0800–0x087F）/ FMMU（0x0600–0x06FF）
+  寄存器块的读写语义与主站配置阶段会用到的 PREOP→SAFEOP 握手（邮箱 SM0/SM1 先只声明不实现传输），
+  单测覆盖；这是 B7 CoE 与 B8 进 OP 的地基。
+
+---
+
 ## 2026-11-12 18:33 班（低峰）— SII 固定区 CRC-8（word 0x0007）实现，SOEM eepromtool 交叉验证
 
 **做了什么**

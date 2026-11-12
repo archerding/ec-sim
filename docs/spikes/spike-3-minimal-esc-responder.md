@@ -40,6 +40,7 @@ ecx_init on escsim0 succeeded.
 Slave:1
  Name:EC-Sim SIMULATED slave
  State: 4
+ Activeports:1.0.0.0
  Configured address: 1001
  Man: 00000ec5 ID: 0000e5c1 Rev: 00000001
  MBX length wr: 0 rd: 0 MBX protocols : 00
@@ -57,10 +58,21 @@ Master0
       Rx frames: 1102   Lost frames: 0
 ```
 
+IgH 内核日志（2026-11-12 18:56 班，DL Status 修正后；`dmesg` 本次扫描段）：
+
+```
+EtherCAT 0: 1 slave(s) responding on main device. Re-scanning on next possibility.
+EtherCAT 0: Scanning bus.
+EtherCAT 0: Bus scanning completed in 6 ms.
+EtherCAT 0: No DC reference clock found.
+```
+
+**没有** `Failed to calculate bus topology`（修正前该行必现，见 §4 第 4 条）。
+
 应答器侧统计（`--verbose` 每 50 帧打印一次）：`in=1100 out=1094 dropped=6 hits=1094`，
 `al=0x02`（PREOP），说明主站 AL 握手被正确处理。
 
-## 4. 过程中发现并修正的三个真问题
+## 4. 过程中发现并修正的四个真问题
 
 1. **以太网填充**：IgH 主站把短 EtherCAT 帧补零到 60 字节（`Tx bytes / Tx frames = 60`），
    帧头声明长度小于实际长度。严格"声明长度==实际长度"的校验会**静默丢弃全部 IgH 帧**
@@ -72,12 +84,27 @@ Master0
    （IgH `master/datagram.c`：`(int16_t) ring_position * (-1)`；SOEM `src/ec_config.c`：
    `ADPh = (uint16)(1 - slave)`），每个从站转发前把 ADP **加 1**，收到 0 的从站执行。
    原实现"ADP==1 执行、转发减 1"会整体偏移一个从站号，已按源码证据修正并更新单测。
+4. **DL Status（0x0110）端口位错位**（2026-11-12 18:56 班修复）：IgH 内核日志
+   `Failed to calculate bus topology`（从站列表/状态本身正常、无 `E` 标志）。
+   - 真实位布局（ETG.1000.4 table 34，经 IgH `master/fsm_slave_scan.c: ec_fsm_slave_scan_state_datalink()`
+     与 SOEM `src/ec_config.c: ecx_config_init()` 的解析交叉复核）：
+     bit0–2 DL user operational/watchdog/extended link detection、bit3 保留；
+     bit(4+i) 端口 i 物理链路；bit(8+2i) 端口 i `loop_back`；bit(9+2i) 端口 i `signal_detection`。
+   - IgH `ec_master_calc_topology_rec()` 按端口 **3 → 1 → 2** 顺序检查 `loop_closed`
+     （`next_table = {3, 2, 0, 1}`）：`loop_closed == 0` 表示该端口后还有从站，单从站时
+     递归越界即返回 -1 → 打印上述错误。旧值 `0x503F` 把端口 1 报成"环回开放"（bit10=0），故必现。
+   - 修正为单从站正确值 `0x5610`：端口 0 链路 up + 有信号，端口 1–3 环回闭合、无信号；
+     `esc-node::dl_status_value()` 按位拼装，单测复刻了 IgH 拓扑判定与 SOEM 的
+     `topology/activeports` 提取。修正后同一脚本下错误消失（见 §3 证据），SOEM `slaveinfo`
+     （`1 slaves found and configured`、`Activeports:1.0.0.0`）与 IgH `ethercat slaves`
+     均无回归。
 
 ## 5. 已知限制 / ⚠️ 待验证
 
-- **拓扑计算仍报错**：IgH 日志有 `Failed to calculate bus topology`（从站列表本身正常、无 `E` 标志）。
-  `ec_master_calc_topology_rec()` 只对端口 3/2 检查 `loop_closed`；当前 DL Status 置了这两个端口的
-  闭合位但仍不满足，端口 0/1 的真实链路语义待按 ESC Sec.II 逐位复核（⚠️ 待验证）。
+- ~~**拓扑计算仍报错**~~ ✅ **2026-11-12 18:56 班已修**：DL Status 端口位按 ETG.1000.4 table 34
+  修正（见 §4 第 4 条），IgH `Failed to calculate bus topology` 消失。
+  ⚠️ 仅覆盖**单从站**拓扑；多从站链/分支的端口位语义（各从站 `loop_closed` 应按实际拓扑）
+  留到 B8 有 2 个以上从站时验证。
 - **SII 固定区 CRC-8 已实现（2026-11-12 晚班，B6 子项）**：CRC 在 **word 0x0007**，
   覆盖 word 0x0000–0x0006（14 字节），多项式 `x^8 + x^2 + x + 1`（0x07）、初值 0xFF、MSB-first；
   早期文档把位置记成 word 0x003F，经 SOEM `eepromtool`（`SIIcrc()` 写 word 0x0007、`-i` 同屏打印
@@ -93,5 +120,6 @@ Master0
 
 ## 6. 下一步
 
-- **B8 双主站冒烟**：补齐 SM/FMMU/PDO 让两个主站都进 OP，并把本 spike 的脚本升级为断言脚本；
-- 先修 IgH 拓扑端口位（小项，可独立验证）。
+- **B8 双主站冒烟**：补齐 SM/FMMU/PDO 让两个主站都进 OP，并把本 spike 的脚本升级为断言脚本
+  （拓扑断言已于 2026-11-12 18:56 班加入 `minimal-esc-responder.sh`）；
+- DL Status 将在**多从站**场景下按实际拓扑继续验证（单从站已 ✅）。

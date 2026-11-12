@@ -30,6 +30,9 @@ ip link set "$TAP" address "$MAC"
 ip link set "$TAP" up
 sleep 0.3
 
+# 清空内核日志：下面要断言本次扫描的拓扑计算结果（IgH 在 calc_topology 失败时打日志）。
+dmesg -C 2>/dev/null || true
+
 echo "=== SOEM slaveinfo ==="
 "$SOEM_SLAVEINFO" "$TAP" 2>&1 | sed -n '1,20p'
 
@@ -38,6 +41,14 @@ modprobe ec_master main_devices="$MAC"
 modprobe ec_generic
 sleep 2
 "$IGH_ETHERCAT" slaves
+
+echo "=== IgH master log: 拓扑计算断言 ==="
+if dmesg | grep -q "Failed to calculate bus topology"; then
+  echo "FAIL: Failed to calculate bus topology（DL Status 端口位仍不符 IgH 期望）"
+  dmesg | grep -iE "ethercat|topology" | tail -n 10
+  exit 1
+fi
+echo "OK: 单从站拓扑计算未报错"
 
 echo "=== responder stats ==="
 cat /tmp/ec-sim-esc.log

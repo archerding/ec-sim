@@ -84,7 +84,9 @@ user.email = deepseek-harness@users.noreply.github.com
   （`Man: 00000ec5 ID: 0000e5c1`），IgH `ethercat slaves` 报 `0  0:0  PREOP  +  0x00000ec5:0x0000e5c1`。
   证据：[spike-3](docs/spikes/spike-3-minimal-esc-responder.md)、[复现脚本](scripts/spikes/minimal-esc-responder.sh)。
   顺带修正 `wire::auto_increment_step` 的 ADP 方向（主站 ADP = 环位置相反数、转发前 +1）。
-  ⚠️ 未进 OP（无 mailbox/PDO/SM/FMMU）；IgH 拓扑计算仍报错（端口位待复核）；SII 固定区 CRC-8 已补齐（word 0x0007，B6 子项，2026-11-12 晚班）。
+  ⚠️ 未进 OP（无 mailbox/PDO/SM/FMMU）；IgH 拓扑计算已修（DL Status 0x0110 位按 ETG.1000.4 table 34
+  修正为单从站正确值 `0x5610`，`Failed to calculate bus topology` 消失，2026-11-12 18:56 班；多从站拓扑待 B8）；
+  SII 固定区 CRC-8 已补齐（word 0x0007，B6 子项，2026-11-12 晚班）。
 - [x] ~~**B2 Spike 1（Linux TAP）**~~ ✅ **2026-11-12 完成**：TAP 双向承载 0x88A4，且**未修改的 SOEM 与 IgH 都能绑定 TAP 并发出真实帧**（IgH `ec_generic` 按 MAC 匹配 TAP）。证据：[spike-1](docs/spikes/spike-1-tap-bidirectional.md)、[spike-2](docs/spikes/spike-2-masters-on-tap.md)。
 - [ ] **B3 Spike 4（SOEM oshw shim）**：把 SOEM 的 `oshw` 收发包替换成 UDS，跑通 `ec_config_init` + `ec_config_map`（SOEM 以独立进程/容器方式使用）。
 - [x] ~~**B4 `wire` crate**~~ ✅ **2026-11-12 完成**：帧/datagram 编解码、M 位串联、13 命令 WKC 规则、自增/配置/广播/逻辑寻址、FMMU 区间判定；16 个单元测试；fmt/clippy(-D warnings) 通过。证据：commit `9d32597`。

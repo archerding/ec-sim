@@ -25,15 +25,57 @@ use wire::{
 /// 本从站应答时使用的默认 MAC（TAP 接口 MAC 由 CLI 从 `/sys/class/net` 读取后覆盖）。
 pub const DEFAULT_SIM_MAC: [u8; 6] = [0x02, 0xec, 0x51, 0x4d, 0x00, 0x02];
 
-/// DL Status 初值：
-/// - bit0–3：端口 0–3 通信状态；
-/// - bit4/bit5：端口 0/1 链路建立；
-/// - bit12/bit14（`8 + 2*i`，i=2/3）：端口 2/3 环回闭合。
+/// 按 DL Status（0x0110）的位布局拼出寄存器值。
 ///
-/// IgH `master.c: ec_master_calc_topology_rec()` 只对端口 3、2 检查 `loop_closed`：
-/// 未接端口必须报"闭合"，否则它认为该端口后还有从站，单从站时拓扑计算会失败
-/// （现象：`Failed to calculate bus topology`）。端口 0/1 由链路位表示。
-pub const DL_STATUS_INITIAL: u16 = 0x503F;
+/// 位布局见 ETG.1000.4 table 34（与两家主站的解析一致）：
+/// - bit0：DL user operational（PDI 已连接且工作）；bit1：DL user watchdog（未超时）；
+///   bit2：extended link detection 已激活；bit3：保留；
+/// - bit(4+i)：端口 i 的**物理链路**（ESC 扫描时主站读它填 `ports[i].link.link_up`）；
+/// - bit(8+2i)：端口 i 的 `loop_back`（链路断开时 ESC 自动把环回闭合）；
+/// - bit(9+2i)：端口 i 的 `signal_detection`（该端口 RX 上检测到信号）。
+///
+/// 证据：IgH 1.6.13 `master/fsm_slave_scan.c: ec_fsm_slave_scan_state_datalink()`：
+/// `link_up = dl_status & (1 << (4 + i))`、`loop_closed = dl_status & (1 << (8 + i * 2))`、
+/// `signal_detected = dl_status & (1 << (9 + i * 2))`；
+/// SOEM `src/ec_config.c: ecx_config_init()` 用
+/// `(topology & (0x3 << (8 + 2i))) == (0x2 << (8 + 2i))` 判"端口开放且有通信"，
+/// 与"闭合端口的 signal_detection 必须为 0"一致。
+#[must_use]
+pub const fn dl_status_value(
+    link_up: [bool; 4],
+    loop_closed: [bool; 4],
+    signal_detected: [bool; 4],
+) -> u16 {
+    let mut value = 0u16;
+    let mut port = 0usize;
+    while port < 4 {
+        if link_up[port] {
+            value |= 1 << (4 + port);
+        }
+        if loop_closed[port] {
+            value |= 1 << (8 + 2 * port);
+        }
+        if signal_detected[port] {
+            value |= 1 << (9 + 2 * port);
+        }
+        port += 1;
+    }
+    value
+}
+
+/// 单从站（只有端口 0 连到主站）的 DL Status 初值：端口 0 链路 up 且有信号，
+/// 端口 1–3 未接、环回闭合且无信号；bit0–3 全 0（本阶段不模拟 PDI，无 DL user）。
+///
+/// IgH `master/master.c: ec_master_calc_topology_rec()` 按端口 **3 → 1 → 2** 顺序检查
+/// `loop_closed`（见 `next_table[EC_MAX_PORTS] = {3, 2, 0, 1}`）：未接端口必须报"闭合"，
+/// 否则它认为该端口后还有从站、单从站时拓扑计算失败
+/// （现象：`Failed to calculate bus topology`）。旧值 `0x503F` 把端口 1 报成"环回开放"，
+/// 正是该报错的原因。
+pub const DL_STATUS_INITIAL: u16 = dl_status_value(
+    [true, false, false, false],
+    [false, true, true, true],
+    [true, false, false, false],
+);
 
 /// 应答统计（便于现场取证）。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -494,5 +536,82 @@ mod tests {
         wire::set_ethertype(&mut frame, 0x0800);
         assert!(responder.handle_frame(&frame, DEFAULT_SIM_MAC).is_none());
         assert_eq!(responder.stats().frames_dropped, 1);
+    }
+
+    #[test]
+    fn dl_status_layout_matches_esc_sec_ii_fields() {
+        // ETG.1000.4 table 34：bit0–3 DL user/保留，bit4–7 物理链路，
+        // bit8–15 每端口两个位（loop_back, signal_detection）。
+        assert_eq!(DL_STATUS_INITIAL, 0x5610);
+        assert_eq!(
+            DL_STATUS_INITIAL & 0x000F,
+            0,
+            "本阶段不模拟 PDI，DL user/watchdog/extended link 位应为 0"
+        );
+        for port in 0..4usize {
+            assert_eq!(
+                DL_STATUS_INITIAL >> (4 + port) & 1,
+                u16::from(port == 0),
+                "端口 {port} 链路位"
+            );
+            assert_eq!(
+                DL_STATUS_INITIAL >> (8 + 2 * port) & 1,
+                u16::from(port != 0),
+                "端口 {port} loop_back 位"
+            );
+            assert_eq!(
+                DL_STATUS_INITIAL >> (9 + 2 * port) & 1,
+                u16::from(port == 0),
+                "端口 {port} signal_detection 位"
+            );
+        }
+    }
+
+    #[test]
+    fn ig_h_topology_rec_accepts_single_slave_dl_status() {
+        // 复刻 IgH 1.6.13 `ec_master_calc_topology_rec()` 的单从站分支：
+        // 按端口 3 → 1 → 2 检查，`loop_closed == 0` 表示该端口后还有从站；
+        // 若此时环位置已到尾部则返回 -1，即内核日志 `Failed to calculate bus topology`。
+        let dl = DL_STATUS_INITIAL;
+        for port in [3usize, 1, 2] {
+            let loop_closed = dl & (1 << (8 + 2 * port)) != 0;
+            assert!(
+                loop_closed,
+                "单从站时端口 {port} 必须报环路闭合，否则 IgH 拓扑计算失败"
+            );
+        }
+    }
+
+    #[test]
+    fn soem_topology_extraction_sees_end_of_line_single_slave() {
+        // 复刻 SOEM `ec_config.c` 的拓扑提取：端口两位为 0b10 表示"端口开放且有通信"。
+        let dl = DL_STATUS_INITIAL;
+        let (mut topology, mut active_ports) = (0u32, 0u8);
+        for port in 0..4usize {
+            if (dl >> (8 + 2 * port)) & 0x3 == 0x2 {
+                topology += 1;
+                active_ports |= 1 << port;
+            }
+        }
+        assert_eq!(topology, 1, "单链路 = end of line");
+        assert_eq!(active_ports, 0x01, "只有端口 0 链路建立");
+    }
+
+    #[test]
+    fn dl_status_register_is_readable_over_aprd() {
+        let mut responder = Responder::default();
+        let frame = request(&[DatagramData::auto_increment(
+            Command::Aprd,
+            1,
+            0,
+            0x0110,
+            vec![0u8; 2],
+        )]);
+        let reply = responder
+            .handle_frame(&frame, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let (wkc, data) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 2);
+        assert_eq!(wkc, 1);
+        assert_eq!(u16::from_le_bytes([data[0], data[1]]), DL_STATUS_INITIAL);
     }
 }
