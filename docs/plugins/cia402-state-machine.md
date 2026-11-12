@@ -23,6 +23,16 @@ Tier0 简化行为：`Operation enabled` 时**实际位置直接跟随目标位�
 并置状态字 bit10 `Target reached`；禁用电压后位置保持最后值。SM 长度 < 7 时退化为只读写
 状态字 2 字节（用于 8DO 等非伺服画像）。
 
+## 模式与错误注入（Tier0）
+
+- **模式门控**：只有 **CSP（模式 8）** 在 `Operation enabled` 时让实际位置跟随目标并置
+  `Target reached`；其它模式（如 CSV=9、CST=10）位置冻结、不置 `Target reached`
+  （当前 7 字节 PDO 不含速度/转矩目标，无法模拟这些模式）。`0x6061` 始终镜像 `0x6060`。
+- **错误注入**：`Responder::inject_cia402_fault(error_code)` 让状态机进入 `Fault`
+  （状态字 `0x0208`），并把错误码写入对象 `0x603F`（经 SDO 可读回）；控制字 bit7
+  `Fault reset` 使状态机回到 `Switch on disabled`（`0x0240`），**错误码保留**
+  ⚠️（Tier0 简化：未模拟真机"错误码清除"时序）。
+
 ⚠️ 以上是**模拟器行为**，不是真实伺服运动模型；不构成一致性结论。
 
 ## 采用的事实（CiA 402 公开 profile）

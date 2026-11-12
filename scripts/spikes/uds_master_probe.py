@@ -280,6 +280,7 @@ def main():
                 (0x0006, 8, 1000, 0x0221, 0),      # Shutdown → Ready
                 (0x0007, 8, 1000, 0x0223, 0),      # Switch on → Switched on
                 (0x000F, 8, 1000, 0x0237 | 0x0400, 1000),  # Enable op → Operation enabled + Target reached
+                (0x000F, 9, 2000, 0x0237, 1000),       # 切 CSV：位置冻结、无 Target reached
                 (0x0000, 8, 1000, 0x0240, 1000),   # Disable voltage，位置保持
             ]
             for controlword, mode, target, expected_sw, expected_pos in sequence:

@@ -6,6 +6,41 @@
 
 ---
 
+## 2026-11-12 23:40 班（低峰）— B11 第七步：CiA 402 行为**模式门控 + 错误注入**（Tier0）
+
+**做了什么**
+- `esc-node` 的 CiA 402 行为增加**模式门控**：只有 **CSP（模式 8）** 在 `Operation enabled`
+  时让实际位置跟随目标并置 `Target reached`；其它模式（CSV/CST 等）位置冻结、不置
+  `Target reached`（当前 7 字节 PDO 不含速度/转矩目标）；`0x6061` 始终镜像 `0x6060`。
+- 新增 `Responder::inject_cia402_fault(error_code: u16)`：状态机进入 `Fault`（状态字
+  `0x0208`），错误码写入 `0x603F`（经 SDO 可读回）；控制字 bit7 `Fault reset` 回
+  `Switch on disabled`（`0x0240`），错误码保留（⚠️ Tier0 与真机清除时序不同）。
+- 新增两个单测：`cia402_behavior_tracks_position_only_in_csp_mode`、
+  `cia402_fault_injection_sets_error_code_and_recovers_on_reset`。
+- 合成主站 `--cia402` 序列加入"切 CSV（模式 9）→ 位置冻结、无 Target reached"断言；
+  `docs/plugins/cia402-state-machine.md` 增加"模式与错误注入（Tier0）"说明。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **162 passed**（esc-core 76 / esc-node 48 / plugin-host 21 + 1 集成 / wire 16）。
+- Linux 验证机：`bash scripts/spikes/cia402-behavior-probe.sh` → **EXIT=0**：
+  - `BEHAVIOR cia402 sm2_out=0x1100/7B sm3_in=0x1110/7B`；
+  - 完整 7 字节序列（含模式 8→9 切换后位置冻结、无 Target reached）通过；
+  - 原 UDS 套件（BRD/APRD/APWR/FPRD/M 位、SM watchdog、ESM 前置条件）继续通过。
+
+**卡点**
+- 模式门控只覆盖 CSP/非 CSP 两档；CSV/CST 的真实语义（速度/转矩目标）需要扩展 PDO
+  布局（如加入 `0x60FF`/`0x6071`）后再实现。
+- 错误注入是**测试/上层 API**，没有硬件/厂商故障码表；`0x603F` 只在注入时写入，
+  未模拟真机自动故障检测与错误码清除时序。
+- 一帧延迟仍在。
+
+**下次开工第一件事**
+- 为 CiA 402 画像扩展 9/11 字节 PDO（含 `0x60FF` 速度目标）并实现 CSV 模式，或
+  逐项核对 SV660N 公开手册的默认 PDO/扩展对象；随后处理 B6 FMMU/DC 原文核实。
+
+---
+
 ## 2026-11-12 23:34 班（低峰）— B11 第六步：**Inovance SV660N 兼容画像**（Tier0，通用 DS402 布局）+ 双主站扫描/OP
 
 **做了什么**

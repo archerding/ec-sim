@@ -267,6 +267,17 @@ impl Responder {
         self
     }
 
+    /// 注入 CiA 402 故障（Tier0：测试/上层用）：状态机进入 Fault，并设置
+    /// `0x603F` 错误码（通过 SDO 可读回）；故障复位（控制字 bit7）只清状态机，
+    /// 错误码保留到上层再次写入（⚠️ 与真机的错误码清除时序不同）。
+    pub fn inject_cia402_fault(&mut self, error_code: u16) {
+        if let Some(behavior) = self.cia402.as_mut() {
+            behavior.machine.inject_fault();
+            self.object_writes
+                .insert((0x603F, 0u8), error_code.to_le_bytes().to_vec());
+        }
+    }
+
     /// 当前 CiA 402 状态（未启用行为时返回 None）。
     #[must_use]
     pub fn cia402_state(&self) -> Option<crate::cia402::Cia402State> {
@@ -300,12 +311,16 @@ impl Responder {
         }
         let mut statusword = behavior.machine.update(controlword);
         let enabled = behavior.machine.state() == Cia402State::OperationEnabled;
-        if enabled {
+        // Tier0：只有 CSP（模式 8）在 Operation enabled 时让实际位置跟随目标；
+        // 其它模式（如 CSV/CST）位置保持不变（当前 PDO 布局不含速度/转矩目标）。
+        let csp = modes == 8;
+        if enabled && csp {
             behavior.position_actual = target;
         }
         if out_bytes.len() >= 7
             && usize::from(behavior.in_len) >= 7
             && enabled
+            && csp
             && behavior.position_actual == target
         {
             statusword |= TARGET_REACHED;
@@ -1032,6 +1047,132 @@ mod tests {
         write_rx(&mut responder, 0x0000, 8, 1000);
         responder.tick(5);
         assert_eq!(read_tx(&mut responder), (0x0240, 8, 1000));
+    }
+
+    #[test]
+    fn cia402_behavior_tracks_position_only_in_csp_mode() {
+        fn write_rx(responder: &mut Responder, controlword: u16, mode: i8, target: i32) {
+            let mut data = vec![0u8; 7];
+            data[0..2].copy_from_slice(&controlword.to_le_bytes());
+            data[2] = mode as u8;
+            data[3..7].copy_from_slice(&target.to_le_bytes());
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Apwr,
+                1,
+                0,
+                0x1100,
+                data,
+            )]);
+            responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APWR reply");
+        }
+        fn read_tx(responder: &mut Responder) -> (u16, i8, i32) {
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Aprd,
+                1,
+                0,
+                0x1110,
+                vec![0u8; 7],
+            )]);
+            let reply = responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APRD reply");
+            let start = ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10;
+            (
+                u16::from_le_bytes([reply[start], reply[start + 1]]),
+                reply[start + 2] as i8,
+                i32::from_le_bytes([
+                    reply[start + 3],
+                    reply[start + 4],
+                    reply[start + 5],
+                    reply[start + 6],
+                ]),
+            )
+        }
+
+        let mut responder = Responder::default().with_cia402_behavior(0x1100, 7, 0x1110, 7);
+        write_rx(&mut responder, 0x0006, 8, 1000);
+        responder.tick(1);
+        write_rx(&mut responder, 0x0007, 8, 1000);
+        responder.tick(2);
+        write_rx(&mut responder, 0x000F, 8, 1000);
+        responder.tick(3);
+        assert_eq!(read_tx(&mut responder), (0x0237 | 0x0400, 8, 1000));
+
+        // 切换到 CSV（模式 9）并给新目标：位置保持，不置 Target reached。
+        write_rx(&mut responder, 0x000F, 9, 2000);
+        responder.tick(4);
+        assert_eq!(
+            read_tx(&mut responder),
+            (0x0237, 9, 1000),
+            "非 CSP 模式位置冻结、无 Target reached"
+        );
+    }
+
+    #[test]
+    fn cia402_fault_injection_sets_error_code_and_recovers_on_reset() {
+        fn write_rx(responder: &mut Responder, controlword: u16, mode: i8, target: i32) {
+            let mut data = vec![0u8; 7];
+            data[0..2].copy_from_slice(&controlword.to_le_bytes());
+            data[2] = mode as u8;
+            data[3..7].copy_from_slice(&target.to_le_bytes());
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Apwr,
+                1,
+                0,
+                0x1100,
+                data,
+            )]);
+            responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APWR reply");
+        }
+        fn read_statusword(responder: &mut Responder) -> u16 {
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Aprd,
+                1,
+                0,
+                0x1110,
+                vec![0u8; 7],
+            )]);
+            let reply = responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APRD reply");
+            let start = ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10;
+            u16::from_le_bytes([reply[start], reply[start + 1]])
+        }
+
+        let mut responder = Responder::default().with_cia402_behavior(0x1100, 7, 0x1110, 7);
+        write_rx(&mut responder, 0x0006, 8, 1000);
+        responder.tick(1);
+        write_rx(&mut responder, 0x0007, 8, 1000);
+        responder.tick(2);
+        write_rx(&mut responder, 0x000F, 8, 1000);
+        responder.tick(3);
+        assert_eq!(read_statusword(&mut responder), 0x0237 | 0x0400);
+
+        responder.inject_cia402_fault(0x7500);
+        responder.tick(4);
+        assert_eq!(read_statusword(&mut responder), 0x0208, "Fault 状态字");
+        assert_eq!(
+            responder.object_value(0x603F, 0),
+            Some(0x7500u16.to_le_bytes().as_slice()),
+            "错误码可经 SDO 读回"
+        );
+        assert_eq!(
+            responder.cia402_state(),
+            Some(crate::cia402::Cia402State::Fault)
+        );
+
+        // Fault reset（控制字 bit7）→ Switch on disabled，错误码保留（Tier0 行为）。
+        write_rx(&mut responder, 0x0080, 8, 1000);
+        responder.tick(5);
+        assert_eq!(read_statusword(&mut responder), 0x0240);
+        assert_eq!(
+            responder.cia402_state(),
+            Some(crate::cia402::Cia402State::SwitchOnDisabled)
+        );
     }
 
     #[test]

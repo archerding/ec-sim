@@ -271,8 +271,13 @@ user.email = deepseek-harness@users.noreply.github.com
     IgH PREOP + 身份 `0x00000ec5:0x0000e5f1`。记录见
     `docs/plugins/inovance-sv660n-verification.md`。
     ⚠️ SV660N 具体默认 PDO/扩展对象/DC/故障码表尚未逐项核实（公开手册为 PDF）。
-  - 待做：逐项核对 SV660N 公开手册（PDO/扩展对象/DC）并更新 manifest；行为模式切换
-    （CSP/CSV/CST）与错误码注入；B6 FMMU/DC 原文核实。
+  - 进度（2026-11-12 23:40 班）：**行为加入模式门控 + 错误注入（Tier0）**——只有 CSP
+    （模式 8）在 Operation enabled 时位置跟随目标并置 Target reached，其它模式位置冻结；
+    `Responder::inject_cia402_fault(error_code)` 使状态机进入 Fault、写 `0x603F` 错误码，
+    fault reset 回 Switch on disabled（错误码保留，⚠️ 与真机时序不同）。合成主站序列加入
+    CSV 切换断言；测试 **162 passed**、验证机 `cia402-behavior-probe.sh` **EXIT=0**。
+  - 待做：扩展 9/11 字节 PDO（含 `0x60FF`）实现 CSV/CST 语义；逐项核对 SV660N 公开手册
+    PDO/扩展对象；B6 FMMU/DC 原文核实。
 - [x] ~~**B8 双主站冒烟**~~ ✅ **2026-11-12 19:56 班完成（单从站 8 位 I/O 画像）**：
   **未修改的 SOEM 与 IgH 都在本模拟器上看到从站进入 OP**，输出可复现脚本见
   [spike-4](docs/spikes/spike-4-dual-master-op.md)：
