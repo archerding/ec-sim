@@ -6,6 +6,25 @@
 
 ---
 
+## 2026-11-12（人工会话）— 发布到 GitHub
+
+**做了什么**
+- 创建公开仓库 `https://github.com/archerding/ec-sim`，推送 `main`（12 个提交，含 README、双许可、插件规范与目录、两份 spike 证据）。
+- 远端使用 SSH（`git@github.com:archerding/ec-sim.git`）：本机密钥已注册到 GitHub，无需 token；HTTPS 在本网络被墙，SSH 22 端口直连可用。
+- 推送前做了公开前脱敏：移除旧工作区路径与无关项目名（历史已重写，`history_private_hits=0`）。
+
+**验证结果**
+- `git push` 成功，`origin/main` = `3a3508c`；匿名 HTTPS 可读取 → 仓库为 **public**。
+
+**卡点 / 待办**
+- GitHub 仓库描述与 topics 需在网页端填写（本地 git 无法设置）。
+- 定时任务目前**不自动 push**；是否开启"每班提交后自动推送"待用户决定。
+- CI workflow 尚未添加（属于 B1 Rust workspace 的工作）。
+
+**下次开工第一件事**
+- 仍是 **B1 Rust workspace 骨架**；提交后可选择手动 `git push`。
+
+---
 ## 2026-11-12（人工会话）— 设备插件规范与首批目录
 
 **做了什么**
