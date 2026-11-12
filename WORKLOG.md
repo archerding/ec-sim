@@ -32,6 +32,37 @@
 
 ---
 
+## 2026-11-13 01:51 班（低峰）— B6：**SII FMMU 类别（0x0028）已实现**
+
+**做了什么**
+- 新增 SII **FMMU 类别 `0x0028`**：内容 4 字节用途码 `[0x03, 0x01, 0x02, 0xFF]`
+  （FMMU0 读邮箱、FMMU1 过程数据输出、FMMU2 过程数据输入、FMMU3 未使用），
+  类别头长度字 = 2（4 字节），插入在 SM 类别之后、PDO 类别之前。
+  依据：公开资料 [CSDN kevin1499《EtherCAT 从站 EEPROM 分类附加信息详解：FMMU》](https://blog.csdn.net/kevin1499/article/details/134430238)
+  （只读参考，2026-11-13 访问）——类别 0x28、长度单位为字、内容为 FMMU0..3 用途码。
+- 新增测试：`fmmu_category_has_usage_bytes`（内容与长度字）；更新类别链遍历测试期望。
+- 顺带修正 `SIM_COE_DETAILS` 上方过期注释（"CA 未实现" → 已实现；内置镜像仍保持
+  bit5=0 以规避未验证的 SOEM `ecx_readPDOmapCA()` 路径）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **193 passed**（esc-core 83 / esc-node 61 / plugin-host 25 + 1 集成 / wire 23）。
+- Linux 验证机（重建后，含 FMMU 类别的 SII）：
+  - `soem-process-data.sh` **EXIT=0**（SOEM `simple_ng` OP、1055 轮 WKC=3、0 不符）；
+  - `minimal-esc-responder.sh` **EXIT=0**（SOEM/IgH 均看到 1 从站）；
+  - `igh-el2008-op-probe.sh` **EXIT=0**（IgH `al_states=0x08`、EL2008 OP）
+  → 新增 FMMU 类别**未改变** SOEM/IgH 的扫描、FMMU 配置与 OP 路径。
+
+**卡点**
+- FMMU 类别内容按公开资料示例给出（4 个用途码）；**未覆盖 >4 FMMU 的设备**（本模拟器
+  固定 4 通道），也未验证主站是否会读取/使用该类别（IgH 不读、SOEM 仅 eepFMMU 默认值）。
+- B6 仍剩 **DC 类别（0x003C）**：需 ETG 原文/更多证据，暂未实现。
+
+**下次开工第一件事**
+- 继续 B11 SV660N 默认 PDO 条目查找（HTML 在线手册）或 B6 DC 类别（需原文）。
+
+---
+
 ## 2026-11-13 01:49 班（低峰）— 质量：**修复 rustdoc 警告（0 警告）**
 
 **做了什么**

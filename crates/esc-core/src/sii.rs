@@ -82,6 +82,8 @@ pub mod category {
     pub const STRINGS: u16 = 0x000A;
     /// 通用类别（固定 32 字节）。
     pub const GENERAL: u16 = 0x001E;
+    /// FMMU 类别（FMMU 用途字节，见 [`SIM_FMMU_USAGE`]）。
+    pub const FMMU: u16 = 0x0028;
     /// Sync Manager 类别（每条 8 字节）。
     pub const SYNC_MANAGER: u16 = 0x0029;
     /// TxPDO 类别（从站 → 主站，输入方向）。
@@ -208,6 +210,13 @@ impl SiiSyncManager {
 /// `EC_DEFAULTMBXSM0 = 0x00010026` / `EC_DEFAULTMBXSM1 = 0x00010022` 一致。
 /// SM2 = 输出（buffered、方向 write = `0x04`），SM3 = 输入（buffered、方向 read = `0x00`）；
 /// 方向位编码见 `sm.rs` 模块文档（ETG.1000.4 table 58）。
+/// SII FMMU 类别内容（4 字节用途码，逐字节对应 FMMU0..FMMU3）。
+///
+/// 依据公开资料（CSDN kevin1499《EtherCAT 从站 EEPROM 分类附加信息详解：FMMU》，
+/// 访问 2026-11-13；只读参考）：FMMU0 `0x03` 用于读取邮箱、FMMU1 `0x01` 过程数据输出、
+/// FMMU2 `0x02` 过程数据输入、FMMU3 `0xFF` 未使用；类别头 `0x0028`、长度字 = 2（4 字节）。
+pub const SIM_FMMU_USAGE: [u8; 4] = [0x03, 0x01, 0x02, 0xFF];
+
 pub const SIM_SYNC_MANAGERS: [SiiSyncManager; 4] = [
     SiiSyncManager {
         physical_start_address: SIM_MAILBOX_OFFSET_RX,
@@ -328,8 +337,9 @@ pub const SIM_RX_PDOS: [SiiPdo; 1] = [SiiPdo {
 /// bit3 enable PDO configuration）。
 ///
 /// 本模拟器支持 SDO 上传/下载、SDO Info（`0x8` 服务）与 PDO 分配/映射对象读写 → `0x0F`。
-/// ⚠️ 未置 bit5（Complete Access）；SII 中声明 CA 会让 SOEM 走 `ecx_readPDOmapCA()`，
-/// 而本模拟器尚未实现 CA 传输。
+/// 内置镜像保持 bit5（Complete Access）为 0：CA 上传/下载虽已实现（2026-11-13），但
+/// 内置镜像的 SOEM `ecx_readPDOmapCA()` 路径尚未验证；声明 CA 的画像（manifest
+/// `coe.complete_access: true`）已验证 SOEM/IgH 扫描与 OP 无回归。
 pub const SIM_COE_DETAILS: u8 = 0x0F;
 
 /// 标准/引导邮箱参数（SII 固定区 word 0x0014–0x001C）。
@@ -452,6 +462,7 @@ impl SiiImage {
             category::SYNC_MANAGER,
             &sync_manager_category(&spec.sync_managers),
         );
+        push_category(&mut words, category::FMMU, &SIM_FMMU_USAGE);
         if !spec.tx_pdos.is_empty() {
             push_category(&mut words, category::TX_PDO, &pdo_category(&spec.tx_pdos));
         }
@@ -751,12 +762,33 @@ mod tests {
                 category::STRINGS,
                 category::GENERAL,
                 category::SYNC_MANAGER,
+                category::FMMU,
                 category::TX_PDO,
                 category::RX_PDO,
             ]
         );
         // 终止字存在，且之后无多余 word
         assert_eq!(word + 1, sii.len_words());
+    }
+
+    #[test]
+    fn fmmu_category_has_usage_bytes() {
+        let sii = SiiImage::simulated_slave();
+        assert_eq!(
+            sii.category_bytes(category::FMMU).as_deref(),
+            Some(&SIM_FMMU_USAGE[..])
+        );
+        // 类别头长度字 = 2（4 字节）。
+        let mut word = usize::from(SII_FIRST_CATEGORY_WORD);
+        loop {
+            let cat_type = sii.words()[word];
+            if cat_type == category::FMMU {
+                assert_eq!(sii.words()[word + 1], 2);
+                break;
+            }
+            assert_ne!(cat_type, 0xFFFF, "FMMU 类别应存在于链中");
+            word += 2 + usize::from(sii.words()[word + 1]);
+        }
     }
 
     #[test]

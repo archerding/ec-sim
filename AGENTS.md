@@ -160,6 +160,11 @@ user.email = deepseek-harness@users.noreply.github.com
   - 待做：映射字对象存在性/子索引范围校验；SM 配置合法性校验（地址越界/区间重叠/类型方向）；
     无独立硬件定时器（帧驱动时钟）；0x0410 PDI watchdog 仅保留读写语义。
 - [ ] **B6 SII 生成器**：ESI XML → SII 镜像（含固定区 CRC-8（**word 0x0007**，覆盖 0x0000–0x0006，已实现）、category 链 0x0029/0x0032/0x0033、0xFFFF 终止）。
+  - 进度（2026-11-13 01:51 班）：**FMMU 类别 0x0028 已实现**——内容 4 字节用途码
+    `[0x03,0x01,0x02,0xFF]`（邮箱读/过程数据输出/输入/未使用），长度字=2；依据公开 CSDN
+    资料（只读参考，2026-11-13 访问）；新增测试并更新类别链期望。验证机 soem-process-data/
+    minimal-esc-responder/igh-el2008-op-probe 全部 EXIT=0（FMMU 类别未影响 OP）。测试 **193 passed**。
+    ⚠️ 仍剩 **DC 类别（0x003C）**未实现（需 ETG 原文）。
   - 进度（2026-11-12 19:26 班）：**SM 类别 0x0029 + TxPDO 0x0032 + RxPDO 0x0033 已实现**
     （SM0/SM1 = mailbox、SM2 输出 0x1100、SM3 输入 0x1110；PDO 0x1A00/0x1600，
     对象 0x6000:00/0x7000:00）。字节布局按 IgH `slave.c` 与 SOEM `ec_main.c` 的解析代码逐字节复核；
