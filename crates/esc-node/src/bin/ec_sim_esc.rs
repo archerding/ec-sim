@@ -6,6 +6,7 @@
 //! ec-sim-esc --uds /tmp/ecsim.sock [--verbose] [--esm-lax] [--manifest ...]
 //! ec-sim-esc --tap escsim0 [--esi <file.esi.xml>]   # B6：ESI XML → SII
 //! ec-sim-esc --dump-sii [--manifest ... | --esi ...]  # 打印 SII hex/类别链后退出
+//! ec-sim-esc --dump-dict [--manifest ... | --esi ...] # 打印运行时对象字典后退出
 //! ec-sim-esc --version                                # 打印版本
 //!
 //! ESM 状态迁移前置条件检查默认**开启**（SM 未配置时拒绝进入 PREOP/SAFEOP 并给
@@ -27,6 +28,63 @@
 //! 仅 Linux 提供两种线缆层；其他平台编译为可执行但直接报错退出（单元测试仍全平台可跑）。
 
 /// `--dump-sii`：把（manifest/ESI/内置）画像生成的 SII 镜像以 hex + 类别链形式打印后退出。
+/// `--dump-dict`：把（manifest/ESI/内置）运行时对象字典以对象/条目列表打印后退出。
+fn dump_dict_and_exit(
+    manifest_path: Option<&str>,
+    esi_path: Option<&str>,
+) -> std::process::ExitCode {
+    use esc_core::obj_dict::ObjectDictionary;
+
+    let dict: Result<ObjectDictionary, String> = if let Some(path) = manifest_path {
+        plugin_host::manifest::PluginManifest::load(path)
+            .and_then(|manifest| plugin_host::dict_gen::dictionary_from_manifest(&manifest))
+    } else if let Some(path) = esi_path {
+        match std::fs::read_to_string(path) {
+            Ok(text) => plugin_host::esi::parse_esi(&text)
+                .map(|device| plugin_host::esi::dictionary_from_esi(&device)),
+            Err(err) => Err(format!("读取 ESI 失败：{err}")),
+        }
+    } else {
+        Ok(ObjectDictionary::simulated())
+    };
+    let dict = match dict {
+        Ok(dict) => dict,
+        Err(err) => {
+            eprintln!("ec-sim-esc: {err}");
+            return std::process::ExitCode::from(2);
+        }
+    };
+    println!(
+        "ec-sim-esc dictionary dump: objects={} entries={}",
+        dict.objects().len(),
+        dict.objects()
+            .iter()
+            .map(|object| usize::from(object.max_subindex) + 1)
+            .sum::<usize>()
+    );
+    for object in dict.objects() {
+        println!(
+            "{:#06X} max_sub={} code={:#06X} name={}",
+            object.index, object.max_subindex, object.object_code, object.name
+        );
+        for subindex in 0..=object.max_subindex {
+            let Some(entry) = dict.entry(object.index, subindex) else {
+                continue;
+            };
+            let access = if entry.writable { "rw" } else { "ro" };
+            let value = if entry.value.len() <= 8 {
+                format!("{:02x?}", entry.value)
+            } else {
+                format!("{} bytes", entry.value.len())
+            };
+            println!(
+                "  {:02X} type={:#06x} bits={} {} name={} value={}",
+                subindex, entry.data_type, entry.bit_length, access, entry.name, value
+            );
+        }
+    }
+    std::process::ExitCode::SUCCESS
+}
 fn dump_sii_and_exit(
     manifest_path: Option<&str>,
     esi_path: Option<&str>,
@@ -107,6 +165,7 @@ fn main() -> std::process::ExitCode {
     let mut esm_preconditions = true;
     let mut fault: Option<u16> = None;
     let mut dump_sii = false;
+    let mut dump_dict = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--tap" => match args.next() {
@@ -168,6 +227,7 @@ fn main() -> std::process::ExitCode {
             },
             "--verbose" | "-v" => verbose = true,
             "--dump-sii" => dump_sii = true,
+            "--dump-dict" => dump_dict = true,
             "--version" | "-V" => {
                 println!("ec-sim-esc {}", env!("CARGO_PKG_VERSION"));
                 return std::process::ExitCode::SUCCESS;
@@ -178,8 +238,10 @@ fn main() -> std::process::ExitCode {
             "--help" | "-h" => {
                 println!(
                     "用法: ec-sim-esc [--tap <name> | --uds <path>] [--verbose] [--esm-lax] \
-                     [--manifest <plugin.yaml>] [--esi <file.esi.xml>] [--behavior cia402]`n                     [--fault <hex>（需 --behavior cia402）]
+                     [--manifest <plugin.yaml>] [--esi <file.esi.xml>] [--behavior cia402]
+                     [--fault <hex>（需 --behavior cia402）]
                      调试：--dump-sii [--manifest <yaml>] [--esi <xml>] 打印 SII 镜像 hex/类别链后退出；
+                     --dump-dict [--manifest <yaml>] [--esi <xml>] 打印运行时对象字典后退出；
                      --version 打印版本。"
                 );
                 return std::process::ExitCode::SUCCESS;
@@ -189,6 +251,10 @@ fn main() -> std::process::ExitCode {
                 return std::process::ExitCode::from(2);
             }
         }
+    }
+
+    if dump_dict {
+        return dump_dict_and_exit(manifest_path.as_deref(), esi_path.as_deref());
     }
 
     if dump_sii {

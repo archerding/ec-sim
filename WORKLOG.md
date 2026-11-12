@@ -1,5 +1,33 @@
 ---
 
+## 2026-11-13 03:41 班（低峰）— 工具：**`ec-sim-esc --dump-dict`（运行时对象字典 dump）**
+
+**做了什么**
+- `ec-sim-esc` 新增 `--dump-dict [--manifest <yaml> | --esi <xml>]`：打印（manifest/ESI/内置）
+  运行时对象字典——每个对象一行（index/max_sub/object_code/name），每个条目一行
+  （subindex/data_type/bit_length/访问/名称/值；>8 字节只显示长度），然后退出。
+- 同步更新文件头用法说明与 `--help` 文本（顺带修复 `--help` 里一处历史遗留的字面量 `` `n ``，
+  此前帮助第三行与第二行粘连）。
+- `docs/STATUS.md` 快速开始加入 `--dump-dict` 示例。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo build -p esc-node` 通过；
+  - `--dump-dict --manifest plugins/generic-cia402-cst-servo/plugin.yaml` →
+    `objects=15 entries=31`，含 0x1008/0x1018/0x1600/0x1A00/0x6040/0x6060/0x6071...
+  - `--dump-dict --esi crates/plugin-host/tests/fixtures/sample.esi.xml` → `objects=1`
+    （ESI 仅身份对象 0x1018，符合文档说明）；
+  - `--help` 输出正常、无字面量换行符。
+- `cargo test --workspace` **208 passed** 基线不变（未改库代码）。
+
+**卡点**
+- dump 输出为纯文本、无过滤/JSON 输出；大字典（未来厂商画像）需要时可加筛选参数。
+
+**下次开工第一件事**
+- B11：继续找 SV660N 默认 PDO 条目；或评估真实 DC 同步（SYNC0 脉冲）。
+
+---
+---
+
 ## 2026-11-13 03:40 班（低峰）— 文档：**CiA 402 模式矩阵 + STATUS 快照刷新**
 
 **做了什么**

@@ -69,6 +69,7 @@ Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/
 cargo build --release -p esc-node
 cargo run -q -p esc-node --bin ec-sim-esc -- --version          # 版本
 cargo run -q -p esc-node --bin ec-sim-esc -- --dump-sii --manifest plugins/generic-cia402-cst-servo/plugin.yaml
+cargo run -q -p esc-node --bin ec-sim-esc -- --dump-dict --manifest plugins/generic-cia402-cst-servo/plugin.yaml
 bash scripts/spikes/uds-loopback.sh        # UDS 合成主站基础闭环
 bash scripts/spikes/cia402-cst-probe.sh    # CST Tier0 行为
 cargo test --workspace
