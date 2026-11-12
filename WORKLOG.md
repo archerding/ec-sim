@@ -6,6 +6,44 @@
 
 ---
 
+## 2026-11-12 22:42 班（低峰）— B6 子项：ESI→SII 接入 CLI + **双主站扫描验证**（`--esi`）
+
+**做了什么**
+- `ec-sim-esc` 新增 `--esi <file.esi.xml>`（与 `--manifest` 互斥）：解析 ESI 子集 →
+  `sii_spec_from_esi()` → `SiiImage::from_spec()` 生成 SII 镜像；运行时对象字典由
+  `esi::dictionary_from_esi()` 生成，**只有身份对象 0x1018**（Vendor/Product/Revision/
+  Serial，取自 ESI）——ESI 不含完整对象字典，其余对象需来自 manifest/行为插件，
+  该限制写进了模块文档与 `--help`。
+- 新增验证脚本 `scripts/spikes/esi-sii-scan-probe.sh`：用 `--esi` 启动验证明文画像
+  （`crates/plugin-host/tests/fixtures/sample.esi.xml`，自有 VID 0x0EC5/PID 0xE5D3、
+  SM0/SM1 邮箱 128B、SM2 输出 1B、SM3 输入 1B），断言 SOEM 与 IgH 的扫描结果；
+  脚本对残留 IgH 模块做 `pkill -f ecrt-` + `ethercat rescan` 兜底。
+- 单测补充 `dictionary_from_esi_has_identity_object`（0x1018:00..03 = 4/0x0EC5/0xE5D3/0x00010000）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **151 passed**（esc-core 76 / esc-node 38 / plugin-host 20 + 1 集成 / wire 16）。
+- Linux 验证机（重启后干净状态）：`bash scripts/spikes/esi-sii-scan-probe.sh` → **EXIT=0**：
+  - SOEM `slaveinfo`：`Output size: 8bits / Input size: 8bits`、
+    `Man: 00000ec5 ID: 0000e5d3 Rev: 00010000`、`MBX length wr: 128 rd: 128 MBX protocols : 04`；
+  - IgH `ethercat slaves`：`0  0:0  PREOP  +  0x00000ec5:0x0000e5d3`。
+  → ESI XML 生成的 SII 镜像被两家未修改主站正确识别（身份/PDO 位数/CoE 邮箱）。
+- 诊断记录：验证机上 IgH 模块被先前夹具残留进程持有引用时，`rmmod` 会失败、主站保留
+  旧从站身份（表现为 IgH 显示旧 PID）；干净重启后通过。脚本已加入 pkill/rescan 兜底。
+
+**卡点**
+- ESI 不含对象字典 → `--esi` 运行时只有身份对象（无 0x1C00/PDO 映射对象）；若需完整
+  字典仍需 manifest 或行为插件。样本 ESI 为仓库自写（非厂商文件）。
+- ESI 子集仍不支持 ObjectDictionary/DC/多设备选择；邮箱长度缺省 128（语义待 ETG.2000）。
+- B6 剩余：FMMU 类别 0x0028、DC 类别（需 ESC Sec.2 / ETG 原文核实）。
+
+**下次开工第一件事**
+- 让 `--esi` 与 manifest/行为插件组合（ESI 负责 SII 身份/PDO 描述，manifest 补对象字典），
+  或在双主站下把 ESI 画像推进 OP（需要 SM2/SM3 的 PDO 字典与数据）；随后读 ESC Sec.2
+  原文核实 FMMU/DC 类别，再进 B11 CiA402。
+
+---
+
 ## 2026-11-12 22:38 班（低峰）— B6 子项：**ESI XML → SII** 生成器（子集，零依赖）
 
 **做了什么**

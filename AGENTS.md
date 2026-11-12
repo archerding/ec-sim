@@ -147,8 +147,14 @@ user.email = deepseek-harness@users.noreply.github.com
     Device/Name、Sm、RxPdo/TxPdo+Entry、Mailbox/CoE），`sii_spec_from_esi()` 复用
     `SiiSpec`/`SiiImage::from_spec()` 编码（邮箱长度缺省 128、过程数据 SM 长度按 PDO 位长求和）。
     测试夹具为仓库**自写** `sample.esi.xml`（非厂商 ESI，R1）；测试 **150 passed**。
-    ⚠️ 尚未接入 CLI、未在 IgH/SOEM 扫描 ESI 生成画像。
-  - 待做：DC 类别、ESI 生成器接入 `ec-sim-esc --esi` 并在双主站扫描验证。**FMMU 类别 0x0028 暂缓**（2026-11-12 21:11 班：
+    ⚠️ 尚未接入 CLI、未在 IgH/SOEM 扫描 ESI 生成画像（22:42 班已补齐，见下）。
+  - 进度（2026-11-12 22:42 班）：**`--esi` 已接入 CLI 并双主站扫描验证**——`ec-sim-esc
+    --esi <file.esi.xml>`（与 `--manifest` 互斥）生成 SII 镜像；运行时字典只有身份对象
+    0x1018（ESI 无完整 OD，其余需 manifest/行为插件）。验证机
+    `scripts/spikes/esi-sii-scan-probe.sh` **EXIT=0**：SOEM 读 `8bits/8bits`、
+    `Man 00000ec5 ID 0000e5d3 Rev 00010000`、`MBX 128/128 protocols 04`；IgH 显示
+    `0 0:0 PREOP + 0x00000ec5:0x0000e5d3`。测试 **151 passed**。
+  - 待做：ESI + manifest/行为插件组合（补对象字典并推进 OP）、DC 类别。**FMMU 类别 0x0028 暂缓**（2026-11-12 21:11 班：
     IgH `fsm_slave_scan.c` 直接跳过该类别、SOEM 仅显示 `FMMUfunc`；公开资料无字段权威语义，
     按"不凭记忆写规范细节"红线暂停，等 ESC Sec.II / IEC 61158 原文）。
   ⚠️ 旧文档把 CRC 写成 word 0x003F，经 SOEM `eepromtool`/IgH `tool/sii_crc.cpp` 复核已更正（0x003F 是 SII 版本 = 1）。

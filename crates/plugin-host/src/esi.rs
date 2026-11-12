@@ -648,11 +648,86 @@ pub fn sii_spec_from_esi(device: &EsiDevice) -> Result<SiiSpec, String> {
     })
 }
 
+/// 由 ESI 生成**最小运行时对象字典**：只有身份对象 `0x1018`（Vendor/Product/Revision/Serial）。
+///
+/// ESI 不携带完整对象字典（那在从站固件/插件行为里），因此其余对象（SM 类型、PDO 分配/
+/// 映射、用户对象）需要来自声明式 manifest 或行为插件；本函数只保证扫描阶段的身份一致。
+pub fn dictionary_from_esi(device: &EsiDevice) -> esc_core::obj_dict::ObjectDictionary {
+    use esc_core::obj_dict::{self, ObjectDictionary, RuntimeEntry, RuntimeObject};
+
+    let object = |index: u16, max_subindex: u8, data_type: u16, name: &str| RuntimeObject {
+        index,
+        max_subindex,
+        object_code: obj_dict::object_code::ARRAY,
+        data_type,
+        name: name.to_string(),
+    };
+    let entry =
+        |subindex: u8, value: Vec<u8>, data_type: u16, bit_length: u16, name: &str| RuntimeEntry {
+            index: 0x1018,
+            subindex,
+            value,
+            data_type,
+            bit_length,
+            access: obj_dict::access::READ_ONLY,
+            value_info: 0,
+            name: name.to_string(),
+            writable: false,
+        };
+    let mut count = entry(
+        0,
+        vec![4],
+        obj_dict::data_type::UNSIGNED8,
+        8,
+        "Number of entries",
+    );
+    count.index = 0x1018;
+    let entries = vec![
+        count,
+        entry(
+            1,
+            device.vendor_id.to_le_bytes().to_vec(),
+            obj_dict::data_type::UNSIGNED32,
+            32,
+            "Vendor ID",
+        ),
+        entry(
+            2,
+            device.product_code.to_le_bytes().to_vec(),
+            obj_dict::data_type::UNSIGNED32,
+            32,
+            "Product code",
+        ),
+        entry(
+            3,
+            device.revision.to_le_bytes().to_vec(),
+            obj_dict::data_type::UNSIGNED32,
+            32,
+            "Revision number",
+        ),
+        entry(
+            4,
+            vec![0u8; 4],
+            obj_dict::data_type::UNSIGNED32,
+            32,
+            "Serial number",
+        ),
+    ];
+    ObjectDictionary::new(
+        vec![object(
+            0x1018,
+            4,
+            obj_dict::data_type::UNSIGNED32,
+            "Identity",
+        )],
+        entries,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use esc_core::sii::{category, SiiImage};
-
     const SAMPLE: &str = include_str!("../tests/fixtures/sample.esi.xml");
 
     #[test]
@@ -702,6 +777,29 @@ mod tests {
             .expect("TxPDO category");
         assert_eq!(u16::from_le_bytes([tx[0], tx[1]]), 0x1A00);
         assert_eq!(tx[3], 3, "SM3");
+    }
+
+    #[test]
+    fn dictionary_from_esi_has_identity_object() {
+        let device = parse_esi(SAMPLE).expect("parse ESI");
+        let dict = dictionary_from_esi(&device);
+        assert_eq!(dict.object_indices(), vec![0x1018]);
+        assert_eq!(dict.value(0x1018, 0), Some([4u8].as_slice()));
+        assert_eq!(
+            dict.value(0x1018, 1),
+            Some(0x0000_0EC5u32.to_le_bytes().as_slice()),
+            "0x1018:01 = ESI Vendor Id"
+        );
+        assert_eq!(
+            dict.value(0x1018, 2),
+            Some(0x0000_E5D3u32.to_le_bytes().as_slice()),
+            "0x1018:02 = ESI ProductCode"
+        );
+        assert_eq!(
+            dict.value(0x1018, 3),
+            Some(0x0001_0000u32.to_le_bytes().as_slice()),
+            "0x1018:03 = ESI RevisionNo"
+        );
     }
 
     #[test]

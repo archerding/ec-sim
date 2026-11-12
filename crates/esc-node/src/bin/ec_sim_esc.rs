@@ -4,11 +4,14 @@
 //! ```text
 //! ec-sim-esc --tap escsim0 [--verbose] [--esm-lax] [--manifest plugins/<id>/plugin.yaml]
 //! ec-sim-esc --uds /tmp/ecsim.sock [--verbose] [--esm-lax] [--manifest ...]
+//! ec-sim-esc --tap escsim0 [--esi <file.esi.xml>]   # B6：ESI XML → SII
 //!
 //! ESM 状态迁移前置条件检查默认**开启**（SM 未配置时拒绝进入 PREOP/SAFEOP 并给
 //! AL Status Code 0x0015/0x0017）；`--esm-lax` 关闭该检查（兼容/负向对照用）。
-//! `--manifest` 指定声明式插件 manifest：SII 镜像与对象字典都按该 manifest 生成
-//! （默认使用内置 8 位 I/O 画像）。
+//! `--manifest` 指定声明式插件 manifest：SII 镜像与对象字典都按该 manifest 生成。
+//! `--esi` 直接读取 ESI XML（B6 子项：ESI → SII 镜像），运行时对象字典只有身份对象
+//! `0x1018`（ESI 不含完整对象字典，其余对象需来自 manifest/行为插件）；与 `--manifest`
+//! 互斥。默认使用内置 8 位 I/O 画像。
 //! ```
 //!
 //! TAP 模式：进程自己创建/附着 TAP 接口并持有 fd（无持有者时为 NO-CARRIER，
@@ -25,6 +28,7 @@ fn main() -> std::process::ExitCode {
     let mut tap_name: Option<String> = None;
     let mut uds_path: Option<String> = None;
     let mut manifest_path: Option<String> = None;
+    let mut esi_path: Option<String> = None;
     let mut verbose = false;
     let mut esm_preconditions = true;
     while let Some(arg) = args.next() {
@@ -50,6 +54,13 @@ fn main() -> std::process::ExitCode {
                     return std::process::ExitCode::from(2);
                 }
             },
+            "--esi" => match args.next() {
+                Some(path) => esi_path = Some(path),
+                None => {
+                    eprintln!("ec-sim-esc: --esi 需要一个 .esi.xml 路径");
+                    return std::process::ExitCode::from(2);
+                }
+            },
             "--verbose" | "-v" => verbose = true,
             "--esm-lax" => esm_preconditions = false,
             // 兼容旧参数名：前置条件已是默认行为。
@@ -57,7 +68,7 @@ fn main() -> std::process::ExitCode {
             "--help" | "-h" => {
                 println!(
                     "用法: ec-sim-esc [--tap <name> | --uds <path>] [--verbose] [--esm-lax] \
-                     [--manifest <plugin.yaml>]"
+                     [--manifest <plugin.yaml> | --esi <file.esi.xml>]"
                 );
                 return std::process::ExitCode::SUCCESS;
             }
@@ -66,6 +77,10 @@ fn main() -> std::process::ExitCode {
                 return std::process::ExitCode::from(2);
             }
         }
+    }
+    if manifest_path.is_some() && esi_path.is_some() {
+        eprintln!("ec-sim-esc: --manifest 与 --esi 互斥");
+        return std::process::ExitCode::from(2);
     }
     if tap_name.is_some() && uds_path.is_some() {
         eprintln!("ec-sim-esc: --tap 与 --uds 互斥");
@@ -100,32 +115,62 @@ fn main() -> std::process::ExitCode {
         None => None,
     };
 
+    let esi = match esi_path {
+        Some(path) => match std::fs::read_to_string(&path) {
+            Ok(xml) => match plugin_host::esi::parse_esi(&xml) {
+                Ok(device) => {
+                    println!(
+                        "ESI name={} vendor=0x{:08X} product=0x{:08X} revision=0x{:08X}",
+                        device.name, device.vendor_id, device.product_code, device.revision
+                    );
+                    Some(device)
+                }
+                Err(error) => {
+                    eprintln!("ec-sim-esc: 解析 ESI {path} 失败：{error}");
+                    return std::process::ExitCode::from(2);
+                }
+            },
+            Err(error) => {
+                eprintln!("ec-sim-esc: 读取 ESI {path} 失败：{error}");
+                return std::process::ExitCode::from(2);
+            }
+        },
+        None => None,
+    };
+
     if !cfg!(target_os = "linux") {
         eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
         return std::process::ExitCode::from(3);
     }
 
     match (tap_name, uds_path) {
-        (_, Some(path)) => run_uds(&path, verbose, esm_preconditions, manifest),
-        (Some(name), None) => run(&name, verbose, esm_preconditions, manifest),
-        (None, None) => run("ecsim0", verbose, esm_preconditions, manifest),
+        (_, Some(path)) => run_uds(&path, verbose, esm_preconditions, manifest, esi),
+        (Some(name), None) => run(&name, verbose, esm_preconditions, manifest, esi),
+        (None, None) => run("ecsim0", verbose, esm_preconditions, manifest, esi),
     }
 }
 
-/// 按 manifest（可选）构造应答器：SII 与对象字典都从 manifest 生成，否则用内置画像。
+/// 按 manifest / ESI（可选）构造应答器：SII 与对象字典都从画像生成，否则用内置画像。
 #[cfg(target_os = "linux")]
 fn build_responder(
     manifest: Option<&plugin_host::manifest::PluginManifest>,
+    esi: Option<&plugin_host::esi::EsiDevice>,
     esm_preconditions: bool,
 ) -> Result<esc_node::Responder, String> {
-    let responder = match manifest {
-        Some(manifest) => {
+    let responder = match (manifest, esi) {
+        (Some(manifest), _) => {
             let spec = plugin_host::sii_gen::sii_spec_from_manifest(manifest)?;
             let sii = esc_core::sii::SiiImage::from_spec(&spec);
             let dict = plugin_host::dict_gen::dictionary_from_manifest(manifest)?;
             esc_node::Responder::new(sii).with_dictionary(dict)
         }
-        None => esc_node::Responder::default(),
+        (None, Some(device)) => {
+            let spec = plugin_host::esi::sii_spec_from_esi(device)?;
+            let sii = esc_core::sii::SiiImage::from_spec(&spec);
+            let dict = plugin_host::esi::dictionary_from_esi(device);
+            esc_node::Responder::new(sii).with_dictionary(dict)
+        }
+        (None, None) => esc_node::Responder::default(),
     };
     Ok(responder.with_esm_preconditions(esm_preconditions))
 }
@@ -169,6 +214,7 @@ fn run_uds(
     verbose: bool,
     esm_preconditions: bool,
     manifest: Option<plugin_host::manifest::PluginManifest>,
+    esi: Option<plugin_host::esi::EsiDevice>,
 ) -> std::process::ExitCode {
     use esc_node::DEFAULT_SIM_MAC;
     use std::io::Write;
@@ -186,10 +232,10 @@ fn run_uds(
     println!("READY uds={path}");
     let _ = std::io::stdout().flush();
 
-    let mut responder = match build_responder(manifest.as_ref(), esm_preconditions) {
+    let mut responder = match build_responder(manifest.as_ref(), esi.as_ref(), esm_preconditions) {
         Ok(responder) => responder,
         Err(error) => {
-            eprintln!("ec-sim-esc: 按 manifest 构造应答器失败：{error}");
+            eprintln!("ec-sim-esc: 按 manifest/ESI 构造应答器失败：{error}");
             return std::process::ExitCode::from(7);
         }
     };
@@ -234,6 +280,7 @@ fn run(
     verbose: bool,
     esm_preconditions: bool,
     manifest: Option<plugin_host::manifest::PluginManifest>,
+    esi: Option<plugin_host::esi::EsiDevice>,
 ) -> std::process::ExitCode {
     use esc_node::DEFAULT_SIM_MAC;
     use std::io::Write;
@@ -252,10 +299,10 @@ fn run(
     );
     let _ = std::io::stdout().flush();
 
-    let mut responder = match build_responder(manifest.as_ref(), esm_preconditions) {
+    let mut responder = match build_responder(manifest.as_ref(), esi.as_ref(), esm_preconditions) {
         Ok(responder) => responder,
         Err(error) => {
-            eprintln!("ec-sim-esc: 按 manifest 构造应答器失败：{error}");
+            eprintln!("ec-sim-esc: 按 manifest/ESI 构造应答器失败：{error}");
             return std::process::ExitCode::from(7);
         }
     };
@@ -289,6 +336,7 @@ fn run(
     _verbose: bool,
     _esm_preconditions: bool,
     _manifest: Option<plugin_host::manifest::PluginManifest>,
+    _esi: Option<plugin_host::esi::EsiDevice>,
 ) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)
@@ -300,6 +348,7 @@ fn run_uds(
     _verbose: bool,
     _esm_preconditions: bool,
     _manifest: Option<plugin_host::manifest::PluginManifest>,
+    _esi: Option<plugin_host::esi::EsiDevice>,
 ) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)
