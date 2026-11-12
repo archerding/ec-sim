@@ -724,6 +724,32 @@ pub fn dictionary_from_esi(device: &EsiDevice) -> esc_core::obj_dict::ObjectDict
     )
 }
 
+/// 组合 **ESI（SII 描述）+ manifest（身份与对象字典）**，返回最终 SII 规格（B6 子项）。
+///
+/// - `Sm`/`RxPdo`/`TxPdo`/邮箱/CoE 能力来自 ESI（设备真实描述）；
+/// - `vendor_id`/`product_code`/`revision` 与 SII 名称以 **manifest 为准**：本仓库设备必须
+///   使用自有 VID/PID 且名称带 `SIMULATED`（R2），ESI 的身份只作为兼容性参考事实；
+/// - 运行时对象字典仍由 [`crate::dict_gen::dictionary_from_manifest`] 生成（ESI 不含 OD）。
+pub fn sii_spec_from_esi_and_manifest(
+    device: &EsiDevice,
+    manifest: &crate::manifest::PluginManifest,
+) -> Result<SiiSpec, String> {
+    let issues = manifest.validate();
+    if !issues.is_empty() {
+        return Err(format!(
+            "manifest {} 校验未通过，不能与 ESI 组合：{}",
+            manifest.id,
+            issues.join("；")
+        ));
+    }
+    let mut spec = sii_spec_from_esi(device)?;
+    spec.vendor_id = manifest.identity.vendor_id;
+    spec.product_code = manifest.identity.product_code;
+    spec.revision = manifest.identity.revision;
+    spec.names = vec![manifest.name.clone(), "EC-Sim".to_string()];
+    Ok(spec)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -777,6 +803,30 @@ mod tests {
             .expect("TxPDO category");
         assert_eq!(u16::from_le_bytes([tx[0], tx[1]]), 0x1A00);
         assert_eq!(tx[3], 3, "SM3");
+    }
+
+    #[test]
+    fn esi_plus_manifest_uses_manifest_identity_and_esi_layout() {
+        let device = parse_esi(SAMPLE).expect("parse ESI");
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/sample.esi.plugin.yaml"
+        );
+        let manifest = crate::manifest::PluginManifest::load(path).expect("load paired manifest");
+        let spec = sii_spec_from_esi_and_manifest(&device, &manifest).expect("combined spec");
+        assert_eq!(spec.vendor_id, manifest.identity.vendor_id);
+        assert_eq!(spec.product_code, manifest.identity.product_code);
+        assert_eq!(spec.revision, manifest.identity.revision);
+        assert_eq!(spec.names[0], manifest.name);
+        // SM/PDO/邮箱布局仍来自 ESI。
+        assert_eq!(spec.sync_managers.len(), 4);
+        assert_eq!(spec.sync_managers[0].length, 128);
+        assert_eq!(spec.sync_managers[2].length, 1);
+        assert_eq!(spec.rx_pdos[0].index, 0x1600);
+        assert_eq!(spec.tx_pdos[0].index, 0x1A00);
+        let sii = SiiImage::from_spec(&spec);
+        assert!(sii.verify_checksum());
+        assert_eq!(sii.mailbox_protocols(), 0x0004);
     }
 
     #[test]

@@ -1,0 +1,50 @@
+# EC-Sim 测试夹具：与 crates/plugin-host/tests/fixtures/sample.esi.xml **配对**的声明式 manifest。
+# 用途：验证 `--esi <file> --manifest <yaml>` 组合——SII（SM/PDO/邮箱）取自 ESI，
+# 身份与运行时对象字典取自 manifest（ESI 不含完整对象字典）。
+# 自有 VID/PID（R2）、名称带 SIMULATED；非厂商 ESI/manifest（R1）。
+schema: ecsim.plugin/v1
+id: com.ecsim.sample.esi-pair
+name: "Sample ESI-paired 8DO+8DI (SIMULATED)"
+version: 0.1.0
+kind: device
+license: Apache-2.0 OR MIT
+pricing: {model: free, amount: 0, currency: CNY}
+
+compatibility:
+  brands: ["Generic"]
+  models: ["ESI-PAIR-8DO8DI"]
+  disclaimer: "Test fixture for ESI+manifest composition. Not affiliated with any vendor."
+
+identity:
+  vendor_id: 0x00000EC5
+  product_code: 0x0000E5D3
+  revision: 0x00010000
+  simulated: true
+
+profile: generic-io
+mailbox:
+  coe: {sdo: true, sdo_info: true, complete_access: false}
+
+sm:
+  - {index: 0, dir: mbox-in,  start: 0x1000, len: 128}
+  - {index: 1, dir: mbox-out, start: 0x1080, len: 128}
+  - {index: 2, dir: out,      start: 0x1100, len: 1}
+  - {index: 3, dir: in,       start: 0x1110, len: 1}
+
+pdo:
+  rx:
+    - index: 0x1600
+      entries:
+        - {index: 0x7000, sub: 1, bits: 8}
+  tx:
+    - index: 0x1A00
+      entries:
+        - {index: 0x6000, sub: 1, bits: 8}
+
+objects:
+  - {index: 0x1008, sub: 0, name: Device name, dtype: VISIBLE_STRING, access: ro, value: "Sample ESI-paired 8DO+8DI (SIMULATED)"}
+
+dc: {supported: false, sync0: false}
+
+sources:
+  - {title: "EtherCAT Technology Group — EtherCAT Specification (ETG.1000)", url: "https://www.ethercat.org/", accessed: "2026-11-12"}

@@ -154,9 +154,14 @@ user.email = deepseek-harness@users.noreply.github.com
     `scripts/spikes/esi-sii-scan-probe.sh` **EXIT=0**：SOEM 读 `8bits/8bits`、
     `Man 00000ec5 ID 0000e5d3 Rev 00010000`、`MBX 128/128 protocols 04`；IgH 显示
     `0 0:0 PREOP + 0x00000ec5:0x0000e5d3`。测试 **151 passed**。
-  - 待做：ESI + manifest/行为插件组合（补对象字典并推进 OP）、DC 类别。**FMMU 类别 0x0028 暂缓**（2026-11-12 21:11 班：
-    IgH `fsm_slave_scan.c` 直接跳过该类别、SOEM 仅显示 `FMMUfunc`；公开资料无字段权威语义，
-    按"不凭记忆写规范细节"红线暂停，等 ESC Sec.II / IEC 61158 原文）。
+  - 进度（2026-11-12 23:05 班）：**ESI + manifest 组合画像已验证到 OP**——`--esi` 与
+    `--manifest` 可组合（SII 的 SM/PDO/邮箱来自 ESI；身份/名称/运行时字典来自 manifest，
+    `sii_spec_from_esi_and_manifest()`）；配对夹具 `sample.esi.plugin.yaml`；验证机
+    `scripts/spikes/esi-manifest-op-probe.sh` **EXIT=0**：SOEM `simple_ng` 零补丁
+    `mapped 1O+1I` 且 `all slaves are now operational`（WKC 3，无 wrong），IgH PREOP +
+    身份 `0x00000ec5:0x0000e5d3`。测试 **152 passed**。
+  - 待做：组合画像接入行为插件（B11 Tier0 骨架）、IgH OP（复用作 ecrt 夹具）、
+    FMMU 类别 0x0028、DC 类别（需 ESC Sec.II / IEC 61158 原文）。
   ⚠️ 旧文档把 CRC 写成 word 0x003F，经 SOEM `eepromtool`/IgH `tool/sii_crc.cpp` 复核已更正（0x003F 是 SII 版本 = 1）。
 - [ ] **B7 CoE 最小闭环**：加速 SDO 上传/下载 + 0x1C12/0x1C13/0x1600/0x1A00 + Abort 码；
   **SDO Info 已实现**（SII 通用类别 CoE details = `0x0F`，声明 SDO/Info/PDO assign/config）；

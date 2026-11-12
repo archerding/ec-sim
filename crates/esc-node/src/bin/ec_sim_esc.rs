@@ -9,9 +9,10 @@
 //! ESM 状态迁移前置条件检查默认**开启**（SM 未配置时拒绝进入 PREOP/SAFEOP 并给
 //! AL Status Code 0x0015/0x0017）；`--esm-lax` 关闭该检查（兼容/负向对照用）。
 //! `--manifest` 指定声明式插件 manifest：SII 镜像与对象字典都按该 manifest 生成。
-//! `--esi` 直接读取 ESI XML（B6 子项：ESI → SII 镜像），运行时对象字典只有身份对象
-//! `0x1018`（ESI 不含完整对象字典，其余对象需来自 manifest/行为插件）；与 `--manifest`
-//! 互斥。默认使用内置 8 位 I/O 画像。
+//! `--esi` 直接读取 ESI XML（B6 子项：ESI → SII 镜像）。单独使用时运行时对象字典只有
+//! 身份对象 `0x1018`（ESI 不含完整对象字典）；与 `--manifest` **组合**时，SII 的
+//! SM/PDO/邮箱取自 ESI，身份与运行时字典取自 manifest（ESI 描述 + manifest 字典）。
+//! 默认使用内置 8 位 I/O 画像。
 //! ```
 //!
 //! TAP 模式：进程自己创建/附着 TAP 接口并持有 fd（无持有者时为 NO-CARRIER，
@@ -68,7 +69,7 @@ fn main() -> std::process::ExitCode {
             "--help" | "-h" => {
                 println!(
                     "用法: ec-sim-esc [--tap <name> | --uds <path>] [--verbose] [--esm-lax] \
-                     [--manifest <plugin.yaml> | --esi <file.esi.xml>]"
+                     [--manifest <plugin.yaml>] [--esi <file.esi.xml>]"
                 );
                 return std::process::ExitCode::SUCCESS;
             }
@@ -78,10 +79,7 @@ fn main() -> std::process::ExitCode {
             }
         }
     }
-    if manifest_path.is_some() && esi_path.is_some() {
-        eprintln!("ec-sim-esc: --manifest 与 --esi 互斥");
-        return std::process::ExitCode::from(2);
-    }
+
     if tap_name.is_some() && uds_path.is_some() {
         eprintln!("ec-sim-esc: --tap 与 --uds 互斥");
         return std::process::ExitCode::from(2);
@@ -160,6 +158,14 @@ fn build_responder(
     let responder = match (manifest, esi) {
         (Some(manifest), _) => {
             let spec = plugin_host::sii_gen::sii_spec_from_manifest(manifest)?;
+            let sii = esc_core::sii::SiiImage::from_spec(&spec);
+            let dict = plugin_host::dict_gen::dictionary_from_manifest(manifest)?;
+            esc_node::Responder::new(sii).with_dictionary(dict)
+        }
+        // `--manifest` 与 `--esi` 可以组合：ESI 提供 SII 描述（SM/PDO/邮箱），manifest 提供
+        // 身份（R2 自有 VID/PID）与运行时对象字典（ESI 不含 OD）。
+        (Some(manifest), Some(device)) => {
+            let spec = plugin_host::esi::sii_spec_from_esi_and_manifest(device, manifest)?;
             let sii = esc_core::sii::SiiImage::from_spec(&spec);
             let dict = plugin_host::dict_gen::dictionary_from_manifest(manifest)?;
             esc_node::Responder::new(sii).with_dictionary(dict)

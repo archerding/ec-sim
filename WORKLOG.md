@@ -6,6 +6,47 @@
 
 ---
 
+## 2026-11-12 23:05 班（低峰）— B6/B8 子项：**ESI + manifest 组合画像**（ESI 出 SII、manifest 出身份/字典）→ SOEM 进 OP
+
+**做了什么**
+- `plugin-host::esi` 新增 `sii_spec_from_esi_and_manifest()`：SII 的 SM/PDO/邮箱/CoE 能力
+  来自 **ESI**（设备真实描述），`vendor_id`/`product_code`/`revision` 与 SII 名称来自
+  **manifest**（R2：自有 VID/PID、名称带 SIMULATED），并把"ESI 描述 + manifest 字典"
+  的组合语义写进函数文档。
+- `ec-sim-esc`：`--esi` 与 `--manifest` 不再互斥，可组合使用——组合时 SII 取自 ESI、
+  身份与运行时对象字典取自 manifest；单独 `--esi` 仍只有身份对象 0x1018。`--help`/模块
+  文档同步更新。
+- 新增配对测试夹具 `crates/plugin-host/tests/fixtures/sample.esi.plugin.yaml`
+  （与 `sample.esi.xml` 同身份 0x0EC5/0xE5D3、同 SM/PDO 布局，含 VISIBLE_STRING 设备名）。
+- 新增验证脚本 `scripts/spikes/esi-manifest-op-probe.sh`：SOEM `slaveinfo` + `simple_ng`
+  （零补丁进 OP）+ IgH `ethercat slaves`（PREOP/身份）。
+- 单测补充 `esi_plus_manifest_uses_manifest_identity_and_esi_layout`。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **152 passed**（esc-core 76 / esc-node 38 / plugin-host 21 + 1 集成 / wire 16）。
+- Linux 验证机：`bash scripts/spikes/esi-manifest-op-probe.sh` **EXIT=0**：
+  - `slaveinfo`：`Output size: 8bits / Input size: 8bits`、
+    `Man: 00000ec5 ID: 0000e5d3 Rev: 00010000`、`MBX 128/128 protocols 04`；
+  - `simple_ng`（零补丁）：`mapped 1O+1I`、`all slaves are now operational`、
+    `WKC 3`（实际 = 期望，无 `wrong` 提示）；
+  - IgH `ethercat slaves`：`0  0:0  PREOP  +  0x00000ec5:0x0000e5d3`
+    （无 ecrt 应用时 IgH 只配置到 PREOP；OP 见 `igh-el2008-op-probe.sh`）。
+  → ESI 的 SII 描述与 manifest 的身份/字典组合后，可被未修改 SOEM 映射并推进 OP。
+
+**卡点**
+- 组合画像的 PDO 数据仍是通用 DL 内存（无行为逻辑）；ESI 侧对象字典仍缺（需行为插件/
+  manifest 扩展）。IgH 进 OP 需要 ecrt 应用夹具（已有 EL2008 的先例，可复用）。
+- B6 剩余：FMMU 类别 0x0028、DC 类别（需 ESC Sec.2 / ETG 原文核实）；ESI 子集仍不含
+  ObjectDictionary/DC/多设备选择。
+
+**下次开工第一件事**
+- 把组合画像用于 B11 行为插件的第一步（Tier0 行为骨架：CiA402 状态机只读对象 +
+  PDO 数据），或在双主站下让组合画像进 IgH OP（复用 ecrt 夹具）；随后读 ESC Sec.2
+  原文核实 FMMU/DC 类别。
+
+---
+
 ## 2026-11-12 22:42 班（低峰）— B6 子项：ESI→SII 接入 CLI + **双主站扫描验证**（`--esi`）
 
 **做了什么**
