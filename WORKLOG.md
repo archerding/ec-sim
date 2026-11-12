@@ -6,6 +6,39 @@
 
 ---
 
+## 2026-11-12 19:56 班（低峰）— B8 收尾：双主站 OP 冒烟记录（spike-4）并勾选 B8
+
+**做了什么**
+- 新增 `docs/spikes/spike-4-dual-master-op.md`：汇总 **B8** 双主站证据（未修改 SOEM 与
+  IgH 1.6.13，单从站 8 位 I/O 画像）——方法、命令、脱敏输出（SOEM `slaveinfo`/`simple_ng`/
+  `slaveinfo -map`；IgH `ethercat slaves`、SDO 上传/下载、ecrt 应用 `RESULT`、内核日志）、
+  5 个可复现断言脚本清单、ecrt 夹具 provisioning（GPL 链接，源码不入库）、已知限制
+  （单从站、静态 PDO、DC/watchdog、无 GUI 截图、SDO Info 未实现）与非认证声明。
+- `AGENTS.md` §6 把 **B8 勾选为完成**（附证据链接与限制）；`spike-3` §6 更新指向 spike-4。
+- 收尾前在验证机上重跑全部断言脚本，全部通过。
+
+**验证结果**
+- `minimal-esc-responder.sh` exit 0：SOEM 1 从站 / 8bits / SAFEOP、IgH PREOP、拓扑断言 OK，
+  应答器统计 `mbox=19 mboxresp=19`；
+- `soem-process-data.sh` exit 0：`OK: SOEM simple_ng 进入 OP，1055 轮 WKC=3，无 WKC 不符`；
+- `soem-mailbox-probe.sh` exit 0：`mbox=24 mboxresp=22`；
+- `sdo-upload-probe.sh` exit 0：SOEM CoE 映射 `0x7000/0x6000`；IgH SDO 上传/下载全通过；
+- `igh-op-probe.sh` exit 0：`ethercat slaves` = **OP**、应用 `al_states=0x08`、`wc=3`；
+  dmesg：`Domain 0: Working counter changed to 3/3.`、`Slave states on main device: OP.`。
+- 本班未改 Rust 代码；收尾前重跑 `cargo fmt/clippy/test` 仍 **100 passed**。
+
+**卡点**
+- 单从站；过程数据内容静态（无 PDI 回环）；DC / SM watchdog / OP 下 AL 错误恢复未实现/未验证。
+- 无 GUI 截图（远端无图形界面），spike-4 以脱敏文本输出为证据；需要截图时在图形环境重跑脚本。
+
+**下次开工第一件事**
+- 按 `AGENTS.md` §6 **顶部未完成项取 B3（SOEM oshw UDS shim）**：把 SOEM 的 `oshw` 收发包换成
+  UDS、跑通 `ec_config_init` + `ec_config_map`（SOEM 仍作为独立进程夹具，不改仓库核心）；
+  若该 spike 受阻，则继续 B6 剩余（SII FMMU 类别 0x0028 / DC 类别，先核实字段语义）并在
+  WORKLOG 记原因。
+
+---
+
 ## 2026-11-12 19:53 班（低峰）— B8 里程碑：**未修改 IgH 零补丁进入 OP**（ecrt 应用夹具）
 
 **做了什么**

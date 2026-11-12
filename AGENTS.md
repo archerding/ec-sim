@@ -136,18 +136,18 @@ user.email = deepseek-harness@users.noreply.github.com
 - [ ] **B9 声明式插件加载器**：读取 `plugins/<id>/plugin.yaml` → 生成 SII + 对象字典 + 默认 PDO 分配 + SM/FMMU 布局（不依赖行为代码），并在 IgH/SOEM 上扫描到该从站。
 - [ ] **B10 首个 P0 设备插件**：Beckhoff EL2008 兼容 8DO（声明式），完成 `facts.md`（含来源 URL）、manifest、双主站扫描验证记录（`docs/plugins/`）。
 - [ ] **B11 CiA402 行为插件**：以 Inovance SV660N 兼容画像为第一个目标，实现 CSP 状态机（Tier0/内置 profile 起步）。
-- [ ] **B8 双主站冒烟**：IgH `ethercat slaves` 与 SOEM `slaveinfo` 零补丁看到 OP，输出可复现脚本与截图。
-  - 进度（2026-11-12 19:26 班）：**SOEM 侧已零补丁进 OP**——`simple_ng`：`mapped 1O+1I bytes` →
-    SAFEOP → `all slaves are now operational`，每轮 **WKC 3**（1055 轮、0 次 wrong）；
-    `slaveinfo`：`Output size: 8bits / Input size: 8bits / State: 4`。断言脚本：
-    [soem-process-data.sh](scripts/spikes/soem-process-data.sh)。
-  - 进度（2026-11-12 19:53 班）：**IgH 侧也已零补丁进入 OP**——验证机本地最小 ecrt 应用夹具
-    （不入库，链接 GPL libethercat）：按本仓库对象字典配置 domain（0x1600/0x1A00、8bit I/O），
-    `ethercat slaves` 显示 `OP`，应用 `al_states=0x08`、domain `wc=3`，IgH 日志
-    `Working counter changed to 3/3` / `Slave states on main device: OP`。
-    断言脚本：[igh-op-probe.sh](scripts/spikes/igh-op-probe.sh)。
-  - 待做：把双主站证据合并成 `docs/spikes/spike-4-dual-master-op.md`（含命令/脱敏输出/截图），
-    然后勾选 B8；多从站、DC、watchdog 仍未验证。
+- [x] ~~**B8 双主站冒烟**~~ ✅ **2026-11-12 19:56 班完成（单从站 8 位 I/O 画像）**：
+  **未修改的 SOEM 与 IgH 都在本模拟器上看到从站进入 OP**，输出可复现脚本见
+  [spike-4](docs/spikes/spike-4-dual-master-op.md)：
+  - SOEM：`simple_ng` → `mapped 1O+1I`、`all slaves are now operational`、1055 轮 **WKC 3**；
+    `slaveinfo -map` 打印 CoE 映射 `0x7000:0x00 8bit / 0x6000:0x00 8bit`。
+  - IgH 1.6.13：ecrt 应用配置 domain 后 `ethercat slaves` 显示 **OP**、应用 `al_states=0x08`、
+    domain `WKC 3`；内核日志 `Working counter changed to 3/3` / `Slave states: OP`；
+    `ethercat upload/download` 可读写对象字典。
+  - 断言脚本：`soem-process-data.sh`、`soem-mailbox-probe.sh`、`sdo-upload-probe.sh`、
+    `igh-op-probe.sh`、`minimal-esc-responder.sh`。
+  - 已知限制（见 spike-4 §6）：单从站；过程数据内容静态（无 PDI 回环）；DC/SM watchdog/
+    OP 下 AL 错误恢复未实现；无 GUI 截图（以脱敏文本输出为证据）；SDO Info/CA/分段未实现。
 
 ## 7. 目录约定
 

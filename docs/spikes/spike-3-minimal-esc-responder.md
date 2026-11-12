@@ -232,9 +232,9 @@ EtherCAT 0: Slave states on main device: OP.
 
 ## 6. 下一步
 
-- **B8 收尾**：两家未修改主站都已进 OP（SOEM `simple_ng` §3.1、IgH ecrt 应用 §3.4，断言脚本
-  `soem-process-data.sh` / `igh-op-probe.sh`）；把双主站证据合并成
-  `docs/spikes/spike-4-dual-master-op.md`（命令、脱敏输出、截图、脚本清单）并勾选 B8；
+- ✅ **B8 收尾（2026-11-12 19:56 班）**：两家未修改主站都已进 OP（SOEM `simple_ng` §3.1、
+  IgH ecrt 应用 §3.4），双主站合并证据见
+  [spike-4-dual-master-op.md](spike-4-dual-master-op.md)（命令、脱敏输出、5 个断言脚本清单）；
 - 之后可补 SDO Info（0x8）、对象字典扩展（0x1C32/0x1C33 等）、SII FMMU/DC 类别，
   以及多从站/DC/watchdog 场景；
 - DL Status 将在**多从站**场景下按实际拓扑继续验证（单从站已 ✅）。
