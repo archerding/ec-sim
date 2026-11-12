@@ -1,5 +1,41 @@
 ---
 
+## 2026-11-13 05:16 班（低峰）— **B17：原生 Rust 延迟基准 + `--poll`；M1 p99 达成（忙轮询）**
+
+**做了什么**
+- 新增 `crates/esc-node/examples/uds_latency.rs`：Rust 直接收发 EtherCAT 帧（绕开 Python/
+  SOEM 应用层），可对 UDS shim 测 min/p50/p90/p99/p999/max；第三参数 `spin` 启用忙轮询收包。
+- `ec-sim-esc` 新增 **`--poll`**：UDS shim 忙轮询模式（非阻塞 recv + spin；默认仍阻塞等待，
+  省 CPU）；`--help`/文件头同步。
+- 验证机复测（`isolcpus=2,3`，sim CPU2 / probe CPU3）：
+  - 默认阻塞：p50≈93.0µs / p99≈156.6µs；
+  - 仅 sim `--poll`：p50≈49.2µs / p99≈111.9µs；
+  - 仅 probe spin：p50≈42.3µs / p99≈114.4µs；
+  - **两边忙轮询：p50≈3.7µs / p99≈9.3µs（1 站），8 站 p50≈4.5µs / p99≈14.6µs**。
+- 更新 [ADR 0001](docs/adr/0001-m1-1khz-p99-limits.md)（B17 更新节）、M1 退出清单
+  （第 3 项 ✅ 忙轮询达成；第 2 项 shim 链路能力达成/样例程序未达）、VERIFICATION、AGENTS
+  （B17 完成、新增 B18 M2 起点只读拓扑）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy（含 examples）通过；`cargo test --workspace` **210 passed** 不变
+  （Windows 上 `uds_latency` 走非 Unix 桩）。
+- 验证机：上述延迟数据 + 8 站忙轮询 p99≈14.6µs；`--poll` 启动日志 `POLL uds 忙轮询模式已启用`。
+
+**结论**
+- 默认阻塞模式（生产/CI 默认）p99≈157µs，未达 M1 p99<100µs；**忙轮询模式 p99≈9–15µs 达成**，
+  但 CPU 占用高，仅建议基准/压测使用（默认不启用）。
+- 8 从站 @1kHz：shim 链路能力成立（单轮 3.5–4.5µs），SOEM 样例程序 shim≈860Hz/TAP≈425Hz 未达。
+
+**卡点**
+- 如需样例级 1kHz：SOEM TAP/shim 收包线程调优（夹具配置，B18 之前可做）。
+
+**下次开工第一件事**
+- **B18**：`ec-sim-esc --dump-state`（JSON：从站/AL/SM/FMMU/PDO 映射/DC 摘要）+ `web/` 静态
+  只读页（极简 std TcpListener），为 M2 WebUI 打基础。
+
+---
+---
+
 ## 2026-11-13 05:12 班（低峰）— **B16：M1 性能瓶颈定位 + ADR（模拟器侧仅 ~0.5µs/帧）**
 
 **做了什么**

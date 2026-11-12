@@ -166,6 +166,8 @@ fn main() -> std::process::ExitCode {
     let mut fault: Option<u16> = None;
     // 同一进程模拟的 ESC 数量（B12 多从站链；默认 1）。
     let mut slave_count: usize = 1;
+    // UDS 线缆层忙轮询模式（B17 延迟基准用；默认阻塞等待，省 CPU）。
+    let mut poll = false;
     let mut dump_sii = false;
     let mut dump_dict = false;
     while let Some(arg) = args.next() {
@@ -241,6 +243,8 @@ fn main() -> std::process::ExitCode {
                 }
             },
             "--verbose" | "-v" => verbose = true,
+            // B17：UDS 忙轮询（延迟基准用；CPU 占用高，默认关闭）。
+            "--poll" => poll = true,
             "--dump-sii" => dump_sii = true,
             "--dump-dict" => dump_dict = true,
             "--version" | "-V" => {
@@ -254,7 +258,7 @@ fn main() -> std::process::ExitCode {
                 println!(
                     "用法: ec-sim-esc [--tap <name> | --uds <path>] [--verbose] [--esm-lax] \
                      [--manifest <plugin.yaml>] [--esi <file.esi.xml>] [--behavior cia402]
-                     [--fault <hex>（需 --behavior cia402）] [--slaves <1..64>]
+                     [--fault <hex>（需 --behavior cia402）] [--slaves <1..64>] [--poll]
                      调试：--dump-sii [--manifest <yaml>] [--esi <xml>] 打印 SII 镜像 hex/类别链后退出；
                      --dump-dict [--manifest <yaml>] [--esi <xml>] 打印运行时对象字典后退出；
                      --version 打印版本。"
@@ -347,6 +351,7 @@ fn main() -> std::process::ExitCode {
             behavior,
             fault,
             slave_count,
+            poll,
         ),
         (Some(name), None) => run(
             &name,
@@ -498,6 +503,7 @@ fn run_uds(
     behavior: Option<String>,
     fault: Option<u16>,
     slave_count: usize,
+    poll: bool,
 ) -> std::process::ExitCode {
     use esc_node::DEFAULT_SIM_MAC;
     use std::io::Write;
@@ -530,10 +536,22 @@ fn run_uds(
         }
     };
     let mut buf = [0u8; 2048];
+    if poll {
+        if let Err(err) = socket.set_nonblocking(true) {
+            eprintln!("ec-sim-esc: --poll 设置非阻塞失败：{err}");
+            return std::process::ExitCode::from(4);
+        }
+        println!("POLL uds 忙轮询模式已启用（CPU 占用高，仅基准用）");
+    }
     loop {
         let (len, peer) = match socket.recv_from(&mut buf) {
             Ok(received) => received,
             Err(err) if err.kind() == std::io::ErrorKind::Interrupted => continue,
+            // B17：忙轮询模式（--poll）下无数据时自旋，减少唤醒延迟。
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                std::hint::spin_loop();
+                continue;
+            }
             // 对端已关闭/不可达时继续等待下一个客户端（CI 场景常见）。
             Err(err) if err.kind() == std::io::ErrorKind::ConnectionRefused => continue,
             Err(err) => {
@@ -664,6 +682,7 @@ fn run_uds(
     _behavior: Option<String>,
     _fault: Option<u16>,
     _slave_count: usize,
+    _poll: bool,
 ) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)

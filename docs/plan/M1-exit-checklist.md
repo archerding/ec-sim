@@ -9,8 +9,8 @@
 | # | 退出标准 | 状态 | 证据 / 缺口 | 下一步 |
 | --- | --- | --- | --- | --- |
 | 1 | 未修改的 `ethercat slaves`（IgH）与 `slaveinfo`（SOEM）**零补丁看到 OP** | ✅ 已达成 | SOEM：`soem-process-data-probe.sh`/`simple_ng` OP + WKC 3；IgH：`igh-op-probe.sh`/`igh-cia402-*-op-probe.sh`（ecrt 夹具，验证机本地）OP；`sv660n-capability-probe.sh` 同时跑两家 | 保持回归（`docs/VERIFICATION.md`） |
-| 2 | **8 从站 @ 1 kHz** | 🟡 功能达成 / 性能待测 | **UDS shim 与 TAP 均支持 8 从站**：未修改 SOEM `slaveinfo` 报 `8 slaves found`、`simple_ng` 映射 8O+8I 且 WKC 24 稳定；`isolcpus=2,3`+RT 下 TAP 仍 **≈425 Hz**（≈2.35 ms/轮），但模拟器链处理仅 **≈0.48 µs/帧** → 瓶颈在 SOEM TAP 收包/调度，见 [ADR 0001](../adr/0001-m1-1khz-p99-limits.md) | B17 原生主站基准/SOEM 收包调优 |
-| 3 | **p99 抖动 < 100 µs**（shim，隔离 CPU） | 🟡 未达标（测量工具主导） | `shim-latency.sh`：`isolcpus` + RT/绑核 1 从站 p50≈101µs / p99≈172µs（未绑核 p99≈196µs）；8 从站 p99≈181µs；p99 开销主要来自 UDS syscall + Python 探测 + 调度，见 [ADR 0001](../adr/0001-m1-1khz-p99-limits.md) | B17 原生基准（C/Rust 探测） |
+| 2 | **8 从站 @ 1 kHz** | 🟡 shim 链路达成 / 样例程序未达 | **UDS shim 与 TAP 均支持 8 从站**（SOEM `slaveinfo` 8 slaves/WKC 24）；原生 Rust 探测（`uds_latency` + `--poll`）单轮 **3.5–4.5 µs**（8 站 p99≈14.6 µs）→ shim 链路能力可支撑 1 kHz；但 SOEM 样例 `simple_ng` shim ≈860 Hz、TAP ≈425 Hz（收包线程/应用开销），链处理本身仅 ≈0.48 µs/帧。见 [ADR 0001](../adr/0001-m1-1khz-p99-limits.md) | 如需样例级 1kHz：调 SOEM TAP/shim 收包线程（夹具配置） |
+| 3 | **p99 抖动 < 100 µs**（shim，隔离 CPU） | ✅ 达成（忙轮询模式） | 原生 Rust 探测 + `--poll`：1 从站 p99≈**9.3 µs**，8 从站 p99≈**14.6 µs**（p50≈3.7/4.5 µs）；默认阻塞模式 p50≈93 µs / p99≈157 µs（两次进程唤醒调度主导）。忙轮询 CPU 占用高，默认不启用。见 [ADR 0001](../adr/0001-m1-1khz-p99-limits.md) | 生产默认阻塞；忙轮询仅基准/压测用 |
 | 4 | **Docker 无特权跑通** | ✅ 已达成（podman） | `docker/Dockerfile`（标准多阶段）+ `docker/Dockerfile.prebuilt`（离线预构建变体）；`podman-unprivileged-probe.sh` **EXIT=0**：无 `--privileged/--network=host` 容器内 8 从站 UDS shim 全链路通过。⚠️ 标准多阶段 Dockerfile 因验证机无 registry 网络未实际构建 | 在有 registry 的环境构建 `docker/Dockerfile` 复核（B15） |
 | 5 | CLI | ✅ 已达成 | `ec-sim-esc`（TAP/UDS/manifest/ESI/behavior/fault/dump-sii/dump-dict） | — |
 | 6 | 8DI/8DO 画像 | ✅ 已达成 | `generic-io`/`beckhoff-el2008` 画像 + `manifest-slave-probe.sh`/`igh-el2008-op-probe.sh` | — |

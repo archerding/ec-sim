@@ -48,3 +48,35 @@
 - M1 功能退出标准（两家未修改主站零补丁 OP、8 从站、UDS shim、CLI、8DI/8DO、容器无特权）
   均有可复现证据；**性能指标**单独列为未达标项，避免把功能达成混同为性能达成。
 - 复现命令见 `docs/plan/M1-exit-checklist.md` 与 `docs/VERIFICATION.md` 对应脚本行。
+
+## 2026-11-13 更新（B17：原生探测 + 忙轮询）
+
+新增 `crates/esc-node/examples/uds_latency.rs`（Rust 直接收发 EtherCAT 帧，绕开 Python/SOEM
+应用层）与 `ec-sim-esc --poll`（UDS 忙轮询；默认仍阻塞等待，省 CPU）。验证机
+（`isolcpus=2,3`，sim→CPU2、probe→CPU3，未额外 RT）实测：
+
+| 配置 | 1 从站 p50 / p99 | 8 从站 p50 / p99 |
+| --- | --- | --- |
+| 两边阻塞（默认） | 93.0 / **156.6 µs** | — |
+| 仅 sim `--poll` | 49.2 / 111.9 µs | — |
+| 仅 probe spin | 42.3 / 114.4 µs | — |
+| **两边忙轮询**（sim `--poll` + probe `spin`） | **3.7 / 9.3 µs** | **4.5 / 14.6 µs** |
+
+结论更新：
+
+- 默认阻塞模式（93 µs p50 / 157 µs p99）的延迟主要是**两次进程唤醒调度**，不是 UDS/ESC 处理；
+  Python 探测与原生探测数值接近（此前 pytest 结论成立）。
+- 两边忙轮询时单轮 **3.5–4.5 µs**，p99 **9.3 µs（1 站）/ 14.6 µs（8 站）**——M1 的
+  **p99 < 100 µs** 在 shim + 忙轮询下**达成**，代价是 CPU 占用（忙等，生产/CI 默认不开）。
+- 8 从站 @1kHz：shim 链轮询时延 << 1 ms，**链路能力上成立**；但 SOEM 样例 `simple_ng`
+  在 shim 上约 860 Hz、在 TAP 上约 425 Hz（应用/收包线程开销），**样例程序本身达不到 1kHz**。
+  因此 M1 该条仍按"native/shim 能力达成、SOEM 样例未达"记录。
+
+复现：
+
+```bash
+# 终端 1
+taskset -c 2 target/release/ec-sim-esc --uds /tmp/n.sock --slaves 8 --poll
+# 终端 2（Rust 原生探测，忙轮询）
+taskset -c 3 target/release/examples/uds_latency /tmp/n.sock 5000 spin
+```
