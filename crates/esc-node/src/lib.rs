@@ -614,4 +614,102 @@ mod tests {
         assert_eq!(wkc, 1);
         assert_eq!(u16::from_le_bytes([data[0], data[1]]), DL_STATUS_INITIAL);
     }
+
+    #[test]
+    fn master_sync_manager_config_is_stored_but_status_is_read_only() {
+        use esc_core::sm::SyncManager;
+
+        // 主站按 8 字节块整块写 SM0（mailbox out）配置；Status/PDI Control 是只读字节。
+        let mut responder = Responder::default();
+        let master = SyncManager {
+            start_address: 0x1000,
+            length: 0x0080,
+            control: 0x26, // mailbox + write + DLS-user event
+            status: 0xFF,
+            activate: 0x01,
+            pdi_control: 0xFF,
+        };
+        let write = request(&[DatagramData::auto_increment(
+            Command::Apwr,
+            1,
+            0,
+            0x0800,
+            master.to_bytes().to_vec(),
+        )]);
+        responder
+            .handle_frame(&write, DEFAULT_SIM_MAC)
+            .expect("reply");
+
+        let read = request(&[DatagramData::auto_increment(
+            Command::Aprd,
+            2,
+            0,
+            0x0800,
+            vec![0u8; 8],
+        )]);
+        let reply = responder
+            .handle_frame(&read, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let (wkc, data) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 8);
+        assert_eq!(wkc, 1);
+        let bytes: [u8; 8] = data[..].try_into().expect("8 bytes");
+        let stored = SyncManager::from_bytes(&bytes);
+        assert_eq!(stored.start_address, 0x1000);
+        assert_eq!(stored.length, 0x0080);
+        assert_eq!(stored.control, 0x26);
+        assert_eq!(stored.activate, 0x01);
+        assert_eq!(stored.status, 0, "Status 只读");
+        assert_eq!(stored.pdi_control, 0, "PDI Control 只读");
+        assert!(stored.is_mailbox());
+    }
+
+    #[test]
+    fn master_fmmu_config_is_stored_but_type_is_read_only() {
+        use esc_core::fmmu::Fmmu;
+
+        // 主站按 16 字节块整块写 FMMU0；Type 与保留字节只读。
+        let mut responder = Responder::default();
+        let master = Fmmu {
+            logical_start_address: 0x0000_1000,
+            length: 0x0008,
+            logical_start_bit: 0,
+            logical_end_bit: 7,
+            physical_start_address: 0x1200,
+            physical_start_bit: 0,
+            fmmu_type: 0x03,
+            activate: 0x01,
+        };
+        let write = request(&[DatagramData::auto_increment(
+            Command::Apwr,
+            1,
+            0,
+            0x0600,
+            master.to_bytes().to_vec(),
+        )]);
+        responder
+            .handle_frame(&write, DEFAULT_SIM_MAC)
+            .expect("reply");
+
+        let read = request(&[DatagramData::auto_increment(
+            Command::Aprd,
+            2,
+            0,
+            0x0600,
+            vec![0u8; 16],
+        )]);
+        let reply = responder
+            .handle_frame(&read, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let (wkc, data) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 16);
+        assert_eq!(wkc, 1);
+        let bytes: [u8; 16] = data[..].try_into().expect("16 bytes");
+        let stored = Fmmu::from_bytes(&bytes);
+        assert_eq!(stored.logical_start_address, 0x0000_1000);
+        assert_eq!(stored.length, 0x0008);
+        assert_eq!(stored.logical_end_bit, 7);
+        assert_eq!(stored.physical_start_address, 0x1200);
+        assert_eq!(stored.activate, 0x01);
+        assert_eq!(stored.fmmu_type, 0, "Type 只读");
+        assert_eq!(&bytes[0x0D..0x10], &[0, 0, 0], "保留字节只读");
+    }
 }

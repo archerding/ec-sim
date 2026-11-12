@@ -6,6 +6,47 @@
 
 ---
 
+## 2026-11-12 19:02 班（低峰）— B5 子项：SM/FMMU 寄存器块（主站整块写 + 只读字节语义）
+
+**做了什么**
+- `esc-core` 新增两个模块，补上 B5 的 SM/FMMU 寄存器块：
+  - `sm.rs`：Sync Manager 寄存器区 **0x0800–0x083F**（8 通道 × 8 字节）——start address / length /
+    control / status / activate / PDI control 的编解码；control 位域解码（mode：0=buffered、2=mailbox；
+    direction：0=read、1=write、2=read/write；ECAT/DLS-user 事件、watchdog）与
+    `is_enabled()/is_mailbox()/direction()/is_watchdog_enabled()`；
+  - `fmmu.rs`：FMMU 寄存器区 **0x0600–0x067F**（8 实体 × 16 字节）——logical start address / length /
+    logical start/end bit / physical start address / physical start bit / type / activate 的编解码；
+    `is_enabled()/can_read()/can_write()`。布局按 **ETG.1000.4 table 56/58** 逐字段核对
+    （以 etherage 的寄存器模型交叉参考，MIT OR Apache-2.0；只读参考，未复制代码）。
+- `Registers::access()` 扩展**只读子地址**：SM Status（`0x0805+8i`）、SM PDI Control（`0x0807+8i`）、
+  FMMU Type（`0x060B+16i`）与 FMMU 保留字节（`0x060D–0x060F+16i`）。主站按真实习惯**整块写**
+  （SM 8 B / FMMU 16 B）配置时，可写字段生效、只读字节被丢弃——与真实 ESC 语义一致。
+- `esc-node` 新增 2 条 datagram 路径集成测试：APWR 8 B SM0 配置后 APRD 回读（status/PDI control 保持 0）；
+  APWR 16 B FMMU0 后 APRD 回读（type/保留字节保持 0）。
+- 单测新增 **10 条**（esc-core +8：地址步长、只读字节判定、编解码往返、整块写策略；
+  esc-node +2：上述两条）。
+
+**验证结果**
+- 本机 Windows（rustc 1.97.1）：`cargo fmt --all -- --check` exit 0；
+  `cargo clippy --workspace --all-targets -- -D warnings` exit 0；
+  `cargo test --workspace` **65 passed**（esc-core 33 / esc-node 16 / wire 16），本项新增 10 条。
+- Linux 验证机（**未修改的** IgH 1.6.13 + SOEM，回归）：SOEM `1 slaves found and configured`、
+  `Activeports:1.0.0.0`；IgH `0  0:0  PREOP  +  0x00000ec5:0x0000e5c1`；拓扑断言
+  `OK: 单从站拓扑计算未报错`、脚本 `SPIKE_RC=0`。说明只读字节策略未破坏扫描
+  （SOEM 初始化会对 FMMU/SM 区做 BWR 清零，涉及字节均为只读/保留，语义不变）。
+- ⚠️ 待验证：真实主站在配置阶段写入 SM/FMMU 后进 SAFEOP 的完整流程（需 B7 CoE / B8）。
+
+**卡点**
+- 无。本项是纯寄存器语义，VM 只做回归。
+- 注意：SM/FMMU 的**功能**（mailbox 握手、FMMU 逻辑寻址搬运）尚未实现，B5 仍未勾选完成。
+
+**下次开工第一件事**
+- **B5 继续**：实现 FMMU 命中的**逻辑寻址最小闭环**（Lrd/Lwr/Lrw）——按已写入的 FMMU 实体判断
+  逻辑地址是否命中本从站，并把数据搬到物理侧（寄存器阵列 / 从机内存），单测覆盖单实体与
+  跨区间边界；这是 B8 双主站进 OP 前 ESC 数据面的最后一块。
+
+---
+
 ## 2026-11-12 18:56 班（低峰）— IgH 拓扑计算修复：DL Status（0x0110）端口位按 ETG.1000.4 复核
 
 **做了什么**
