@@ -110,3 +110,16 @@ sudo bash scripts/spikes/sv660n-capability-probe.sh
   提供 **Tier0 帧驱动模拟时钟**（0x0900–0x0917 随帧前进，见 `dc-clock-probe.sh`），但
   ⚠️ **无真实 SYNC0 脉冲/漂移补偿/传播延迟测量**；
 - IgH `ethercat slaves`：`PREOP + 0x00000ec5:0x0000e5f1`。
+## SOEM DC 配置路径（2026-11-13 02:46 班）
+
+```bash
+sudo bash scripts/spikes/soem-dc-probe.sh
+```
+
+结果（Linux 验证机 **EXIT=0**）：
+
+- SOEM `simple_ng`：`mapped 7O+7I bytes`、`Configuring distributed clock... done`、
+  `all slaves are now operational`、`WKC 3` 稳定；`T:` 时间列随模拟时钟递增；
+- 应答器 `--verbose` 统计：`dc_rd=5300 dc_wr=5302`（SOEM 每周期读 0x0910 系统时间、
+  DC 配置阶段写激活/启动/周期寄存器）；
+- ⚠️ 这是**路径验证**（DC 寄存器可读可写、主站不报错、仍进 OP），不是 DC 同步精度验证。

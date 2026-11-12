@@ -281,13 +281,15 @@ fn maybe_print_stats(responder: &esc_node::Responder, verbose: bool) {
         return;
     }
     eprintln!(
-        "STATS in={} out={} dropped={} hits={} mbox={} mboxresp={} al=0x{:02x} station=0x{:04x}",
+        "STATS in={} out={} dropped={} hits={} mbox={} mboxresp={} dc_rd={} dc_wr={} al=0x{:02x} station=0x{:04x}",
         stats.frames_in,
         stats.frames_out,
         stats.frames_dropped,
         stats.datagrams_hit,
         stats.mailbox_requests,
         stats.mailbox_responses,
+        stats.dc_reg_reads,
+        stats.dc_reg_writes,
         responder.al_status(),
         responder.station_address()
     );

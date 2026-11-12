@@ -32,6 +32,36 @@
 
 ---
 
+## 2026-11-13 02:46 班（低峰）— B6/B11：**SOEM DC 配置路径验证 + DC 访问统计**
+
+**做了什么**
+- `esc-node::Stats` 新增 `dc_reg_reads` / `dc_reg_writes`：`read_registers`/`write_registers`
+  命中 **0x0900–0x09AF** 时计数（`--verbose` 的 `STATS` 行新增 `dc_rd=`/`dc_wr=`）；
+  新增单测 `dc_register_access_is_counted`。
+- 新增 `scripts/spikes/soem-dc-probe.sh`：用 SV660N 画像（声明 DC）+ **未修改 SOEM**
+  `simple_ng` 跑 `ecx_configdc()`，断言 `Configuring distributed clock... done`、
+  `mapped 7O+7I`、`all slaves are now operational`、`WKC 3`，并从应答器 `STATS`
+  解析 `dc_rd/dc_wr > 0`（证明主站确实读写 DC 寄存器）。
+- 更新 `docs/VERIFICATION.md`、`docs/plugins/inovance-sv660n-verification.md`
+  （新增 SOEM DC 配置路径节）、`docs/STATUS.md` 差距表、AGENTS B11 进度。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **202 passed**（esc-core 86 / esc-node 65 / plugin-host 27 + 1 集成 / wire 23）。
+- Linux 验证机（重建后）：`soem-dc-probe.sh` → **EXIT=0**：
+  SOEM 输出 `mapped 7O+7I`、`Configuring distributed clock... done`、
+  `all slaves are now operational`、`WKC 3`（`T:` 时间列随模拟时钟递增）；
+  应答器 `STATS ... dc_rd=5300 dc_wr=5302 al=0x08`。
+
+**卡点**
+- 这是 **DC 路径验证**（寄存器可读写、主站不报错、仍进 OP），**不是** DC 同步精度验证：
+  模拟时钟仍为帧驱动，无真实 SYNC0 脉冲/漂移补偿/传播延迟测量。
+
+**下次开工第一件事**
+- B11：继续找 SV660N 默认 PDO 条目；或评估真实 DC 同步（SYNC0 脉冲）实现价值。
+
+---
+
 ## 2026-11-13 02:27 班（低峰）— B11/B6：**DC Tier0 落地（声明 + 模拟时钟）**
 
 **做了什么**

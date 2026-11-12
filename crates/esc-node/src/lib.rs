@@ -108,6 +108,10 @@ pub struct Stats {
     pub mailbox_requests: u64,
     /// 已回 SDO 响应的邮箱响应数（expedited upload 或 Abort）。
     pub mailbox_responses: u64,
+    /// 读取 DC 寄存器块（0x0900–0x09AF）的次数。
+    pub dc_reg_reads: u64,
+    /// 写入 DC 寄存器块（0x0900–0x09AF）的次数。
+    pub dc_reg_writes: u64,
 }
 
 /// 进行中的分段 SDO 上传（值 > 4 字节时使用，CiA 301 segmented upload）。
@@ -708,6 +712,11 @@ impl Responder {
         }
         // DC 时间寄存器（0x0900–0x0917）由模拟时钟动态回填：
         // 0x0900–0x090F 为各端口接收时间、0x0910–0x0917 为系统时间（Tier0 简化：同值）。
+        if (0x0900..=0x09AF).contains(&address)
+            || (0x0900..=0x09AF).contains(&address.wrapping_add(len as u16))
+        {
+            self.stats.dc_reg_reads += 1;
+        }
         let dc_bytes = self.dc_time_ns.to_le_bytes();
         for (i, byte) in out.iter_mut().enumerate() {
             let addr = address.wrapping_add(i as u16);
@@ -722,6 +731,9 @@ impl Responder {
     ///
     /// 写 SM0 邮箱缓冲（0x1000）视为一条邮箱报文，交给 [`Self::handle_mailbox_request`]。
     fn write_registers(&mut self, address: u16, data: &[u8]) {
+        if (0x0900..=0x09AF).contains(&address) {
+            self.stats.dc_reg_writes += 1;
+        }
         if EepromInterface::covers(address, data.len()) {
             self.eeprom.write(address, data);
             return;
@@ -3213,6 +3225,18 @@ mod tests {
         assert_eq!(t3, t2 + crate::DC_TICK_NS);
         // 0x0900 端口接收时间由同一模拟时钟回填（Tier0 简化）。
         assert_eq!(read_time(&mut responder, 0x0900), t3);
+    }
+
+    #[test]
+    fn dc_register_access_is_counted() {
+        let mut responder = Responder::default();
+        assert_eq!(responder.stats().dc_reg_reads, 0);
+        assert_eq!(responder.stats().dc_reg_writes, 0);
+        write_regs(&mut responder, 0x0980, vec![0x01, 0x00]);
+        responder.read_registers(0x0910, 8);
+        responder.read_registers(0x0130, 2); // 非 DC 区不计
+        assert_eq!(responder.stats().dc_reg_writes, 1);
+        assert_eq!(responder.stats().dc_reg_reads, 1);
     }
 
     #[test]
