@@ -2984,6 +2984,29 @@ mod tests {
     }
 
     #[test]
+    fn pdi_watchdog_register_is_read_write_without_timeout() {
+        // 0x0410（Watchdog Time PDI）：可读写保存；模拟器无 PDI，不模拟超时（不置 AL error）。
+        let mut responder = Responder::default();
+        let address = esc_core::watchdog::WATCHDOG_TIME_PDI;
+        write_regs(&mut responder, address, 0x00C8u16.to_le_bytes().to_vec());
+        assert_eq!(
+            responder.read_registers(address, 2),
+            0x00C8u16.to_le_bytes().to_vec()
+        );
+        responder.tick(1000);
+        assert_eq!(
+            responder.read_registers(address, 2),
+            0x00C8u16.to_le_bytes().to_vec(),
+            "无 PDI 时 0x0410 只保存值、不递减/超时"
+        );
+        assert_eq!(
+            al_status_byte(&mut responder) & 0x10,
+            0,
+            "不应产生 AL error"
+        );
+    }
+
+    #[test]
     fn esm_preconditions_are_on_by_default() {
         // 默认开启：不配置 SM 时拒绝 PREOP（AL Status Code 0x0015、状态保持 INIT）。
         let mut responder = Responder::default();

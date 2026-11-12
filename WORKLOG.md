@@ -32,6 +32,28 @@
 
 ---
 
+## 2026-11-13 01:40 班（低峰）— B5：**0x0410（PDI watchdog）语义明确化**
+
+**做了什么**
+- 明确 **0x0410 Watchdog Time PDI** 的模拟器语义：寄存器**可读写保存（透传）**，但模拟器
+  没有 PDI 端点，因此**不模拟 PDI 看门狗超时**（不递减、不置 AL error）——需要 PDI 行为
+  时应由插件/上层显式模拟。`crates/esc-core/src/watchdog.rs` 文档同步说明。
+- 新增 esc-node 单测 `pdi_watchdog_register_is_read_write_without_timeout`：APWR 写
+  0x0410=0x00C8 → APRD 回读一致；`tick(1000)` 后值保持、AL Status error 位不置位。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **191 passed**（esc-core 82 / esc-node 60 / plugin-host 25 + 1 集成 / wire 23）。
+
+**卡点**
+- 仍未模拟 PDI 看门狗超时/喂狗行为（无 PDI 端点，需插件设计后才能实现并验证）；
+  divider/intervals 为 0 的真实 ESC 行为仍 ⚠️ 待验证（文档已注明）。
+
+**下次开工第一件事**
+- 继续 B11 SV660N 手册核对（HTML 在线文档）或 B6 FMMU/DC 类别（需原文/更多证据）。
+
+---
+
 ## 2026-11-13 01:32 班（低峰）— B7：**在 CiA402 画像中启用 CA 能力位** + SDO Info 探针重试
 
 **做了什么**

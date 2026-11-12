@@ -11,9 +11,11 @@
 //! error 位、AL Status Code = **0x001B（Sync manager watchdog）**，并从 OP 退回
 //! SAFEOP+ERROR，等待主站写 Error ACK（ETG.1000.6 AL Status Codes）。
 //!
-//! ⚠️ 尚未实现/待验证：0x0410（Watchdog Time PDI）语义、divider/intervals 为 0 时
-//! 真实 ESC 的行为、独立硬件定时器（本模拟器用"帧驱动时钟"——每收到一帧调用一次
-//! `esc-node` 的 tick；停止收帧时不会主动报超时）。
+//! - **0x0410（Watchdog Time PDI）**：寄存器可读写保存（透传），但模拟器没有 PDI，因此
+//!   **不模拟 PDI 看门狗超时**（不递减、不置 AL error）——需要 PDI 行为时应由插件/上层显式模拟。
+//! - ⚠️ 尚未实现/待验证：divider/intervals 为 0 时真实 ESC 的行为、独立硬件定时器
+//!   （本模拟器用"帧驱动时钟"——每收到一帧调用一次 `esc-node` 的 tick；停止收帧时
+//!   不会主动报超时）。
 
 /// Watchdog Divider 寄存器地址（40 ns 基数）。
 pub const WATCHDOG_DIVIDER: u16 = 0x0400;

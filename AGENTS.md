@@ -308,6 +308,9 @@ user.email = deepseek-harness@users.noreply.github.com
     dtype（仅支持的类型）、access（ro/rw）、字符串 value 必填与位长上限、数值 value 可解析、
     (index,sub) 不重复；新增单测。测试 **174 passed**；既有插件无误报。
     ⚠️ 未校验数值初值与 dtype 位宽匹配（截断风险）、SM control/type 语义。
+  - 进度（2026-11-13 01:40 班）：**0x0410（PDI watchdog）语义明确化**——寄存器可读写保存
+    （透传），但模拟器无 PDI，因此**不模拟 PDI 超时**（不递减、不置 AL error）；新增
+    esc-node 单测验证 APWR/APRD 回读与 tick 后行为；`watchdog.rs` 文档同步说明。测试 **191 passed**。
   - 进度（2026-11-13 00:58 班）：**SM 布局合法性检查**——`EsmPreconditions.sync_managers_valid`
     + `esc-node::active_sm_layout_valid()`：已激活 SM 必须落在 DL 内存 `0x1000–0xFFFF`、
     区间不越界且互不重叠，否则 SAFEOP 请求报 **0x0017**（状态保持 PREOP）；`EsmPreconditions`
