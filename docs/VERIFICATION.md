@@ -52,6 +52,8 @@
 | `igh-cia402-op-probe.sh` | IgH ecrt 7B CiA402：OP + 状态字/模式/位置 | **EXIT=0** |
 | `igh-cia402-csv-op-probe.sh` | IgH ecrt 11B CSV：OP + 速度模式位置累加/速度显示 | **EXIT=0** |
 | `uds-multi-slave-probe.sh` | `--slaves 8` 多从站链：广播 WKC=8、逐站地址分配、配置地址寻址 | **EXIT=0** |
+| `tap-multi-slave-probe.sh` | TAP 上 8 从站链：SOEM `slaveinfo` 报 `8 slaves found`/WKC 24、`simple_ng` 映射 8O+8I 且 WKC 24；实测循环 ≈425 Hz（未隔离 CPU） | **EXIT=0** |
+| `shim-latency.sh` | UDS shim 延迟基准：1 从站 p50≈110µs / p99≈201µs；8 从站 p50≈112µs / p99≈191µs（非隔离 CPU，仅回归对比） | **EXIT=0** |
 | `soem-multi-slave-probe.sh` | 未修改 SOEM 经 UDS shim 数到 **8 从站**并 OP：`8 slaves found`、`mapped 8O+8I`、WKC 24 | **EXIT=0** |
 | `soem-uds-probe.sh` | SOEM over UDS shim 的探索性夹具（以脚本内注记状态为准） | 见脚本注记 |
 

@@ -1,5 +1,36 @@
 ---
 
+## 2026-11-13 04:29 班（低峰）— **B13：TAP 8 从站链 + shim 延迟基准（记录环境限制）**
+
+**做了什么**
+- `scripts/spikes/tap-multi-slave-probe.sh`：TAP 上 `ec-sim-esc --tap escsim0 --slaves 8` +
+  未修改 SOEM（TAP 版）——`slaveinfo` 断言 `8 slaves found and configured`/`Calculated
+  workcounter 24`/8 个 Slave 块；`simple_ng` 断言 `mapped 8O+8I`/WKC 24，并从 T 时间戳
+  估算循环频率。
+- `scripts/bench/uds-latency.py` + `scripts/bench/shim-latency.sh`：UDS shim 往返延迟
+  （min/p50/p90/p99/p999/max），支持 `N=8` 多从站。
+- `docs/VERIFICATION.md` 索引、`docs/plan/M1-exit-checklist.md`（第 2/3 项改 🟡）、
+  `docs/STATUS.md`、AGENTS（B13 完成、新增 B14）。
+
+**验证结果**
+- 本机：`cargo fmt --check` 通过；测试基线 **210 passed**（未改 Rust 代码）。
+- Linux 验证机：
+  - `tap-multi-slave-probe.sh` **EXIT=0**：TAP 上 SOEM 报 **8 slaves found / workcounter 24**、
+    `simple_ng` 映射 8O+8I、WKC 24 稳定；实测循环 **≈425 Hz**（非隔离 CPU，**未达 1 kHz**）。
+  - `shim-latency.sh` **EXIT=0**：1 从站 p50≈110.6µs / p99≈201.0µs / p999≈293.8µs；
+    8 从站 p50≈111.5µs / p99≈191.1µs / p999≈259.0µs（非隔离 CPU，**未达 p99<100µs**）。
+
+**卡点**
+- M1 的 1 kHz 与 p99 <100 µs 在非隔离 CPU 上未达成；需要隔离 CPU/实时调度复测。
+- Docker 无特权跑通仍缺（B14）。
+
+**下次开工第一件事**
+- **B14**：加 `docker/Dockerfile`（UDS shim、无特权）并在容器内跑 `uds-loopback.sh` 与
+  多从站冒烟；或在隔离 CPU/实时调度下复测 1kHz/p99（记录限制）。
+
+---
+---
+
 ## 2026-11-13 04:09 班（低峰）— **B12：多从站帧链（UDS shim 8 从站，SOEM 零补丁到 OP）**
 
 **做了什么**

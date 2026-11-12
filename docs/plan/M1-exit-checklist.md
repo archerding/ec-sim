@@ -9,8 +9,8 @@
 | # | 退出标准 | 状态 | 证据 / 缺口 | 下一步 |
 | --- | --- | --- | --- | --- |
 | 1 | 未修改的 `ethercat slaves`（IgH）与 `slaveinfo`（SOEM）**零补丁看到 OP** | ✅ 已达成 | SOEM：`soem-process-data-probe.sh`/`simple_ng` OP + WKC 3；IgH：`igh-op-probe.sh`/`igh-cia402-*-op-probe.sh`（ecrt 夹具，验证机本地）OP；`sv660n-capability-probe.sh` 同时跑两家 | 保持回归（`docs/VERIFICATION.md`） |
-| 2 | **8 从站 @ 1 kHz** | 🟡 部分达成 | **UDS shim 已支持 8 从站**：`--slaves 8` + 未修改 SOEM `slaveinfo` 报 `8 slaves found`、`simple_ng` 映射 8O+8I 且 WKC 24 稳定（`soem-multi-slave-probe.sh`）；**1 kHz 频率与 TAP 多从站未验证** | B13：TAP 多从站 + 1kHz/抖动基准 |
-| 3 | **p99 抖动 < 100 µs**（shim，隔离 CPU） | ❌ 未达成 | 无抖动基准脚本；shim 是帧驱动，无独立定时器 | B13：`scripts/bench/shim-latency.py`（p50/p99/p999）+ 隔离 CPU 说明 |
+| 2 | **8 从站 @ 1 kHz** | 🟡 部分达成 | **UDS shim 与 TAP 均已支持 8 从站**：未修改 SOEM `slaveinfo` 报 `8 slaves found`、`simple_ng` 映射 8O+8I 且 WKC 24 稳定（`soem-multi-slave-probe.sh` / `tap-multi-slave-probe.sh`）；**实测循环 ≈425 Hz**（非隔离 CPU），1 kHz 未达成 | 实时调度/隔离 CPU 后复测（B14） |
+| 3 | **p99 抖动 < 100 µs**（shim，隔离 CPU） | 🟡 部分达成 | 基准脚本已加：`scripts/bench/shim-latency.sh`（1 从站 p50≈110µs/p99≈201µs；8 从站 p50≈112µs/p99≈191µs，**非隔离 CPU**）；p99 <100µs 未达成 | 隔离 CPU + 实时调度复测（B14） |
 | 4 | **Docker 无特权跑通** | ❌ 未达成 | 无 Dockerfile / 容器 CI；UDS shim 本身无需 root（能力上可行） | B14：`docker/Dockerfile` + 容器内 `uds-loopback.sh`/合成主站冒烟 |
 | 5 | CLI | ✅ 已达成 | `ec-sim-esc`（TAP/UDS/manifest/ESI/behavior/fault/dump-sii/dump-dict） | — |
 | 6 | 8DI/8DO 画像 | ✅ 已达成 | `generic-io`/`beckhoff-el2008` 画像 + `manifest-slave-probe.sh`/`igh-el2008-op-probe.sh` | — |
