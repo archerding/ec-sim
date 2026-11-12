@@ -45,7 +45,7 @@ Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/
 
 ## 控制面与 WebUI
 
-- 只读 HTTP API（`--serve`：`/state`、`/dict`、`/pdo`、`/topology`、`/metrics`，支持 `?slave=N`）与零依赖 Web 页：见 **[CONTROL-PLANE.md](CONTROL-PLANE.md)**、[web/README.md](../web/README.md)；M2 退出条件核对见 **[M2 退出清单](plan/M2-exit-checklist.md)**；M3 范围见 **[M3 范围](plan/M3-scope.md)** 与 **[ADR 0002](adr/0002-m3-plugin-host-and-write-paths.md)**。
+- 控制面（`--serve`）：只读 API（`/state`、`/dict`、`/pdo`、`/topology`、`/metrics`，支持 `?slave=N`）+ M3 写路径（`--serve-write` 下的 `POST /sdo`/`POST /pdo`、SDO 只读浏览、`/sdo-audit`）+ 可选静态 Bearer token（`--serve-token-env`，默认关闭）；零依赖 Web 页：见 **[CONTROL-PLANE.md](CONTROL-PLANE.md)**、[web/README.md](../web/README.md)；M2 退出条件核对见 **[M2 退出清单](plan/M2-exit-checklist.md)**；M3 范围见 **[M3 范围](plan/M3-scope.md)** 与 **[ADR 0002](adr/0002-m3-plugin-host-and-write-paths.md)**。
 
 ## 验证证据（详见 [docs/VERIFICATION.md](VERIFICATION.md)）
 
@@ -79,7 +79,8 @@ cargo run -q -p esc-node --bin ec-sim-esc -- --dump-state --manifest plugins/gen
 cargo run -q -p esc-node --bin ec-sim-esc -- --dump-dict --json --manifest plugins/generic-cia402-cst-servo/plugin.yaml > web/dict.json
 python3 -m http.server 8080 --directory web   # 只读状态页（M2 起点）
 cargo run -q -p esc-node --bin ec-sim-esc -- --serve 127.0.0.1:8090 --manifest plugins/generic-cia402-cst-servo/plugin.yaml   # 只读 HTTP API：/state,/dict
-cargo run -q -p esc-node --bin ec-sim-esc -- --uds /tmp/ecsim.sock --serve 127.0.0.1:8091   # 实时模式：/state 含 live（AL/统计）、/pdo 过程数据、/pdo?history=1 时间序列（Web 波形）、/pdo 含 decoded 具名值、/topology 多从站摘要、/state?slave=N 与 /pdo?slave=N 逐站查看、/metrics Prometheus 文本指标（支持 ?slave=N 筛选；Web 指标卡片）、/events SSE 推送、`--serve-write` 显式开启的 `POST /pdo`（默认关闭）
+cargo run -q -p esc-node --bin ec-sim-esc -- --uds /tmp/ecsim.sock --serve 127.0.0.1:8091   # 实时模式：/state 含 live（AL/统计）、/pdo 过程数据、/pdo?history=1 时间序列（Web 波形）、/pdo 含 decoded 具名值、/topology 多从站摘要、/state?slave=N 与 /pdo?slave=N 逐站查看、/metrics Prometheus 文本指标（支持 ?slave=N 筛选；Web 指标卡片）、/events SSE 推送、`GET /sdo` 只读浏览、`--serve-write` 显式开启的 `POST /pdo`/`POST /sdo` 受控写（默认关闭）
+EC_SIM_TOKEN='<token>' cargo run -q -p esc-node --bin ec-sim-esc -- --serve 127.0.0.1:8091 --serve-token-env EC_SIM_TOKEN   # 可选静态 token：API 需 Authorization: Bearer（空/未设置 = 现状）
 cargo run -q -p esc-node --bin ec-sim-esc -- --uds /tmp/ecsim.sock --esm-lax --serve 127.0.0.1:8091 --web-root web   # 同源托管 WebUI + API
 bash scripts/spikes/uds-loopback.sh        # UDS 合成主站基础闭环
 bash scripts/spikes/cia402-cst-probe.sh    # CST Tier0 行为

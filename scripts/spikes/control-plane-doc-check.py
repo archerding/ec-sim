@@ -51,6 +51,7 @@ EXPECTED_PROBES = [
     "write-pdo-probe.sh",
     "sdo-read-probe.sh",
     "sdo-write-probe.sh",
+    "serve-token-probe.sh",
 ]
 
 
@@ -85,6 +86,11 @@ if "POST /pdo" in doc:
     assert "--serve-write" in doc, "文档缺少 --serve-write 说明"
     assert "write-pdo-probe.sh" in doc
 
+if "--serve-token-env" in doc:
+    assert "--serve-token-env" in bin_text, "文档描述 token，但代码缺少 --serve-token-env"
+    assert "Authorization: Bearer" in doc, "文档缺少 Authorization: Bearer 说明"
+    assert "serve-token-probe.sh" in doc
+
 # 3) 文档引用的探针脚本必须存在。
 for probe in EXPECTED_PROBES:
     target = ROOT / "scripts" / "spikes" / probe
@@ -109,7 +115,7 @@ m2_text = m2_path.read_text(encoding="utf-8")
 m2_probes = [
     probe
     for probe in EXPECTED_PROBES
-    if probe not in ("sdo-read-probe.sh", "sdo-write-probe.sh")
+    if probe not in ("sdo-read-probe.sh", "sdo-write-probe.sh", "serve-token-probe.sh")
 ]
 for probe in m2_probes:
     if probe not in m2_text:
@@ -124,7 +130,7 @@ for required in (m3_path, adr2_path):
     if not required.is_file():
         fail(f"M3 文档不存在：{required}")
 m3_text = (ROOT / "docs" / "plan" / "M3-scope.md").read_text(encoding="utf-8")
-for probe in ("sdo-read-probe.sh", "sdo-write-probe.sh"):
+for probe in ("sdo-read-probe.sh", "sdo-write-probe.sh", "serve-token-probe.sh"):
     if probe not in m3_text:
         fail(f"M3 范围未引用 {probe}")
 for doc_path in (ROOT / "docs" / "STATUS.md", ROOT / "README.md", m2_path):

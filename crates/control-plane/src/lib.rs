@@ -262,6 +262,92 @@ pub fn not_found_json(message: &str) -> HttpResponse {
     json_response("HTTP/1.1 404 Not Found", body)
 }
 
+/// 需要鉴权的控制面 API 路由（B41：可选静态 Bearer token）。
+///
+/// 静态资源（`/`、`/index.html`、`/app.js`、`/health`）不在列表内：它们用于加载 WebUI 外壳，
+/// token 只保护会泄漏/改变 ESC 状态的 API；WebUI 在 token 模式下需要经反向代理注入请求头或改用 curl。
+pub const AUTH_PROTECTED_ROUTES: [&str; 8] = [
+    "/state",
+    "/dict",
+    "/pdo",
+    "/sdo",
+    "/sdo-audit",
+    "/topology",
+    "/metrics",
+    "/events",
+];
+
+/// 判断路径（可带 query）是否属于需要鉴权的 API 路由。
+#[must_use]
+pub fn is_protected_route(path: &str) -> bool {
+    let path = path.split('?').next().unwrap_or(path);
+    AUTH_PROTECTED_ROUTES.contains(&path)
+}
+
+/// 控制面鉴权决策（B41：`--serve-token-env VAR` 读到的可选静态 token）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthDecision {
+    /// 未配置 token（变量缺失/为空）：保持现状，不鉴权。
+    Disabled,
+    /// `Authorization` 头合法且 token 匹配。
+    Allowed,
+    /// 缺少或格式非法的 `Authorization: Bearer <token>` 头 → 401。
+    MissingToken,
+    /// Bearer token 不匹配 → 403。
+    InvalidToken,
+}
+
+/// 取请求头中的 `Authorization: Bearer <token>`（头名与 scheme 大小写不敏感）。
+#[must_use]
+pub fn bearer_token(headers: &[(String, String)]) -> Option<&str> {
+    headers.iter().find_map(|(name, value)| {
+        if !name.eq_ignore_ascii_case("authorization") {
+            return None;
+        }
+        let (scheme, token) = value.trim().split_once(' ')?;
+        if !scheme.eq_ignore_ascii_case("bearer") {
+            return None;
+        }
+        let token = token.trim();
+        if token.is_empty() {
+            None
+        } else {
+            Some(token)
+        }
+    })
+}
+
+/// 鉴权判定：`expected` 为 `None` 或空串时维持现状（不鉴权）；否则要求 Bearer token 精确匹配。
+#[must_use]
+pub fn authorize(headers: &[(String, String)], expected: Option<&str>) -> AuthDecision {
+    let Some(expected) = expected.filter(|token| !token.is_empty()) else {
+        return AuthDecision::Disabled;
+    };
+    match bearer_token(headers) {
+        None => AuthDecision::MissingToken,
+        Some(token) if token == expected => AuthDecision::Allowed,
+        Some(_) => AuthDecision::InvalidToken,
+    }
+}
+
+/// 生成 401 响应（缺少/格式非法的 Authorization 头；调用方需补 `WWW-Authenticate: Bearer`）。
+#[must_use]
+pub fn unauthorized_json() -> HttpResponse {
+    json_response(
+        "HTTP/1.1 401 Unauthorized",
+        "{\"error\": \"需要 Authorization: Bearer <token>\"}".to_string(),
+    )
+}
+
+/// 生成 403 响应（Bearer token 不匹配）。
+#[must_use]
+pub fn forbidden_token_json() -> HttpResponse {
+    json_response(
+        "HTTP/1.1 403 Forbidden",
+        "{\"error\": \"Bearer token 不匹配\"}".to_string(),
+    )
+}
+
 /// 处理一个只读 GET 请求（供 `ec-sim-esc --serve` 使用；无状态、可单元测试）。
 ///
 /// 路由：`/state`、`/dict`（无字典时 404）、`/` 与 `/health` 返回路由列表；其余 404。
@@ -1123,5 +1209,73 @@ mod tests {
             .map(|byte| format!("{byte:02x}"))
             .collect();
         assert!(json.contains(&format!("\"value_hex\": \"{value_hex}\"")));
+    }
+
+    #[test]
+    fn auth_protected_routes_match_api_only() {
+        for path in [
+            "/state",
+            "/state?slave=1",
+            "/dict",
+            "/pdo?history=1",
+            "/sdo?index=0x6040&sub=0",
+            "/sdo-audit",
+            "/topology",
+            "/metrics?slave=0",
+            "/events",
+        ] {
+            assert!(is_protected_route(path), "应保护：{path}");
+        }
+        for path in ["/", "/index.html", "/app.js", "/health", "/nope"] {
+            assert!(!is_protected_route(path), "不应保护：{path}");
+        }
+    }
+
+    #[test]
+    fn auth_disabled_without_configured_token() {
+        assert_eq!(authorize(&[], None), AuthDecision::Disabled);
+        assert_eq!(authorize(&[], Some("")), AuthDecision::Disabled);
+        let header = vec![("Authorization".to_string(), "Bearer secret".to_string())];
+        assert_eq!(authorize(&header, None), AuthDecision::Disabled);
+    }
+
+    #[test]
+    fn auth_missing_and_invalid_credentials() {
+        let expected = Some("secret");
+        assert_eq!(authorize(&[], expected), AuthDecision::MissingToken);
+        let basic = vec![("Authorization".to_string(), "Basic c2VjcmV0".to_string())];
+        assert_eq!(authorize(&basic, expected), AuthDecision::MissingToken);
+        let empty = vec![("Authorization".to_string(), "Bearer   ".to_string())];
+        assert_eq!(authorize(&empty, expected), AuthDecision::MissingToken);
+        let wrong = vec![("Authorization".to_string(), "Bearer guess".to_string())];
+        assert_eq!(authorize(&wrong, expected), AuthDecision::InvalidToken);
+    }
+
+    #[test]
+    fn auth_allows_matching_bearer_case_insensitive_names() {
+        let header = vec![("authorization".to_string(), "bearer secret".to_string())];
+        assert_eq!(authorize(&header, Some("secret")), AuthDecision::Allowed);
+        // token 本身大小写敏感。
+        let wrong_case = vec![("Authorization".to_string(), "Bearer SECRET".to_string())];
+        assert_eq!(
+            authorize(&wrong_case, Some("secret")),
+            AuthDecision::InvalidToken
+        );
+        // 头列表里混入无关请求头时仍能找到 Authorization。
+        let mixed = vec![
+            ("Host".to_string(), "127.0.0.1".to_string()),
+            ("Authorization".to_string(), "Bearer secret".to_string()),
+        ];
+        assert_eq!(authorize(&mixed, Some("secret")), AuthDecision::Allowed);
+    }
+
+    #[test]
+    fn auth_error_responses_have_401_and_403_status() {
+        let unauthorized = unauthorized_json();
+        assert_eq!(unauthorized.status_line, "HTTP/1.1 401 Unauthorized");
+        assert!(unauthorized.body.contains("Authorization: Bearer"));
+        let forbidden = forbidden_token_json();
+        assert_eq!(forbidden.status_line, "HTTP/1.1 403 Forbidden");
+        assert!(forbidden.body.contains("token"));
     }
 }

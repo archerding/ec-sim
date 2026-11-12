@@ -1,5 +1,39 @@
 ---
 
+## 2026-11-13 07:44 班（低峰）— **B41：M3-W5 可选静态 Bearer token（`--serve-token-env`）**
+
+**做了什么**
+- `control-plane` 新增鉴权纯函数：`AUTH_PROTECTED_ROUTES`/`is_protected_route`、`AuthDecision`
+  （Disabled/Allowed/MissingToken/InvalidToken）、`bearer_token`（头名与 scheme 大小写不敏感、token 精确匹配）、
+  `authorize`、`unauthorized_json`（401）、`forbidden_token_json`（403）；单测 15 → 20。
+- `ec-sim-esc` 新增 `--serve-token-env <VAR>`：从环境变量读 token（未设置/为空 = 不鉴权并在 stderr 提示；
+  未与 `--serve` 同用 → 退出码 2）；静态与实时 `--serve` 均生效。
+- HTTP 请求解析统一为 `HttpRequest{method,path,body,headers}`（静态/实时共用 `read_http_request`），
+  抽出 `write_http_response(.., extra_headers)`；401 带 `WWW-Authenticate: Bearer realm="ec-sim"`。
+- 受保护路由：`/state`、`/dict`、`/pdo`、`/sdo`、`/sdo-audit`、`/topology`、`/metrics`、`/events`
+  （含 `POST /sdo`/`POST /pdo` 与 `?slave=N` 变体）；静态资源 `/`、`/index.html`、`/app.js` 与 `/health` 豁免。
+- 新增 `scripts/spikes/serve-token-probe.sh`：默认/空变量维持现状、401/403/200 矩阵、静态资源豁免、
+  实时模式 `POST /sdo`（无 token 401 且不写入）/`/sdo-audit`/`/metrics`/`/events`；非 Linux 自动跳过实时段。
+- `CONTROL-PLANE.md` 新增 §6 鉴权（原 §6–§8 顺延为 §7–§9）与路由/安全边界/验证清单；`M3-scope.md` W5 完成；
+  `STATUS.md`、`VERIFICATION.md`、`control-plane-doc-check.py`（14 路径/16 探针 + token 一致性断言）、
+  `run-all-probes.sh` 同步；AGENTS：B41 完成、新增 B42（Web SDO 面板）；顺带清理 B39/B40 重复的未完成行。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings` 通过；
+  `cargo test --workspace` **230 passed**；`control-plane-doc-check.py` **EXIT=0**。
+- 验证机（EC-Sim 专用）：release 重建 0 warning；`serve-token-probe.sh` **EXIT=0**（静态矩阵 + UDS 实时）；
+  `run-all-probes.sh` **17 PASS / 0 FAIL / 0 SKIP**（含 TAP live 与 serve-token）。
+
+**卡点**
+- 静态 token 非完整认证：无用户体系/轮换/恒定时间比较；token 模式下浏览器 WebUI 无法自动带
+  `Authorization` 头（需反向代理注入或 curl），已在 CONTROL-PLANE §6 标注 ⚠️。
+- 验证机源码树是普通拷贝（非 git），本轮按文件 scp 同步。
+
+**下次开工第一件事**
+- **B42**：Web SDO 面板（只读浏览 + `--serve-write` 下二次确认写入；`node --check` + 人工验收）。
+
+---
+
 ## 2026-11-13 07:35 班（低峰）— **B40：M3-W4 SDO 受控写 `POST /sdo`（白名单/审计/指标）**
 
 **做了什么**

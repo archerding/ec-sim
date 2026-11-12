@@ -492,13 +492,10 @@ user.email = deepseek-harness@users.noreply.github.com
     并验证（IgH 侧 SDO 上传/下载在验证机仍受 ecrt ioctl 阻塞，⚠️ 属于环境问题）。
 
 - [x] ~~**B38 M3 范围与 ADR（插件宿主/WASM、SDO 写路径、鉴权/TLS）（M3 定界）**~~ ✅ **2026-11-13 07:28 完成**：新增 docs/adr/0002-m3-plugin-host-and-write-paths.md（D1 插件两类/行为插件不进实时环、D2 最小宿主 API、D3 SDO 写白名单+审计、D4 进程外 TLS+可选 token、D5 许可约束、D6 非目标、备选方案与未决问题）与 docs/plan/M3-scope.md（W1–W8 工作流/验收/风险/退出条件）；M2 清单/STATUS/README 互链；control-plane-doc-check 扩展 M3 文档存在性与互链（EXIT=0）。纯文档班，未跑 VM。
-- [ ] **B39 M3-W3：SDO 只读浏览 GET /sdo?index&sub（M3）**：从运行时对象字典读取值（名称/类型/位长/访问/值 hex，不经过 mailbox），未知对象 404；--serve 静态与实时模式均可用；探针校验已知对象（如 0x6040/0x6060）与未知对象。
-
 - [x] ~~**B39 M3-W3：SDO 只读浏览 `GET /sdo?index&sub`（M3）**~~ ✅ **2026-11-13 07:30 完成**：`control-plane::sdo_json`（运行时字典，不 mailbox；未知对象 None）+ 1 单测（共 14）；`GET /sdo?index=0x6040&sub=0` 静态与实时 `--serve` 均可用（sdo-v1：index/sub/object_name/name/type/bits/access/value_hex），缺 index/非法/未知对象/未知子索引 → 404；探针 `sdo-read-probe.sh` 验证机 **EXIT=0**；CONTROL-PLANE 路由/schema/验证、M3 清单 W3 状态、run-all-probes 清单同步；测试 **224 passed**。
-- [ ] **B40 M3-W4：SDO 受控写 `POST /sdo`（M3）**：`--serve-write` + manifest `writable` 白名单 + 安全排除表（0x1018 等身份对象）+ 审计环形缓冲（时间/来源/对象/旧值/新值，`/metrics` 写计数）；默认 405、非白名单 403、未知 404；探针覆盖默认/成功/拒绝/审计。
-
 - [x] ~~**B40 M3-W4：SDO 受控写 `POST /sdo`（M3）**~~ ✅ **2026-11-13 07:35 完成**：`--serve-write` 下启用 `POST /sdo?index&sub`（body=原始值字节）：仅 manifest `writable` 对象可写、安全排除表（0x1000/0x1008/0x1009/0x1010/0x1011/0x1018/0x1C12/0x1C13）403、未知 404、长度错 400；写入进 `Responder::write_object_override`，`/sdo` 读回覆盖值；新增 `GET /sdo-audit`（sdo-audit-v1，≤64 条）与 `/metrics` 的 `ecsim_sdo_writes_total`；静态模式非 GET 统一 405；探针 `sdo-write-probe.sh` 验证机 **EXIT=0**；CONTROL-PLANE/M3 清单/doc-check/run-all 同步；测试 **225 passed**。
-- [ ] **B41 M3-W5：可选静态 token（M3）**：`--serve-token-env VAR` 从环境变量读 Bearer token；非空时 `/state`、`/dict`、`/pdo`、`/sdo`、`/sdo-audit`、`/topology`、`/metrics`、`/events` 需 `Authorization: Bearer <token>`（401/403），空 = 现状；探针校验带/不带 token 的行为矩阵。
+- [x] ~~**B41 M3-W5：可选静态 token（M3）**~~ ✅ **2026-11-13 08:20 完成**：`--serve-token-env VAR` 从环境变量读静态 Bearer token（空/未设置 = 现状）；`control-plane::{AuthDecision,authorize,bearer_token,is_protected_route}` 纯函数 + 5 单测（共 20）；非空时 `/state`、`/dict`、`/pdo`、`/sdo`、`/sdo-audit`、`/topology`、`/metrics`、`/events`（含 `POST /sdo`/`POST /pdo`）必须 `Authorization: Bearer <token>`：缺头/非 Bearer → 401（`WWW-Authenticate: Bearer`）、错误 token → 403、正确 → 200；静态资源与 `/health` 豁免；http 请求解析统一为 `HttpRequest`（含请求头）并抽出 `write_http_response`；探针 `serve-token-probe.sh` 验证机 **EXIT=0**（静态矩阵 + UDS 实时写/审计/指标/SSE）；run-all-probes 验证机 **17 PASS / 0 FAIL**（新增 serve-token）；测试 **230 passed**。
+- [ ] **B42 M3-W6：Web SDO 面板（M3）**：`web/` 增加只读 SDO 浏览（`GET /sdo?index&sub`，含对象名/类型/值 hex）；写入仅在 `--serve-write` 时提供，且需二次确认；token 模式需在页面提示经反向代理/curl；验收 `node --check` + 人工验收（⚠️ 无 DOM 自动化测试）。
 
 ## 7. 目录约定
 

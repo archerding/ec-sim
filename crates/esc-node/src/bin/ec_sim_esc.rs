@@ -233,10 +233,19 @@ fn dump_state_and_exit(
 /// `/pdo` 历史缓冲容量（按 PDO 变化去重的时间序列）。
 const PDO_HISTORY_CAPACITY: usize = 256;
 
-/// `--serve <addr>`：只读 HTTP JSON API（`/state`、`/dict`；std `TcpListener`，无外部依赖）。
-/// 静态托管 `web/` 的少量白名单文件（`/`、`/index.html`、`/app.js`；只读、无目录遍历）。
-#[cfg(target_os = "linux")]
-fn read_http_request(stream: &mut std::net::TcpStream) -> Option<(String, String, Vec<u8>)> {
+/// 解析后的 HTTP 请求（静态与实时 `--serve` 共用）。
+struct HttpRequest {
+    method: String,
+    path: String,
+    /// 请求正文；仅实时模式的写路由（`POST /sdo`、`POST /pdo`）读取，
+    /// 静态模式（跨平台）不读，故非 Linux 构建下显式豁免 dead_code。
+    #[allow(dead_code)]
+    body: Vec<u8>,
+    headers: Vec<(String, String)>,
+}
+
+/// 读取一个完整 HTTP 请求（方法、路径、正文、请求头）。
+fn read_http_request(stream: &mut std::net::TcpStream) -> Option<HttpRequest> {
     use std::io::Read;
 
     let mut buf = Vec::new();
@@ -260,18 +269,19 @@ fn read_http_request(stream: &mut std::net::TcpStream) -> Option<(String, String
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or("GET").to_string();
     let path = parts.next().unwrap_or("/").to_string();
-    let content_length = lines
-        .filter_map(|line| {
-            let (key, value) = line.split_once(':')?;
-            if key.eq_ignore_ascii_case("content-length") {
-                value.trim().parse::<usize>().ok()
-            } else {
-                None
-            }
-        })
-        .next()
-        .unwrap_or(0)
-        .min(64 * 1024);
+    let mut headers: Vec<(String, String)> = Vec::new();
+    let mut content_length = 0usize;
+    for line in lines {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        let key = key.trim().to_string();
+        let value = value.trim().to_string();
+        if key.eq_ignore_ascii_case("content-length") {
+            content_length = value.parse::<usize>().unwrap_or(0).min(64 * 1024);
+        }
+        headers.push((key, value));
+    }
     while buf.len() < header_end + content_length {
         let read = stream.read(&mut chunk).ok()?;
         if read == 0 {
@@ -280,7 +290,55 @@ fn read_http_request(stream: &mut std::net::TcpStream) -> Option<(String, String
         buf.extend_from_slice(&chunk[..read]);
     }
     let body = buf[header_end..buf.len().min(header_end + content_length)].to_vec();
-    Some((method, path, body))
+    Some(HttpRequest {
+        method,
+        path,
+        body,
+        headers,
+    })
+}
+
+/// 写一个 HTTP 响应（`extra_headers` 为附加头行，需自带 `\r\n`；无附加头时传空串）。
+fn write_http_response(
+    stream: &mut std::net::TcpStream,
+    response: &control_plane::HttpResponse,
+    extra_headers: &str,
+) {
+    use std::io::Write as _;
+
+    let headers = format!(
+        "{}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: {}\r\n{extra_headers}Connection: close\r\n\r\n",
+        response.status_line,
+        response.content_type,
+        response.body.len(),
+        control_plane::CORS_ALLOW_ORIGIN
+    );
+    let _ = stream.write_all(headers.as_bytes());
+    let _ = stream.write_all(response.body.as_bytes());
+    let _ = stream.flush();
+}
+
+/// B41：需要鉴权的 API 路由在 token 不匹配时返回 401/403（否则 `None`）。
+///
+/// 返回 `(响应, 附加头)`：401 需要 `WWW-Authenticate: Bearer`，403 不需要。
+fn auth_gate(
+    path_only: &str,
+    headers: &[(String, String)],
+    token: Option<&str>,
+) -> Option<(control_plane::HttpResponse, &'static str)> {
+    if !control_plane::is_protected_route(path_only) {
+        return None;
+    }
+    match control_plane::authorize(headers, token) {
+        control_plane::AuthDecision::Disabled | control_plane::AuthDecision::Allowed => None,
+        control_plane::AuthDecision::MissingToken => Some((
+            control_plane::unauthorized_json(),
+            "WWW-Authenticate: Bearer realm=\"ec-sim\"\r\n",
+        )),
+        control_plane::AuthDecision::InvalidToken => {
+            Some((control_plane::forbidden_token_json(), ""))
+        }
+    }
 }
 
 fn static_web_response(path: &str, web_root: Option<&str>) -> Option<control_plane::HttpResponse> {
@@ -304,8 +362,9 @@ fn serve_http(
     esi_path: Option<&str>,
     addr: &str,
     web_root: Option<&str>,
+    serve_token: Option<&str>,
 ) -> std::process::ExitCode {
-    use std::io::{Read, Write as _};
+    use std::io::Write as _;
     use std::net::TcpListener;
 
     let manifest = match manifest_path {
@@ -385,11 +444,20 @@ fn serve_http(
             Ok(stream) => stream,
             Err(_) => continue,
         };
-        let mut buf = [0u8; 2048];
-        let _ = stream.read(&mut buf);
-        let request = String::from_utf8_lossy(&buf);
-        let request_line = request.lines().next().unwrap_or("");
-        let method = request_line.split_whitespace().next().unwrap_or("GET");
+        let Some(HttpRequest {
+            method,
+            path,
+            body: _,
+            headers,
+        }) = read_http_request(&mut stream)
+        else {
+            continue;
+        };
+        let path_only = path.split('?').next().unwrap_or(path.as_str());
+        if let Some((response, extra_headers)) = auth_gate(path_only, &headers, serve_token) {
+            write_http_response(&mut stream, &response, extra_headers);
+            continue;
+        }
         if method != "GET" {
             let response = control_plane::HttpResponse {
                 status_line: "HTTP/1.1 405 Method Not Allowed",
@@ -397,36 +465,17 @@ fn serve_http(
                 body: "{\"error\": \"静态模式仅支持 GET；写操作需实时模式 --serve-write\"}"
                     .to_string(),
             };
-            let headers = format!(
-                "{}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: {}\r\nConnection: close\r\n\r\n",
-                response.status_line,
-                response.content_type,
-                response.body.len(),
-                control_plane::CORS_ALLOW_ORIGIN
-            );
-            let _ = stream.write_all(headers.as_bytes());
-            let _ = stream.write_all(response.body.as_bytes());
-            let _ = stream.flush();
+            write_http_response(&mut stream, &response, "");
             continue;
         }
-        let path = request_line.split_whitespace().nth(1).unwrap_or("/");
-        let response = if let Some(response) = static_web_response(path, web_root) {
+        let response = if let Some(response) = static_web_response(&path, web_root) {
             response
-        } else if path.split('?').next() == Some("/sdo") {
-            sdo_response(path, dict_for_decode.as_ref())
+        } else if path_only == "/sdo" {
+            sdo_response(&path, dict_for_decode.as_ref())
         } else {
-            control_plane::handle_get(path, &state, dict_json.as_deref())
+            control_plane::handle_get(&path, &state, dict_json.as_deref())
         };
-        let headers = format!(
-            "{}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: {}\r\nConnection: close\r\n\r\n",
-            response.status_line,
-            response.content_type,
-            response.body.len(),
-            control_plane::CORS_ALLOW_ORIGIN
-        );
-        let _ = stream.write_all(headers.as_bytes());
-        let _ = stream.write_all(response.body.as_bytes());
-        let _ = stream.flush();
+        write_http_response(&mut stream, &response, "");
     }
     std::process::ExitCode::SUCCESS
 }
@@ -568,6 +617,7 @@ fn serve_live_http(
     responders: std::sync::Arc<std::sync::Mutex<Vec<esc_node::Responder>>>,
     web_root: Option<String>,
     serve_write: bool,
+    serve_token: Option<String>,
 ) {
     use std::io::Write as _;
     use std::net::TcpListener;
@@ -624,10 +674,22 @@ fn serve_live_http(
             Ok(stream) => stream,
             Err(_) => continue,
         };
-        let Some((method, path, body)) = read_http_request(&mut stream) else {
+        let Some(HttpRequest {
+            method,
+            path,
+            body,
+            headers,
+        }) = read_http_request(&mut stream)
+        else {
             continue;
         };
         let path_only = path.split('?').next().unwrap_or(path.as_str());
+        if let Some((response, extra_headers)) =
+            auth_gate(path_only, &headers, serve_token.as_deref())
+        {
+            write_http_response(&mut stream, &response, extra_headers);
+            continue;
+        }
         let slave_param = query_param(&path, "slave");
         let slave_count = responders.lock().unwrap().len();
         let slave_index = match slave_param {
@@ -702,16 +764,7 @@ fn serve_live_http(
                     }
                 }
             };
-            let headers = format!(
-                "{}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: {}\r\nConnection: close\r\n\r\n",
-                response.status_line,
-                response.content_type,
-                response.body.len(),
-                control_plane::CORS_ALLOW_ORIGIN
-            );
-            let _ = stream.write_all(headers.as_bytes());
-            let _ = stream.write_all(response.body.as_bytes());
-            let _ = stream.flush();
+            write_http_response(&mut stream, &response, "");
             continue;
         }
         if method == "POST" {
@@ -750,16 +803,7 @@ fn serve_live_http(
                     None => control_plane::not_found_json("从站不存在"),
                 }
             };
-            let headers = format!(
-                "{}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: {}\r\nConnection: close\r\n\r\n",
-                response.status_line,
-                response.content_type,
-                response.body.len(),
-                control_plane::CORS_ALLOW_ORIGIN
-            );
-            let _ = stream.write_all(headers.as_bytes());
-            let _ = stream.write_all(response.body.as_bytes());
-            let _ = stream.flush();
+            write_http_response(&mut stream, &response, "");
             continue;
         }
         let state = {
@@ -989,16 +1033,7 @@ fn serve_live_http(
                 },
             }
         };
-        let headers = format!(
-            "{}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: {}\r\nConnection: close\r\n\r\n",
-            response.status_line,
-            response.content_type,
-            response.body.len(),
-            control_plane::CORS_ALLOW_ORIGIN
-        );
-        let _ = stream.write_all(headers.as_bytes());
-        let _ = stream.write_all(response.body.as_bytes());
-        let _ = stream.flush();
+        write_http_response(&mut stream, &response, "");
     }
 }
 
@@ -1023,6 +1058,8 @@ fn main() -> std::process::ExitCode {
     let mut serve_addr: Option<String> = None;
     let mut web_root: Option<String> = None;
     let mut serve_write = false;
+    // B41：可选静态 Bearer token 的环境变量名（空/未设置 = 不鉴权，保持现状）。
+    let mut serve_token_env: Option<String> = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--tap" => match args.next() {
@@ -1103,6 +1140,13 @@ fn main() -> std::process::ExitCode {
             "--json" => dump_json = true,
             "--dump-state" => dump_state = true,
             "--serve-write" => serve_write = true,
+            "--serve-token-env" => match args.next() {
+                Some(name) => serve_token_env = Some(name),
+                None => {
+                    eprintln!("ec-sim-esc: --serve-token-env 需要环境变量名（如 EC_SIM_TOKEN）");
+                    return std::process::ExitCode::from(2);
+                }
+            },
             "--web-root" => match args.next() {
                 Some(dir) => web_root = Some(dir),
                 None => {
@@ -1132,7 +1176,8 @@ fn main() -> std::process::ExitCode {
                      调试：--dump-sii [--manifest <yaml>] [--esi <xml>] 打印 SII 镜像 hex/类别链后退出；
                      --dump-dict [--json] [--manifest <yaml>] [--esi <xml>] 打印运行时对象字典后退出（--json 输出 dict-v1）；
                      --dump-state [--manifest <yaml>] [--esi <xml>] 打印只读状态 JSON（供 WebUI/工具消费）；
-                     --serve <addr> [--manifest|--esi] 只读 HTTP JSON API（/state,/dict）；
+                     --serve <addr> [--web-root <dir>] [--serve-write] [--serve-token-env <VAR>]
+                       HTTP JSON API（默认只读；--serve-write 开写；VAR 非空时需 Authorization: Bearer）；
                      --version 打印版本。"
                 );
                 return std::process::ExitCode::SUCCESS;
@@ -1143,6 +1188,27 @@ fn main() -> std::process::ExitCode {
             }
         }
     }
+
+    if serve_token_env.is_some() && serve_addr.is_none() {
+        eprintln!("ec-sim-esc: --serve-token-env 需要同时给出 --serve <addr>");
+        return std::process::ExitCode::from(2);
+    }
+    // B41：从环境变量读静态 token；未设置/为空 = 保持现状（不鉴权）。
+    let serve_token: Option<String> = match serve_token_env.as_deref() {
+        Some(name) => match std::env::var(name) {
+            Ok(token) if !token.is_empty() => {
+                println!(
+                    "SERVE token_env={name} enabled（API 需要 Authorization: Bearer <token>）"
+                );
+                Some(token)
+            }
+            _ => {
+                eprintln!("ec-sim-esc: --serve-token-env {name} 未设置/为空：控制面不鉴权（现状）");
+                None
+            }
+        },
+        None => None,
+    };
 
     if dump_dict {
         return dump_dict_and_exit(manifest_path.as_deref(), esi_path.as_deref(), dump_json);
@@ -1158,6 +1224,7 @@ fn main() -> std::process::ExitCode {
                 esi_path.as_deref(),
                 addr,
                 web_root.as_deref(),
+                serve_token.as_deref(),
             );
         }
     }
@@ -1245,6 +1312,7 @@ fn main() -> std::process::ExitCode {
             live_serve,
             web_root.clone(),
             serve_write,
+            serve_token.clone(),
         ),
         (Some(name), None) => run(
             &name,
@@ -1258,6 +1326,7 @@ fn main() -> std::process::ExitCode {
             live_serve,
             web_root.clone(),
             serve_write,
+            serve_token.clone(),
         ),
         (None, None) => run(
             "ecsim0",
@@ -1271,6 +1340,7 @@ fn main() -> std::process::ExitCode {
             live_serve,
             web_root.clone(),
             serve_write,
+            serve_token,
         ),
     }
 }
@@ -1406,6 +1476,7 @@ fn run_uds(
     serve: Option<String>,
     web_root: Option<String>,
     serve_write: bool,
+    serve_token: Option<String>,
 ) -> std::process::ExitCode {
     use esc_node::DEFAULT_SIM_MAC;
     use std::io::Write;
@@ -1444,7 +1515,15 @@ fn run_uds(
         let shared = std::sync::Arc::clone(&responders);
         let root = web_root.clone();
         std::thread::spawn(move || {
-            serve_live_http(addr, http_manifest, http_esi, shared, root, serve_write);
+            serve_live_http(
+                addr,
+                http_manifest,
+                http_esi,
+                shared,
+                root,
+                serve_write,
+                serve_token,
+            );
         });
     }
     let mut buf = [0u8; 2048];
@@ -1517,6 +1596,7 @@ fn run(
     serve: Option<String>,
     web_root: Option<String>,
     serve_write: bool,
+    serve_token: Option<String>,
 ) -> std::process::ExitCode {
     use esc_node::DEFAULT_SIM_MAC;
     use std::io::Write;
@@ -1556,7 +1636,15 @@ fn run(
         let shared = std::sync::Arc::clone(&responders);
         let root = web_root.clone();
         std::thread::spawn(move || {
-            serve_live_http(addr, http_manifest, http_esi, shared, root, serve_write);
+            serve_live_http(
+                addr,
+                http_manifest,
+                http_esi,
+                shared,
+                root,
+                serve_write,
+                serve_token,
+            );
         });
     }
     let mut buf = [0u8; 2048];
@@ -1606,6 +1694,7 @@ fn run(
     _serve: Option<String>,
     _web_root: Option<String>,
     _serve_write: bool,
+    _serve_token: Option<String>,
 ) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)
@@ -1626,6 +1715,7 @@ fn run_uds(
     _serve: Option<String>,
     _web_root: Option<String>,
     _serve_write: bool,
+    _serve_token: Option<String>,
 ) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)

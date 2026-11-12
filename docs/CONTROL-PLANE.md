@@ -1,6 +1,7 @@
 # 控制面只读 API（`ec-sim-esc --serve`）
 
-> 状态：M2 起步。当前控制面**只读**：只暴露状态/快照/指标，不提供任何写操作（SDO 写、PDO 激励、ESM 迁移等仍走主站或 UDS 合成主站）。
+> 状态：M2 观测面 + M3 写路径。控制面**默认只读**（状态/快照/指标）；`--serve-write` 显式开启
+> `POST /pdo`、`POST /sdo` 受控写（§5），`--serve-token-env` 可选静态 Bearer token（§6）。
 > 实现：`crates/control-plane`（JSON 序列化 + 路由判定）+ `crates/esc-node/src/bin/ec_sim_esc.rs`（std `TcpListener` HTTP 服务）。
 > 依赖：**零外部依赖**（无 HTTP/序列化 crate），许可保持 Apache-2.0 OR MIT。
 
@@ -17,12 +18,17 @@ cargo run -q -p esc-node --bin ec-sim-esc -- \
 
 # 实时模式（TAP，需 root）：与 SOEM/IgH 的 TAP 夹具同进程。
 sudo target/release/ec-sim-esc --tap escsim0 --serve 127.0.0.1:8092 --slaves 1
+
+# 可选静态 token：变量非空时 API 需要 Authorization: Bearer <token>（空/未设置 = 现状）。
+EC_SIM_TOKEN='<token>' target/release/ec-sim-esc --uds /tmp/ecsim.sock --esm-lax \
+  --serve 127.0.0.1:8091 --serve-token-env EC_SIM_TOKEN
 ```
 
-- 绑定地址由用户显式给出（建议 `127.0.0.1`）；服务不监听其他地址、不做 TLS/鉴权。
+- 绑定地址由用户显式给出（建议 `127.0.0.1`）；服务不监听其他地址、不做 TLS。
+  鉴权默认关闭；需要时用 `--serve-token-env <环境变量名>` 开启（§6）。
 - `--web-root <dir>`：同源托管 `web/` 白名单文件（`/` 与 `/index.html` → `index.html`，`/app.js` → `app.js`），
   UI 与 API 同端口，无需另起静态服务器；未给出或目录不存在时回退为纯 API（`/` 返回自述 JSON）。
-- 服务只接受 `GET`；其他方法按 404/忽略处理（实现为路径匹配，未做方法校验）。
+- 读路由只接受 `GET`；写路由只接受 `POST` 且需 `--serve-write`（静态模式非 GET → 405，见 §5）。
 - 所有路由均带 `Access-Control-Allow-Origin: *` 与 `Cache-Control: no-store`，便于本机 WebUI 直接 `fetch`。
 
 示例（同源托管 WebUI，推荐）：
@@ -56,6 +62,10 @@ cargo run -q -p esc-node --bin ec-sim-esc -- \
 | `GET /events` | 实时 | `text/event-stream` | SSE 推送 state-v1（默认 500ms，可 `?interval_ms=100..5000`；支持 `?slave=N`） |
 | `POST /pdo` | 实时（需 `--serve-write`） | （内联 JSON） | 写 SM2 原始字节（调试用；默认 405，见 §5） |
 | 其他路径 | 全部 | `{"error": ..., "routes": [...]}` | 404 |
+
+> 开启 token（§6）后，上表除 `/`、`/index.html`、`/app.js`、`/health` 外的**全部 API 路由**
+> （含 `POST /pdo`、`POST /sdo`）都要求 `Authorization: Bearer <token>`；静态资源不鉴权，
+> 便于浏览器先加载 WebUI 外壳。
 
 ## 3. 示例
 
@@ -166,33 +176,49 @@ curl -si http://127.0.0.1:8091/nope   # 404 JSON
 - 响应：`{"ok": true, "slave": N, "sm2_address": "0x1100", "written_hex": "beef"}`。
 - 用途：自动化测试/调试；默认关闭，生产/共享环境不要开启。写操作仍**无鉴权**，只应在回环或受信环境使用。
 
-## 6. 安全边界（务必遵守）
+## 6. 鉴权（可选静态 token，默认关闭）
+
+- 启动参数 **`--serve-token-env <VAR>`**（可与 `--serve-write` 叠加）：从环境变量 `VAR` 读取 token；
+  变量**未设置或为空** = 不鉴权（维持现状，启动时在 stderr 提示）。
+- 变量非空时：受保护路由需要 `Authorization: Bearer <token>`；头名与 `Bearer` scheme 大小写不敏感，
+  token 本身**精确匹配**。缺失/非 Bearer → `401`（响应带 `WWW-Authenticate: Bearer realm="ec-sim"`）；
+  token 错误 → `403`。静态资源与 `/health` 不鉴权。
+- 受保护路由：`/state`、`/dict`、`/pdo`、`/sdo`、`/sdo-audit`、`/topology`、`/metrics`、`/events`，
+  含 `POST /sdo`、`POST /pdo` 写路由与全部 `?slave=N`/`?history=1` 变体。
+- 这是**静态 token**，不是完整认证：无用户体系/轮换/登录审计，token 比较非恒定时间；
+  仅适合本机/受信网络。公网访问仍应经反向代理做 TLS 与认证（ADR 0002 D4）。
+- ⚠️ 开启 token 后浏览器 WebUI 的 `fetch` 无法自带 `Authorization` 头：需经反向代理注入请求头，
+  或直接用 `curl -H "Authorization: Bearer <token>"`；静态外壳可正常加载。
+
+## 7. 安全边界（务必遵守）
 
 - **只读**：没有任何写路由；不会触发 SDO 写/PDO 写/ESM 迁移。
 - **静态文件白名单**：`--web-root` 只映射上面三个路径，不拼接用户路径、无目录遍历风险；
   路径不匹配时回退到 API 路由/404。
-- **无鉴权、无 TLS**：`Access-Control-Allow-Origin: *` 仅适合本机/受信网络调试；**不要暴露到公网**。
+- **默认无鉴权、无 TLS**：`Access-Control-Allow-Origin: *` 仅适合本机/受信网络调试；
+  需要时用 `--serve-token-env`（§6）加静态 token，但**不要暴露到公网**。
 - 默认示例都绑定 `127.0.0.1`；如需远程访问，应自行加反向代理/鉴权，并注意泄漏面。
 - `--serve` 与 `--uds`/`--tap` 同进程时只增加一个 HTTP 线程；实时路径仍由线缆层主循环驱动，HTTP 请求仅加锁读快照（不改变实时语义）。
 - 快照是**观测值**：`/state` 的 `live`、`/pdo`、`/metrics` 均为读取时刻的近似值，不构成实时性/一致性保证。
-- 写操作（`POST /pdo`）默认关闭；启用 `--serve-write` 后仍无鉴权，需自行限定网络范围。
+- 写操作（`POST /pdo`、`POST /sdo`）默认关闭；启用 `--serve-write` 后仍无鉴权，除非同时开启 token（§6）。
 
-## 7. 与 WebUI 的关系
+## 8. 与 WebUI 的关系
 
 `web/` 是零依赖只读页面：可载入 `--dump-state` / `--dump-dict --json` 生成的 JSON 文件，也可用 `--web-root web`
 同源托管（`http://127.0.0.1:<port>/`），或另起静态服务器后填 API 地址，从本控制面拉取
 `/state`、`/dict`、`/pdo`、`/pdo?history=1`、`/topology`、`/metrics`；支持“从站 N”切换、拓扑行点击切换、1s 实时轮询与 PDO Canvas 波形。
 
-## 8. 验证
+## 9. 验证
 
 | 检查 | 方式 |
 | --- | --- |
-| 路由/JSON schema | `cargo test -p control-plane`（13 个单测） |
+| 路由/JSON schema/鉴权判定 | `cargo test -p control-plane`（20 个单测） |
 | 静态服务 | `scripts/spikes/http-state-probe.sh` |
 | 同源托管 web/ | `scripts/spikes/serve-web-probe.sh` |
 | SSE 推送 | `scripts/spikes/events-probe.sh` |
 | SDO 只读浏览 | `scripts/spikes/sdo-read-probe.sh` |
 | SDO 受控写/审计 | `scripts/spikes/sdo-write-probe.sh` |
+| 可选 token 鉴权矩阵 | `scripts/spikes/serve-token-probe.sh` |
 | 写操作（默认关闭） | `scripts/spikes/write-pdo-probe.sh` |
 | 实时状态/PDO/历史/拓扑/逐站/指标 | `live-state-probe.sh`、`pdo-live-probe.sh`、`pdo-history-probe.sh`、`pdo-decode-probe.sh`、`topology-probe.sh`、`slave-select-probe.sh`、`metrics-probe.sh`、`metrics-filter-probe.sh`（Linux/UDS） |
 | TAP 实时 | `scripts/spikes/tap-live-state-probe.sh`（root，验证机） |

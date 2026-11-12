@@ -56,6 +56,7 @@ events|linux|events-probe.sh|no
 write-pdo|linux|write-pdo-probe.sh|no
 sdo-read|linux|sdo-read-probe.sh|no
 sdo-write|linux|sdo-write-probe.sh|no
+serve-token|any|serve-token-probe.sh|no
 tap-live|root|tap-live-state-probe.sh|no
 "
 
