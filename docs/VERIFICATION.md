@@ -5,7 +5,7 @@
 
 > 环境基线：Linux 验证机（见 `docs/LINUX-SERVER.md`）上的**未修改** SOEM 2.0.0 与 IgH 1.6.13；
 > IgH 的 ecrt 应用夹具只在验证机本地构建、**不入库**（GPL 边界，见 `AGENTS.md` §3）。
-> 最近的完整验证状态：**2026-11-13 01:30**（详见 `WORKLOG.md` 同日各条目）。
+> 最近的完整验证状态：**2026-11-13 02:27**（详见 `WORKLOG.md` 同日各条目与 [STATUS.md](STATUS.md)）。
 
 ## 无特权（UDS 合成主站，任意平台可跑）
 
@@ -46,7 +46,7 @@
 
 | 文件 | 用途 |
 |---|---|
-| `uds_master_probe.py` | 合成主站（UDS）：基础 datagram、SM watchdog、ESM、SDO（expedited/segmented/CA/Info）、CiA402 行为/CSV/故障注入 |
+| `uds_master_probe.py` | 合成主站（UDS）：基础 datagram、SM watchdog、ESM、SDO（expedited/segmented/CA/Info）、CiA402 行为/CSV/CST/故障注入 |
 | `sniff_ecat.py` | 抓包/解析 EtherCAT 帧（调试） |
 | `tap_ethernet_loopback.py` / `tap_hold.py` | TAP 自环/保持夹具（调试） |
 

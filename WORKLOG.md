@@ -32,6 +32,29 @@
 
 ---
 
+## 2026-11-13 02:27 班（低峰）— 文档：**新增 `docs/STATUS.md` 状态快照**
+
+**做了什么**
+- 新增 [docs/STATUS.md](docs/STATUS.md)：项目状态索引——代码/测试矩阵（199 passed 拆分）、
+  能力清单（ESC/线缆层/CoE/CiA402/画像）、验证证据摘要（SOEM/IgH/合成主站）、
+  **已知差距诚实清单**（DC 未实现、SV660N 默认 PDO 未知、CA 顺序语义、无独立定时器、
+  IgH SDO 环境阻塞、SOEM -sdo 偶发段错误、fuzz 仅 LCG）、快速开始命令、下一步优先级。
+- `README.md` 在 catalog 链接后加 STATUS.md 链接；`docs/VERIFICATION.md` 更新
+  "最近完整验证状态"日期并补充 uds_master_probe 的 CST 覆盖。
+- 纯文档改动，未改代码。
+
+**验证结果**
+- 本机 `cargo fmt --check` exit 0；`cargo test --workspace` **199 passed** 基线不变。
+- 文档内链接均为仓库相对路径（STATUS.md/VERIFICATION.md/AGENTS.md/DEVICE-PLUGINS.md）。
+
+**卡点**
+- STATUS.md 是**快照**，需随每班进展更新（下次改动能力/差距时应同步）。
+
+**下次开工第一件事**
+- B11：继续找 SV660N 默认 PDO 条目；或实现最小 DC 仿真（寄存器 + tick）缩小 `Has DC` 差距。
+
+---
+
 ## 2026-11-13 02:21 班（低峰）— B11：**SV660N 画像能力位复核（SII CoE details/DC）**
 
 **做了什么**

@@ -52,6 +52,8 @@ Read the decision record: [technology selection](ethercat-slave-simulator-tech-s
 
 Starter catalog: [plugins/catalog.yaml](plugins/catalog.yaml).
 
+Current implementation status, known gaps and reproduction commands: [docs/STATUS.md](docs/STATUS.md).
+
 ## Roadmap
 
 - **M1** minimal closed loop: ESC core (registers/SM/FMMU/AL/EEPROM) + CoE expedited SDO + UDS shim + CLI → `ethercat slaves` and `slaveinfo` see the virtual slave.
