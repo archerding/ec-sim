@@ -28,7 +28,7 @@
   - `cargo fmt --all -- --check` → exit 0
   - `cargo clippy --workspace --all-targets -- -D warnings` → exit 0
   - `cargo test --workspace` → exit 0（3 个单测：AL 状态码往返/未知码、wire 过滤/短帧）
-- 三平台 CI 首跑结果：见 pushed commit 的 Actions（本条写作时尚未开跑）。
+- 三平台 CI 首跑（commit `93a2fbf`，run `43158276907`）→ **ubuntu / macos / windows 全部 success**（fmt + clippy -D warnings + test 三步都过）。
 
 **卡点**
 - 本班起始时 DSH 文件策略为 workspace-write，仓库写探针 `.write-probe` 被拒
@@ -38,8 +38,8 @@
 - 无代码/网络卡点。
 
 **下次开工第一件事**
-- 看 B1 的三平台 CI 是否全绿（`gh run list` 或 GitHub Actions 页面）；全绿后把 §6 B1
-  移入"已完成"，随后进入 **B2b 最小 ESC 应答器**（BRD `0x0000`、APWR `0x0010`、APRD `0x0130`）。
+- **B2b 最小 ESC 应答器**：在 Linux 验证机上让持 TAP 的进程应答 `BRD 0x0000` / `APWR 0x0010` / `APRD 0x0130`，
+  目标 = IgH `ethercat slaves` 与 SOEM `slaveinfo` 各看到 1 个从站（不要求进 OP）；结论写 `docs/spikes/`。
 
 ---
 
