@@ -103,7 +103,13 @@ pdo:
         - {index: 0x6041, sub: 0, bits: 16}
         - {index: 0x6064, sub: 0, bits: 32}
         - {index: 0x6061, sub: 0, bits: 8}
-
+  # 可选：固定映射 PDO（只生成映射对象，不进 SII、不作为默认分配；
+  # 需要主站经 0x1C12/0x1C13 选择。SV660N 画像的 0x1701/0x1B01 即用此字段。）
+  fixed:
+    - index: 0x1701
+      entries:
+        - {index: 0x6040, sub: 0, bits: 16}
+        - {index: 0x607A, sub: 0, bits: 32}
 objects:                    # 需要可 SDO 访问的最小对象集
   - {index: 0x1000, sub: 0, name: Device type,        dtype: UINT32, access: ro}
   - {index: 0x1018, sub: 1, name: Vendor ID,          dtype: UINT32, access: ro}

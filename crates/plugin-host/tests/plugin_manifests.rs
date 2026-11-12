@@ -140,3 +140,49 @@ fn cia402_profiles_declare_supported_modes_matching_layout() {
         assert_eq!(value, expected, "{id} 的 0x6502 与布局不一致");
     }
 }
+
+/// SV660N 固定映射（手册 2.2.6）守卫：0x1701（PP/CSP，4 对象/12 字节）与
+/// 0x1B01（PP/CSP，9 对象/28 字节）必须生成映射对象，且打包值与手册对象/位长一致。
+#[test]
+fn sv660n_fixed_pdo_maps_match_public_manual() {
+    let path = repo_root()
+        .join("plugins")
+        .join("inovance-sv660n")
+        .join("plugin.yaml");
+    let manifest = PluginManifest::load(path.to_str().expect("utf8 path")).expect("load");
+    let dict = dictionary_from_manifest(&manifest).expect("dictionary");
+    let cases = [
+        (0x1701u16, 4u8, 12u32, 0x6040_0010u32, 0x60FE_0120u32),
+        (0x1B01, 9, 28, 0x603F_0010, 0x60FD_0020),
+    ];
+    for (index, count, bytes, first, last) in cases {
+        let object = dict
+            .object(index)
+            .unwrap_or_else(|| panic!("缺少固定映射 0x{index:04X}"));
+        assert_eq!(object.max_subindex, count, "0x{index:04X} 条目数");
+        let count_entry = dict.entry(index, 0).expect("count entry");
+        assert_eq!(count_entry.value, vec![count], "0x{index:04X}:00 计数");
+        let mut total_bits = 0u32;
+        for subindex in 1..=count {
+            let entry = dict.entry(index, subindex).expect("mapping entry");
+            let packed = u32::from_le_bytes([
+                entry.value[0],
+                entry.value[1],
+                entry.value[2],
+                entry.value[3],
+            ]);
+            total_bits += packed & 0xFF;
+            if subindex == 1 {
+                assert_eq!(packed, first, "0x{index:04X}:01 打包值");
+            }
+            if subindex == count {
+                assert_eq!(packed, last, "0x{index:04X}:{count:02X} 打包值");
+            }
+        }
+        assert_eq!(
+            total_bits,
+            bytes * 8,
+            "0x{index:04X} 位长总和与手册字节数不符"
+        );
+    }
+}

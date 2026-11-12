@@ -1,5 +1,37 @@
 ---
 
+## 2026-11-13 03:53 班（低峰）— B11：**固定映射 PDO 支持 + SV660N PP/CSP 固定映射落地**
+
+**做了什么**
+- manifest 新字段 **`pdo.fixed`**：固定映射 PDO 只生成**映射对象**（index/sub/位长打包为
+  UINT32 条目），**不进 SII PDO 类别、也不作为 0x1C12/0x1C13 默认分配**（主站可自行选择）。
+  `plugin-host` 的 manifest 解析与 `dict_gen` 均已支持；`docs/DEVICE-PLUGINS.md` 补充 schema。
+- SV660N 画像新增 **PP/CSP 固定映射对**（手册 2.2.6，位长与手册字节数吻合）：
+  - `0x1701`（4 对象 / 12 字节）：6040h(16) 607Ah(32) 60B8h(16) 60FEh:01(32)；
+  - `0x1B01`（9 对象 / 28 字节）：603Fh(16) 6041h(16) 6064h(32) 6077h(16) 60F4h(32)
+    60B9h(16) 60BAh(32) 60BCh(32) 60FDh(32)；
+  - 新增 `60F4`（跟随误差）、`60FE` 数组（:0 计数值、:1 物理输出）对象。
+- 新增守卫测试 `sv660n_fixed_pdo_maps_match_public_manual`：断言两个固定映射的条目数、
+  `:00` 计数、首/末打包值与位长总和（12/28 字节）。
+- `facts.md`、SV660N 验证文档、`docs/STATUS.md` 差距表、AGENTS B11 同步更新。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **209 passed**
+  （esc-core 86 / esc-node 70 / plugin-host 27 + 3 集成 / wire 23）。
+- Linux 验证机：重建后 `--dump-dict --manifest plugins/inovance-sv660n/plugin.yaml` 退出 0
+  且含 `0x1701 max_sub=4`、`0x1B01 max_sub=9`；`sv660n-capability-probe.sh` 仍 **EXIT=0**
+  （SII/PDO 默认映射未变：SOEM 64/176 bits、Has DC 1）。
+
+**卡点**
+- 其余固定映射（`0x1702..0x1705`、`0x1B02..0x1B04`）仍只记录事实；其位长为按 CiA 402
+  标准对象的推算值，待逐项核对。
+
+**下次开工第一件事**
+- B11：补齐其余固定映射（或厂商扩展对象核对）；核对固定映射位长。
+
+---
+---
+
 ## 2026-11-13 03:46 班（低峰）— B11：**SV660N 默认可变 PDO 已按公开手册核对并落地**
 
 **做了什么**

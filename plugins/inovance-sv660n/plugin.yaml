@@ -58,6 +58,26 @@ pdo:
         - {index: 0x60B9, sub: 0, bits: 16}
         - {index: 0x60BA, sub: 0, bits: 32}
         - {index: 0x60FD, sub: 0, bits: 32}
+  # 固定映射（手册 2.2.6）：只生成 PDO 映射对象（不进 SII、非默认分配），
+  # 主站可通过 0x1C12/0x1C13 选择。位长为 CiA 402 标准对象值（与手册字节数一致）。
+  fixed:
+    - index: 0x1701  # PP/CSP：4 objects / 12 bytes
+      entries:
+        - {index: 0x6040, sub: 0, bits: 16}
+        - {index: 0x607A, sub: 0, bits: 32}
+        - {index: 0x60B8, sub: 0, bits: 16}
+        - {index: 0x60FE, sub: 1, bits: 32}
+    - index: 0x1B01  # PP/CSP：9 objects / 28 bytes
+      entries:
+        - {index: 0x603F, sub: 0, bits: 16}
+        - {index: 0x6041, sub: 0, bits: 16}
+        - {index: 0x6064, sub: 0, bits: 32}
+        - {index: 0x6077, sub: 0, bits: 16}
+        - {index: 0x60F4, sub: 0, bits: 32}
+        - {index: 0x60B9, sub: 0, bits: 16}
+        - {index: 0x60BA, sub: 0, bits: 32}
+        - {index: 0x60BC, sub: 0, bits: 32}
+        - {index: 0x60FD, sub: 0, bits: 32}
 
 objects:
   - {index: 0x1008, sub: 0, name: Device name, dtype: VISIBLE_STRING, access: ro, value: "Inovance SV660N-compatible servo (SIMULATED)"}
@@ -76,6 +96,9 @@ objects:
   - {index: 0x60BA, sub: 0, name: Touch probe 1 positive edge, dtype: INT32, access: ro, value: 0, pdo: tx}
   - {index: 0x60BC, sub: 0, name: Touch probe 2 positive edge, dtype: INT32, access: ro, value: 0, pdo: tx}
   - {index: 0x60FD, sub: 0, name: Digital inputs, dtype: UINT32, access: ro, value: 0, pdo: tx}
+  - {index: 0x60F4, sub: 0, name: Following error actual value, dtype: INT32, access: ro, value: 0}
+  - {index: 0x60FE, sub: 0, name: Physical outputs (number of entries), dtype: UINT8, access: ro, value: 1}
+  - {index: 0x60FE, sub: 1, name: Physical outputs, dtype: UINT32, access: rw, value: 0}
   - {index: 0x2100, sub: 0, name: Config string, dtype: VISIBLE_STRING, access: rw, value: `EC-Sim SDO config (SIMULATED)`}
   - {index: 0x607A, sub: 0, name: Target position, dtype: INT32, access: rw, value: 0, pdo: rx}
 

@@ -431,6 +431,9 @@ pub struct PluginManifest {
     pub rx_pdos: Vec<PdoConfig>,
     /// TxPDO（从站 → 主站）列表。
     pub tx_pdos: Vec<PdoConfig>,
+    /// 固定映射 PDO（如 0x1701..0x1705 / 0x1B01..0x1B04）：只生成 PDO 映射对象与字典，
+    /// **不**进入 SII 的 PDO 类别、也不作为 0x1C12/0x1C13 默认分配（主站可自行选择）。
+    pub fixed_pdos: Vec<PdoConfig>,
     /// 对象声明。
     pub objects: Vec<ObjectConfig>,
     /// 分布式时钟（DC）声明：支持标志 + 时序参数（SII DC 类别 0x003C）。
@@ -507,6 +510,7 @@ impl PluginManifest {
         let pdo_node = root.get("pdo");
         let rx_pdos = parse_pdo_list(pdo_node.and_then(|node| node.get("rx")))?;
         let tx_pdos = parse_pdo_list(pdo_node.and_then(|node| node.get("tx")))?;
+        let fixed_pdos = parse_pdo_list(pdo_node.and_then(|node| node.get("fixed")))?;
 
         let objects = root
             .get("objects")
@@ -579,6 +583,7 @@ impl PluginManifest {
             sm,
             rx_pdos,
             tx_pdos,
+            fixed_pdos,
             objects,
             dc,
             sources,

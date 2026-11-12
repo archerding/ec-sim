@@ -280,8 +280,44 @@ pub fn dictionary_from_manifest(manifest: &PluginManifest) -> Result<ObjectDicti
                 }
             }
         }
+        // 4b) 固定映射 PDO 对象（如 0x1701.. / 0x1B01..）：只生成映射对象，不进 SII/分配默认。
+        for pdo in &manifest.fixed_pdos {
+            let max_subindex = u8::try_from(pdo.entries.len()).unwrap_or(u8::MAX);
+            if objects.iter().any(|object| object.index == pdo.index) {
+                continue;
+            }
+            objects.push(object(
+                pdo.index,
+                max_subindex,
+                obj_dict::object_code::ARRAY,
+                obj_dict::data_type::UNSIGNED32,
+                "Fixed PDO mapping",
+            ));
+            push_entry(entry(
+                pdo.index,
+                0,
+                vec![max_subindex],
+                obj_dict::data_type::UNSIGNED8,
+                8,
+                obj_dict::access::READ_WRITE_PREOP,
+                "Number of mapped objects",
+            ));
+            for (offset, mapping) in pdo.entries.iter().enumerate() {
+                let packed = (u32::from(mapping.index) << 16)
+                    | (u32::from(mapping.sub) << 8)
+                    | u32::from(mapping.bits);
+                push_entry(entry(
+                    pdo.index,
+                    u8::try_from(offset + 1).unwrap_or(u8::MAX),
+                    packed.to_le_bytes().to_vec(),
+                    obj_dict::data_type::UNSIGNED32,
+                    32,
+                    obj_dict::access::READ_WRITE_PREOP,
+                    "Fixed PDO mapping",
+                ));
+            }
+        }
     }
-
     // 5) manifest 用户对象（可覆盖上面生成条目的名称/访问权限）。
     for spec in &manifest.objects {
         let upper = spec.data_type.trim().to_ascii_uppercase();
