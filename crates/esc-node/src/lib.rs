@@ -3228,6 +3228,35 @@ mod tests {
     }
 
     #[test]
+    fn handle_frame_never_panics_on_random_bytes() {
+        // 确定性 LCG：任意字节/长度/以太网类型的帧都不能让应答器 panic。
+        let mut state = 0x1234_5678_9ABC_DEF0u64;
+        let mut next = || {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            state
+        };
+        for iteration in 0..500 {
+            let len = 14 + usize::try_from(next() % 120).expect("len") + (iteration % 7);
+            let mut frame = vec![0u8; len];
+            for byte in &mut frame {
+                *byte = (next() >> 33) as u8;
+            }
+            // 一半随机帧设成 EtherCAT 以太网类型，覆盖解析/分发路径。
+            if iteration % 2 == 0 && len >= 14 {
+                frame[12] = 0x88;
+                frame[13] = 0xA4;
+            }
+            let _ = responder_hint(&mut Responder::default(), &frame);
+        }
+    }
+
+    fn responder_hint(responder: &mut Responder, frame: &[u8]) -> Option<Vec<u8>> {
+        responder.handle_frame(frame, DEFAULT_SIM_MAC)
+    }
+
+    #[test]
     fn dc_register_access_is_counted() {
         let mut responder = Responder::default();
         assert_eq!(responder.stats().dc_reg_reads, 0);

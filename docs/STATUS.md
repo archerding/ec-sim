@@ -58,7 +58,7 @@ SOEM 2.0.0 与 IgH 1.6.13** 可发现从站并进入 OP（IgH 无应用时到 PR
 | 无独立硬件定时器 | watchdog/DC 由帧驱动，停帧不主动超时 | 设计选择，已文档化 |
 | IgH SDO 上传/下载在验证机阻塞 | IgH 侧 SDO 行为只能用 SOEM/合成主站验证 | 环境问题（ecrt ioctl），⚠️ 待验证 |
 | SOEM `slaveinfo -sdo` 偶发段错误 | 探针需重试规避 | 已知 SOEM 2.0.0 数组读缺陷 |
-| fuzz 仅确定性 LCG | 无覆盖率引导模糊测试 | 解析器均有 `parser_never_panics` 测试 |
+| fuzz 仅确定性 LCG | 无覆盖率引导模糊测试 | `wire`/`esc-core` 解析器与 `esc-node::handle_frame` 均有无 panic 随机测试（确定性 LCG） |
 
 ## 快速开始（本机，无 root）
 

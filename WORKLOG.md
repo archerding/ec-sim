@@ -32,6 +32,31 @@
 
 ---
 
+## 2026-11-13 03:03 班（低峰）— 健壮性：**`Responder::handle_frame` 随机帧无 panic 测试**
+
+**为什么要做这个**：B11 顶部子项（SV660N 默认 PDO）仍缺公开来源（本轮又试了 r.jina.ai PDF
+提取与 GitHub/Gitee ESI 搜索，均未取得可用文本）；补一条覆盖"整帧随机输入"的健壮性测试，
+这是此前只有各解析器单独 fuzz、缺少的端到端缺口。
+
+**做了什么**
+- `esc-node` 新增测试 `handle_frame_never_panics_on_random_bytes`：确定性 LCG 生成 500 个
+  随机以太网帧（长度 14–140、随机字节；一半设置 EtherType 0x88A4），逐个送入
+  `Responder::handle_frame`，断言不 panic（panic 由测试框架捕获失败）。
+- `docs/STATUS.md` 的 fuzz 差距行更新（说明已有端到端随机帧测试，仍无覆盖率引导）。
+
+**验证结果**
+- `cargo test -p esc-node handle_frame_never_panics` 通过；`cargo test -p esc-node`
+  **66 passed**；全仓 **203 passed**（esc-core 86 / esc-node 66 / plugin-host 27 + 1 集成 /
+  wire 23）；`cargo fmt --check` 通过、clippy 无错误。
+
+**卡点**
+- 仍为确定性 LCG、无覆盖率引导/协议感知变异；随机帧大多在早期解析即被丢弃，深度覆盖有限。
+
+**下次开工第一件事**
+- B11：继续找 SV660N 默认 PDO 条目（换搜索入口）；或评估真实 DC 同步（SYNC0 脉冲）。
+
+---
+
 ## 2026-11-13 03:00 班（低峰）— 工具：**`ec-sim-esc --dump-sii` / `--version`**
 
 **为什么要做这个**：B11 顶部子项（SV660N 默认 PDO 具体条目）仍缺公开文本来源（web 搜索
