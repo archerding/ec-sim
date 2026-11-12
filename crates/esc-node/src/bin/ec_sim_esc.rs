@@ -229,6 +229,10 @@ fn dump_state_and_exit(
     std::process::ExitCode::SUCCESS
 }
 
+#[cfg(target_os = "linux")]
+/// `/pdo` 历史缓冲容量（按 PDO 变化去重的时间序列）。
+const PDO_HISTORY_CAPACITY: usize = 256;
+
 /// `--serve <addr>`：只读 HTTP JSON API（`/state`、`/dict`；std `TcpListener`，无外部依赖）。
 fn serve_http(
     manifest_path: Option<&str>,
@@ -390,6 +394,8 @@ fn serve_live_http(
         },
         None => (None, None, None),
     };
+    let mut history: std::collections::VecDeque<control_plane::PdoSnapshot> =
+        std::collections::VecDeque::with_capacity(PDO_HISTORY_CAPACITY);
     let listener = match TcpListener::bind(&addr) {
         Ok(listener) => listener,
         Err(err) => {
@@ -436,24 +442,41 @@ fn serve_live_http(
                 None => "{\"schema\": \"ec-sim/state-v1\", \"live\": null}".to_string(),
             }
         };
-        let pdo_response = if path.split('?').next() == Some("/pdo") {
+        let path_only = path.split('?').next().unwrap_or(path);
+        let want_history = path_only == "/pdo" && path.contains("history=1");
+        let pdo_snapshot = if path_only == "/pdo" {
             let guard = responders.lock().unwrap();
             guard.first().map(|responder| {
                 let (sm2_address, sm2_len) = pdo_layout(&manifest, "out", 0x1100, 2);
                 let (sm3_address, sm3_len) = pdo_layout(&manifest, "in", 0x1110, 2);
-                let pdo = control_plane::PdoSnapshot {
+                control_plane::PdoSnapshot {
                     station_address: responder.station_address(),
                     al_status: responder.al_status(),
                     sm2_address,
                     sm2_bytes: responder.read_process_data(sm2_address, sm2_len),
                     sm3_address,
                     sm3_bytes: responder.read_process_data(sm3_address, sm3_len),
-                };
-                control_plane::pdo_json(&pdo)
+                }
             })
         } else {
             None
         };
+        let pdo_response = pdo_snapshot.map(|pdo| {
+            let changed = history.back().map_or(true, |last| {
+                last.sm2_bytes != pdo.sm2_bytes || last.sm3_bytes != pdo.sm3_bytes
+            });
+            if changed {
+                history.push_back(pdo.clone());
+                if history.len() > PDO_HISTORY_CAPACITY {
+                    history.pop_front();
+                }
+            }
+            if want_history {
+                control_plane::pdo_history_json(history.make_contiguous())
+            } else {
+                control_plane::pdo_json(&pdo)
+            }
+        });
         let response = match pdo_response {
             Some(body) => control_plane::HttpResponse {
                 status_line: "HTTP/1.1 200 OK",

@@ -11,6 +11,7 @@ const message = document.getElementById("message");
 let currentState = null;
 let currentDict = null;
 let currentPdo = null;
+let currentPdoHistory = null;
 let liveTimer = null;
 let liveBase = "";
 
@@ -218,10 +219,60 @@ function renderPdo(pdo) {
   );
 }
 
+
+function renderPdoHistory(history) {
+  if (history.schema !== "ec-sim/pdo-history-v1") return;
+  const samples = history.samples || [];
+  const canvas = document.createElement("canvas");
+  canvas.width = 760;
+  canvas.height = 140;
+  canvas.style.width = "100%";
+  canvas.style.maxWidth = "760px";
+  canvas.style.background = "#0f1115";
+  canvas.style.borderRadius = "8px";
+  const context = canvas.getContext("2d");
+  const values = (key) =>
+    samples.map((sample) => {
+      const hex = sample[key] || "";
+      const bytes = hex.match(/../g) || [];
+      return bytes.length >= 2 ? parseInt(bytes[1] + bytes[0], 16) : 0;
+    });
+  const sm2 = values("sm2_hex");
+  const sm3 = values("sm3_hex");
+  const all = sm2.concat(sm3, [0]);
+  const max = Math.max(1, ...all);
+  const draw = (series, color) => {
+    context.beginPath();
+    context.strokeStyle = color;
+    context.lineWidth = 2;
+    series.forEach((value, index) => {
+      const x = series.length <= 1 ? 0 : (index / (series.length - 1)) * (canvas.width - 20) + 10;
+      const y = canvas.height - 12 - (value / max) * (canvas.height - 24);
+      if (index === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    });
+    context.stroke();
+  };
+  draw(sm2, "#6ea8fe");
+  draw(sm3, "#8fe3a8");
+  app.append(
+    section(
+      "PDO 历史（最近 " + samples.length + " 个变化采样）",
+      el(
+        "p",
+        { class: "sub" },
+        "蓝线 = SM2 前 2 字节（u16 小端）；绿线 = SM3 前 2 字节；纵轴按两者最大值归一化。",
+      ),
+      canvas,
+    ),
+  );
+}
+
 function renderAll() {
   app.replaceChildren();
   if (currentState) renderState(currentState);
   if (currentPdo) renderPdo(currentPdo);
+  if (currentPdoHistory) renderPdoHistory(currentPdoHistory);
   if (currentDict) renderDict(currentDict);
   if (!currentState && !currentDict && !currentPdo) {
     app.append(
@@ -244,6 +295,7 @@ function loadJson(text, source) {
     if (data.schema === "ec-sim/state-v1") currentState = data;
     else if (data.schema === "ec-sim/dict-v1") currentDict = data;
     else if (data.schema === "ec-sim/pdo-v1") currentPdo = data;
+    else if (data.schema === "ec-sim/pdo-history-v1") currentPdoHistory = data;
     else throw new Error(`未知 schema：${data.schema}`);
     message.textContent = `已载入：${source}`;
     renderAll();
@@ -268,6 +320,9 @@ function startLive() {
       if (stateResponse.ok) loadJson(await stateResponse.text(), `${liveBase}/state (live)`);
       const pdoResponse = await fetch(`${liveBase}/pdo`);
       if (pdoResponse.ok) loadJson(await pdoResponse.text(), `${liveBase}/pdo (live)`);
+      const historyResponse = await fetch(`${liveBase}/pdo?history=1`);
+      if (historyResponse.ok)
+        loadJson(await historyResponse.text(), `${liveBase}/pdo?history=1 (live)`);
     } catch (error) {
       message.textContent = `实时刷新失败：${error.message}`;
     }
@@ -297,6 +352,8 @@ document.getElementById("load-api").addEventListener("click", async () => {
     if (dictResponse.ok) loadJson(await dictResponse.text(), `${base}/dict`);
     const pdoResponse = await fetch(`${base}/pdo`);
     if (pdoResponse.ok) loadJson(await pdoResponse.text(), `${base}/pdo`);
+    const historyResponse = await fetch(`${base}/pdo?history=1`);
+    if (historyResponse.ok) loadJson(await historyResponse.text(), `${base}/pdo?history=1`);
     liveBase = base;
     if (document.getElementById("live").checked) startLive();
   } catch (error) {

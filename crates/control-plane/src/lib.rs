@@ -377,6 +377,28 @@ pub fn pdo_json(pdo: &PdoSnapshot) -> String {
     )
 }
 
+/// 生成 `pdo-history-v1` JSON：PDO 时间序列（每次 `/pdo` 请求按变化去重追加，最多 256 条）。
+#[must_use]
+pub fn pdo_history_json(samples: &[PdoSnapshot]) -> String {
+    let mut out = format!(
+        "{{\n  \"schema\": \"ec-sim/pdo-history-v1\",\n  \"tool\": \"ec-sim-esc {}\",\n  \"count\": {},\n  \"samples\": [\n",
+        TOOL_VERSION,
+        samples.len()
+    );
+    for (index, sample) in samples.iter().enumerate() {
+        let tail = if index + 1 == samples.len() { "" } else { "," };
+        let _ = writeln!(
+            out,
+            "    {{\"sm2_hex\": \"{}\", \"sm3_hex\": \"{}\", \"al_status\": \"0x{:02X}\"}}{tail}",
+            hex_bytes(&sample.sm2_bytes),
+            hex_bytes(&sample.sm3_bytes),
+            sample.al_status
+        );
+    }
+    out.push_str("  ]\n}");
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -452,6 +474,34 @@ mod tests {
             json.contains("\"sm3\": {\"address\": \"0x1110\", \"bytes\": 2, \"hex\": \"0001\"}")
         );
         assert!(json.contains("\"al_status\": \"0x02\""));
+        assert!(json.trim_end().ends_with('}'));
+    }
+
+    #[test]
+    fn pdo_history_json_lists_samples() {
+        let samples = vec![
+            PdoSnapshot {
+                station_address: 0x1001,
+                al_status: 0x01,
+                sm2_address: 0x1100,
+                sm2_bytes: vec![0x00, 0x00],
+                sm3_address: 0x1110,
+                sm3_bytes: vec![0x00, 0x00],
+            },
+            PdoSnapshot {
+                station_address: 0x1001,
+                al_status: 0x08,
+                sm2_address: 0x1100,
+                sm2_bytes: vec![0xbe, 0xef],
+                sm3_address: 0x1110,
+                sm3_bytes: vec![0x12, 0x34],
+            },
+        ];
+        let json = pdo_history_json(&samples);
+        assert!(json.contains("\"schema\": \"ec-sim/pdo-history-v1\""));
+        assert!(json.contains("\"count\": 2"));
+        assert!(json.contains("\"sm2_hex\": \"0000\""));
+        assert!(json.contains("\"sm2_hex\": \"beef\", \"sm3_hex\": \"1234\""));
         assert!(json.trim_end().ends_with('}'));
     }
 

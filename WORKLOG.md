@@ -1,5 +1,34 @@
 ---
 
+## 2026-11-13 06:04 班（低峰）— **B25：`/pdo` 历史缓冲 + Web 波形**
+
+**做了什么**
+- `--serve` 实时模式新增 `/pdo?history=1`（pdo-history-v1）：HTTP 线程维护
+  **按 PDO 变化去重**的环形缓冲（`PDO_HISTORY_CAPACITY = 256`），每次 `/pdo` 请求把
+  变化的快照追加；返回 `samples[]`（每项 `sm2_hex`/`sm3_hex`/`al_status`）。
+- `control-plane` 新增 `pdo_history_json` + 1 个单元测试（共 8 个）。
+- `web/` 新增 Canvas 时间序列（蓝 = SM2 前 2 字节 u16 小端、绿 = SM3），API 载入与
+  实时轮询同时拉取 `/pdo?history=1`。
+- 新增 `scripts/spikes/pdo-history-probe.sh`：首次 count>=1；无变化重复请求 count 不变；
+  写 0xBEEF → 0x1234 后 count 递增、最后一条匹配、上限 256。
+- 更新 `docs/VERIFICATION.md`、`docs/STATUS.md` 快速开始、AGENTS（B25 完成、新增 B26 PDO 具名解码）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **218 passed**
+  （control-plane 8 / esc-core 86 / esc-node 71 / plugin-host 27+3 / wire 23）；`node --check web/app.js` 通过。
+- 验证机：重建后 `pdo-history-probe.sh` **EXIT=0**（去重采样 3 条、最后 SM2=`3412`、上限 256）；
+  `pdo-live-probe.sh` 仍 **EXIT=0**（SM2=beef、SM3=1234）。
+
+**卡点**
+- 历史由 HTTP 请求驱动采样（Web 轮询 1s），不是逐帧缓冲；波形仅画 u16 前两字节（B26 做具名解码）。
+
+**下次开工第一件事**
+- **B26**：`web/` 结合 state 的 PDO 映射与 dict-v1 把 SM2/SM3 字节解码为具名对象值
+  （int8/16/32、位域），只读表格 + 波形；探针校验 CST 5B 等已知布局解码结果。
+
+---
+---
+
 ## 2026-11-13 05:59 班（低峰）— **B24：TAP 实时 `--serve`（共享 Responder + HTTP 线程）**
 
 **做了什么**
