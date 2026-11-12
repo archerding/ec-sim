@@ -1,4 +1,4 @@
-# EC-Sim 当前状态快照（2026-11-13 02:27）
+# EC-Sim 当前状态快照（2026-11-13 03:40）
 
 > 本页是**项目状态索引**，不是规范或认证结论。所有"已验证"都指仓库内脚本/单测的
 > 可复现结果，**不构成**一致性测试或认证（见 `AGENTS.md` §3/§4）。
@@ -6,17 +6,17 @@
 ## 一句话
 
 核心 ESC（寄存器/SM/FMMU/AL/EEPROM-SII/邮箱/watchdog）+ CoE（SDO 加速/分段/SDO Info/
-Complete Access）+ CiA 402（CSP/CSV/CST/故障注入）+ 声明式设备画像已实现；**未修改的
-SOEM 2.0.0 与 IgH 1.6.13** 可发现从站并进入 OP（IgH 无应用时到 PREOP）。测试基线
-**199 passed**。
+Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/CST，Tier0 简化）
++ 声明式设备画像已实现；**未修改的 SOEM 2.0.0 与 IgH 1.6.13** 可发现从站并进入 OP
+（IgH 无应用时到 PREOP）。测试基线 **208 passed**。
 
 ## 代码与测试
 
 | crate | 职责 | 测试数 |
 | --- | --- | --- |
-| `esc-core` | 寄存器、SM/FMMU、AL 状态机、EEPROM-SII 生成、邮箱解析、watchdog | 85 |
-| `esc-node` | 从站应答器、PDI 内存、邮箱处理、CiA 402 行为、`ec-sim-esc` 二进制 | 63 |
-| `plugin-host` | plugin.yaml 解析/校验、SII/字典/ESI 生成 | 27 + 1 集成 |
+| `esc-core` | 寄存器、SM/FMMU、AL 状态机、EEPROM-SII 生成、邮箱解析、watchdog | 86 |
+| `esc-node` | 从站应答器、PDI 内存、邮箱处理、CiA 402 行为、`ec-sim-esc` 二进制 | 70 |
+| `plugin-host` | plugin.yaml 解析/校验、SII/字典/ESI 生成 | 27 + 2 集成 |
 | `wire` | EtherCAT 帧/datagram 编解码 + WKC 语义 | 23 |
 
 `cargo fmt --check`、`cargo clippy --workspace --all-targets -D warnings`、`cargo test --workspace`
@@ -33,8 +33,11 @@ SOEM 2.0.0 与 IgH 1.6.13** 可发现从站并进入 OP（IgH 无应用时到 PR
 - **CoE**：expedited + segmented SDO 上传/下载、SDO Info、Complete Access（上传/单帧+
   分段下载/重发幂等/超长 Abort 0x06070010）、Abort 码、PDO assign/map 对象
   （0x1C12/0x1C13/0x1600/0x1A00）、CA 下载 all-or-nothing。
-- **DC Tier0**：ESC Support 声明 DC（0x0008 bit2）、0x0900–0x0917 帧驱动模拟时钟、\n  SV660N 画像声明 SII DC 类别（assignActivate 0x300）。\n- **CiA 402 Tier0**：CSP（位置跟随 + Target reached）、CSV（速度累加）、**CST**（实际
-  转矩镜像目标转矩）、`--fault` 故障注入与复位、`0x6502=0x3AD`。
+- **DC Tier0**：ESC Support 声明 DC（0x0008 bit2）、0x0900–0x0917 帧驱动模拟时钟、
+  SV660N 画像声明 SII DC 类别（assignActivate 0x300）。
+- **CiA 402 Tier0**：常用模式全覆盖（PP/VL/PV/TQ/HM/IP/CSP/CSV/CST，均简化）、
+  `--fault` 故障注入与复位；`0x6502` 按各画像布局声明（7B=0x01C1、11B=0x03CD、
+  5B=0x0410、SV660N=0x03AD 公开实测）。详见 [cia402-modes-matrix.md](plugins/cia402-modes-matrix.md)。
 - **设备画像**：`generic-io`、`beckhoff-el2008`、`generic-cia402-servo`、
   `generic-cia402-csv-servo`、`generic-cia402-cst-servo`（均自有 VID/PID + SIMULATED），
   `inovance-sv660n` 兼容画像（researching）。
