@@ -13,6 +13,7 @@ let currentDict = null;
 let currentPdo = null;
 let currentPdoHistory = null;
 let currentTopology = null;
+let currentMetrics = null;
 let liveTimer = null;
 let liveBase = "";
 
@@ -335,12 +336,57 @@ function renderTopology(topology) {
   );
 }
 
+
+function parseMetrics(text) {
+  const values = {};
+  for (const line of String(text).split("\n")) {
+    if (!line || line.startsWith("#")) continue;
+    const match = line.match(/^([a-zA-Z0-9_]+)\{[^}]*\}\s+([0-9.]+)$/);
+    if (match) values[match[1]] = Number(match[2]);
+  }
+  return values;
+}
+
+function renderMetrics(metrics) {
+  if (!metrics) return;
+  const value = (name) => (metrics[name] == null ? "-" : String(metrics[name]));
+  const al = metrics.ecsim_al_status;
+  const alClass = al === 8 || al === 4 || al === 2 ? "ok" : "warn";
+  const cards = [
+    ["收帧", value("ecsim_frames_in_total")],
+    ["发帧", value("ecsim_frames_out_total")],
+    ["丢弃帧", value("ecsim_frames_dropped_total")],
+    ["datagram 命中", value("ecsim_datagrams_hit_total")],
+    ["邮箱请求", value("ecsim_mailbox_requests_total")],
+    ["邮箱响应", value("ecsim_mailbox_responses_total")],
+    ["DC 寄存器读", value("ecsim_dc_reg_reads_total")],
+    ["DC 寄存器写", value("ecsim_dc_reg_writes_total")],
+    ["DC 模拟时间（ns）", value("ecsim_dc_time_ns")],
+    ["AL 状态", al == null ? "-" : String(al)],
+    ["AL 状态码", value("ecsim_al_status_code")],
+  ];
+  app.append(
+    section(
+      "指标（/metrics）",
+      el("p", { class: "sub" }, `AL 状态色：${alClass === "ok" ? "正常（PREOP/SAFEOP/OP）" : "异常或 INIT"}`),
+      el(
+        "div",
+        { class: "grid" },
+        ...cards.map(([label, text]) =>
+          el("div", { class: "kv" }, el("b", {}, label), el("span", { class: alClass }, text)),
+        ),
+      ),
+    ),
+  );
+}
+
 function renderAll() {
   app.replaceChildren();
   if (currentState) renderState(currentState);
   if (currentPdo) renderPdo(currentPdo);
   if (currentPdoHistory) renderPdoHistory(currentPdoHistory);
   if (currentTopology) renderTopology(currentTopology);
+  if (currentMetrics) renderMetrics(currentMetrics);
   if (currentDict) renderDict(currentDict);
   if (!currentState && !currentDict && !currentPdo) {
     app.append(
@@ -355,6 +401,12 @@ function renderAll() {
     );
   }
   app.append(el("p", { class: "sub" }, "只读视图，不构成一致性/认证结论。"));
+}
+
+function loadMetrics(text, source) {
+  currentMetrics = parseMetrics(text);
+  message.textContent = `已载入：${source}`;
+  renderAll();
 }
 
 function loadJson(text, source) {
@@ -401,6 +453,9 @@ function startLive() {
       const topologyResponse = await fetch(`${liveBase}/topology`);
       if (topologyResponse.ok)
         loadJson(await topologyResponse.text(), `${liveBase}/topology (live)`);
+      const metricsResponse = await fetch(`${liveBase}/metrics?slave=${slave}`);
+      if (metricsResponse.ok)
+        loadMetrics(await metricsResponse.text(), `${liveBase}/metrics?slave=${slave} (live)`);
     } catch (error) {
       message.textContent = `实时刷新失败：${error.message}`;
     }
@@ -436,6 +491,9 @@ document.getElementById("load-api").addEventListener("click", async () => {
       loadJson(await historyResponse.text(), `${base}/pdo?slave=${slave}&history=1`);
     const topologyResponse = await fetch(`${base}/topology`);
     if (topologyResponse.ok) loadJson(await topologyResponse.text(), `${base}/topology`);
+    const metricsResponse = await fetch(`${base}/metrics?slave=${slave}`);
+    if (metricsResponse.ok)
+      loadMetrics(await metricsResponse.text(), `${base}/metrics?slave=${slave}`);
     liveBase = base;
     if (document.getElementById("live").checked) startLive();
   } catch (error) {

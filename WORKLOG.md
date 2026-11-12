@@ -1,5 +1,32 @@
 ---
 
+## 2026-11-13 06:30 班（低峰）— **B30：`/metrics?slave=N` 筛选 + Web 指标卡片**
+
+**做了什么**
+- `/metrics?slave=N`：仅导出指定从站（默认全量）；越界/非法 N → 404（与 `/state`、`/pdo`
+  共享 `invalid_slave` 判定）。
+- `web/` 解析 `/metrics` 文本，展示关键计数卡片（收/发帧、丢弃、datagram、邮箱请求/响应、
+  DC 寄存器读/写、DC 模拟时间、AL 状态/状态码），AL 状态用 `ok`（PREOP/SAFEOP/OP）/`warn`
+  （INIT/异常）色；API 载入与实时轮询都按所选从站拉 `/metrics?slave=N`。
+- 新增 `scripts/spikes/metrics-filter-probe.sh`：全量 3 站、`?slave=1` 仅 1 站、99/abc → 404。
+- 更新 `docs/VERIFICATION.md`、`docs/STATUS.md`、AGENTS（B30 完成、新增 B31 控制面文档）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **223 passed** 不变；
+  `node --check web/app.js` 通过。
+- 验证机：重建后 `metrics-filter-probe.sh` **EXIT=0**——`OK: /metrics?slave=1 仅导出 1 站；
+  全量 3 站；越界/非法 slave → 404`；`metrics-probe.sh` 仍 **EXIT=0**。
+
+**卡点**
+- 无（控制面文档 B31）。
+
+**下次开工第一件事**
+- **B31**：`docs/CONTROL-PLANE.md` 汇总只读 API 路由/schema/示例/安全边界，README 与 STATUS 互链；
+  用清单核对文档路由与代码一致。
+
+---
+---
+
 ## 2026-11-13 06:25 班（低峰）— **B29：`/metrics` Prometheus 文本指标**
 
 **做了什么**

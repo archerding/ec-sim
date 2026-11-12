@@ -449,7 +449,8 @@ fn serve_live_http(
                 .filter(|index| *index < slave_count),
             None => Some(0),
         };
-        let invalid_slave = matches!(path_only, "/state" | "/pdo") && slave_index.is_none();
+        let invalid_slave =
+            matches!(path_only, "/state" | "/pdo" | "/metrics") && slave_index.is_none();
         let slave_index = slave_index.unwrap_or(0);
         let state = {
             let guard = responders.lock().unwrap();
@@ -508,6 +509,7 @@ fn serve_live_http(
             let slaves: Vec<control_plane::MetricsSlave> = guard
                 .iter()
                 .enumerate()
+                .filter(|entry| slave_param.is_none() || entry.0 == slave_index)
                 .map(|(index, responder)| {
                     let stats = responder.stats();
                     control_plane::MetricsSlave {
