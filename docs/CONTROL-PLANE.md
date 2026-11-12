@@ -170,3 +170,4 @@ curl -si http://127.0.0.1:8091/nope   # 404 JSON
 | 实时状态/PDO/历史/拓扑/逐站/指标 | `live-state-probe.sh`、`pdo-live-probe.sh`、`pdo-history-probe.sh`、`pdo-decode-probe.sh`、`topology-probe.sh`、`slave-select-probe.sh`、`metrics-probe.sh`、`metrics-filter-probe.sh`（Linux/UDS） |
 | TAP 实时 | `scripts/spikes/tap-live-state-probe.sh`（root，验证机） |
 | 文档与代码路由一致 | `python3 scripts/spikes/control-plane-doc-check.py` |
+| M2 退出条件 | [plan/M2-exit-checklist.md](plan/M2-exit-checklist.md) |

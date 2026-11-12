@@ -96,7 +96,19 @@ for relative in ["crates/control-plane", "crates/esc-node/src/bin/ec_sim_esc.rs"
     if not (ROOT / relative).exists():
         fail(f"源码路径不存在：{relative}")
 
+
+# 5) M2 退出清单存在、引用探针，且被 README/STATUS/CONTROL-PLANE 互链。
+m2_path = ROOT / "docs" / "plan" / "M2-exit-checklist.md"
+if not m2_path.is_file():
+    fail(f"M2 退出清单不存在：{m2_path}")
+m2_text = m2_path.read_text(encoding="utf-8")
+for probe in EXPECTED_PROBES + ["write-pdo-probe.sh"]:
+    if probe not in m2_text:
+        fail(f"M2 退出清单未引用探针：{probe}")
+for doc_path in [ROOT / "README.md", ROOT / "docs" / "STATUS.md", DOC]:
+    if "M2-exit-checklist" not in doc_path.read_text(encoding="utf-8"):
+        fail(f"{doc_path.name} 未链接 M2 退出清单")
 print(
-    "OK: docs/CONTROL-PLANE.md 与代码路由一致（%d 条路径、%d 个探针）"
+    "OK: docs/CONTROL-PLANE.md 与代码路由一致（%d 条路径、%d 个探针），M2 清单已互链"
     % (len(EXPECTED_PATHS), len(EXPECTED_PROBES))
 )

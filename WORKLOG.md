@@ -1,5 +1,33 @@
 ---
 
+## 2026-11-13 07:11 班（低峰）— **B36：M2 退出清单与路线图对齐**
+
+**做了什么**
+- 新增 `docs/plan/M2-exit-checklist.md`：M2 范围与非目标、11 条退出条件（快照 API、HTTP API、
+  实时 UDS/TAP、PDO/历史/解码/逐站、拓扑、指标、WebUI、文档一致性、同源托管、写操作开关、
+  安全边界）逐项给状态与证据（探针/测试/Bxx）、未完成项（SDO 编辑/插件/ESI/鉴权/TLS/MCP/
+  32 从站/Web DOM 测试/VM clippy）、验证命令清单与结论。
+- `docs/STATUS.md`、`README.md`、`docs/CONTROL-PLANE.md` 互链 M2 清单；M1 清单中过时的
+  “M2 未完成 WebUI”段落同步为“只读 WebUI 已完成、SDO 编辑/ESI 导入未做”。
+- `scripts/spikes/control-plane-doc-check.py` 扩展：M2 清单存在、引用全部探针、被 README/
+  STATUS/CONTROL-PLANE 链接（输出加“M2 清单已互链”）。
+- AGENTS：B36 完成、新增 B37（一键预回归脚本）。
+
+**验证结果**
+- `python scripts/spikes/control-plane-doc-check.py` **EXIT=0**（12 路由 / 13 探针，M2 清单已互链）；
+- `cargo fmt --check`、clippy 通过；`cargo test --workspace` **223 passed** 不变；
+- 本班为文档/脚本改动，未跑 VM（清单中的探针此前均已单独通过）。
+
+**卡点**
+- 无。M2 观测面达到退出候选；M3 范围已在清单中明确。
+
+**下次开工第一件事**
+- **B37**：`scripts/spikes/run-all-probes.sh` 一键跑可负担的预回归（按平台/root 跳过不可用项），
+  汇总 EXIT 并输出 CI 友好 PASS/FAIL 摘要。
+
+---
+---
+
 ## 2026-11-13 06:56 班（低峰）— **B35：控制面写操作第一批 `--serve-write` + `POST /pdo`（默认关闭）**
 
 **做了什么**

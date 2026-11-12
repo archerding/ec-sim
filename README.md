@@ -50,7 +50,7 @@ Read the decision record: [technology selection](ethercat-slave-simulator-tech-s
 ## Control plane & Web UI
 
 - **只读 HTTP API**：`ec-sim-esc --serve <addr> [--uds ... | --tap ...]` 提供 `GET /state`、`/dict`、`/pdo`、`/pdo?history=1`、`/topology`、`/metrics`，均支持 `?slave=N` 逐从站查看；std `TcpListener` 实现、零外部依赖。详见 **[docs/CONTROL-PLANE.md](docs/CONTROL-PLANE.md)**。
-- **零依赖 Web 页**：`web/` 打开即可载入 dump JSON，或填 API 地址实时轮询状态/PDO/拓扑/指标并画 PDO 波形。见 **[web/README.md](web/README.md)**。
+- **零依赖 Web 页**：`web/` 打开即可载入 dump JSON，或填 API 地址实时轮询状态/PDO/拓扑/指标并画 PDO 波形。见 **[web/README.md](web/README.md)**。M2 退出条件核对见 **[docs/plan/M2-exit-checklist.md](docs/plan/M2-exit-checklist.md)**。
 
 ## Plugin ecosystem
 

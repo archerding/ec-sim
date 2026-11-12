@@ -45,7 +45,7 @@ Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/
 
 ## 控制面与 WebUI
 
-- 只读 HTTP API（`--serve`：`/state`、`/dict`、`/pdo`、`/topology`、`/metrics`，支持 `?slave=N`）与零依赖 Web 页：见 **[CONTROL-PLANE.md](CONTROL-PLANE.md)**、[web/README.md](../web/README.md)。
+- 只读 HTTP API（`--serve`：`/state`、`/dict`、`/pdo`、`/topology`、`/metrics`，支持 `?slave=N`）与零依赖 Web 页：见 **[CONTROL-PLANE.md](CONTROL-PLANE.md)**、[web/README.md](../web/README.md)；M2 退出条件核对见 **[M2 退出清单](plan/M2-exit-checklist.md)**。
 
 ## 验证证据（详见 [docs/VERIFICATION.md](VERIFICATION.md)）
 

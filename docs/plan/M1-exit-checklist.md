@@ -22,7 +22,7 @@
 - ✅ TAP 真帧（flagship）、DC Tier0（ESC Support + 帧驱动模拟时钟 + SOEM/IgH DC 配置路径）、
   伺服 Profile（CiA 402 常用模式全覆盖 Tier0 + SV660N 兼容画像 + 固定/默认可变 PDO）、
   故障注入 v1（`--fault <code>` + 复位）。
-- ❌ WebUI（拓扑/PDO 波形/SDO 编辑/ESI 导入）；32 从站 @1kHz。
+- ✅ 只读 WebUI（拓扑/PDO 波形/指标/SSE）与控制面 API（M2 见 [M2 退出清单](M2-exit-checklist.md)）；❌ SDO 编辑/ESI 导入/32 从站 @1kHz。
 - ⚠️ 故障注入矩阵仅 1 种（可注入任意 `0x603F` 错误码），"5 种故障"未覆盖。
 
 ## 多从站（B12）范围草案
