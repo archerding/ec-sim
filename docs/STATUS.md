@@ -29,7 +29,7 @@ Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/
   SII 生成（CRC-8、字符串/通用/SM/**FMMU**/TxPDO/RxPDO/**DC** 类别链、0xFFFF 终止）、
   SM watchdog（0x001B）、ESM 前置条件错误码（0x0015/0x0017/0x0018/0x0019/0x0024/
   0x0025/0x002B）、0x0410 读写语义（无 PDI 超时）。
-- **线缆层**：Linux TAP（旗舰，AF_PACKET 双向）与 ESC-over-UDS shim（全平台/CI）。
+- **线缆层**：Linux TAP（旗舰，AF_PACKET 双向）与 ESC-over-UDS shim（全平台/CI）；`--slaves N` 支持 **多从站链**（UDS shim 已验证 8 从站，未修改 SOEM `slaveinfo` 报 `8 slaves found`、`simple_ng` 映射 8O+8I 且 WKC 24 稳定）。
 - **CoE**：expedited + segmented SDO 上传/下载、SDO Info、Complete Access（上传/单帧+
   分段下载/重发幂等/超长 Abort 0x06070010）、Abort 码、PDO assign/map 对象
   （0x1C12/0x1C13/0x1600/0x1A00）、CA 下载 all-or-nothing。

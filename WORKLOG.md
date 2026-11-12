@@ -1,5 +1,38 @@
 ---
 
+## 2026-11-13 04:09 班（低峰）— **B12：多从站帧链（UDS shim 8 从站，SOEM 零补丁到 OP）**
+
+**做了什么**
+- `esc-node` 新增 `pub fn handle_frame_chain`：按环序让 N 个 `Responder` 处理**同一帧**
+  （真实 EtherCAT 一帧沿链传播语义）——自动增量寻址的 ADP 每级 +1、WKC 逐级累加、
+  只回一帧；单从站与 `handle_frame` 行为一致。
+- `ec-sim-esc` 新增 `--slaves N`（1..64，默认 1），UDS/TAP 两种线缆层共用；
+  `--help`/文件头用法同步。
+- 探针：`uds_master_probe.py --multi-slave=N`（广播 WKC、逐站分配地址、配置地址寻址）；
+  脚本 `scripts/spikes/uds-multi-slave-probe.sh`、`scripts/spikes/soem-multi-slave-probe.sh`。
+- 文档：`docs/VERIFICATION.md` 索引、`docs/STATUS.md`、`docs/plan/M1-exit-checklist.md`
+  （M1 第 2 项改为 🟡 部分达成）、AGENTS（B12 完成、新增 B13）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **210 passed**
+  （esc-core 86 / esc-node 71 / plugin-host 27 + 3 集成 / wire 23）；新增单测
+  `multi_slave_chain_assigns_addresses_and_accumulates_wkc`。
+- Linux 验证机：
+  - `uds-multi-slave-probe.sh` **EXIT=0**：`--slaves 8` 下 BRD WKC=8、8 个站地址逐站分配、
+    FPRD 每站 WKC=1 且回读地址正确；
+  - `soem-multi-slave-probe.sh` **EXIT=0**：未修改 SOEM 经 UDS shim 报
+    **`8 slaves found and configured`**、`Calculated workcounter 24`、8 个 `Slave:` 块；
+    `simple_ng` 映射 **8O+8I**、连续多轮 **WKC 24** 稳定。
+
+**卡点**
+- TAP 多从站与 1 kHz 频率/抖动未验证（TAP 单接口回环可能无法表达链式返回）→ **B13**。
+
+**下次开工第一件事**
+- **B13**：TAP 上 `--slaves 8` 实测（或记录 ADR 限制）+ shim 延迟基准（p99）+ 1kHz 频率。
+
+---
+---
+
 ## 2026-11-13 04:07 班（低峰）— 规划：**M1 退出标准核对 + backlog 收口（B11 完成，开 B12）**
 
 **做了什么**

@@ -1350,6 +1350,63 @@ impl Responder {
     }
 }
 
+/// 多从站链式帧处理（B12）：模拟真实 EtherCAT 中"一帧沿链传播"的语义——按环序让
+/// 每个从站处理同一帧，自动增量寻址的 ADP 每级 +1（[`wire::auto_increment_step`]），
+/// WKC 逐级累加，最后只返回一帧。
+///
+/// `slaves` 顺序 = 环位置顺序（索引 0 = 第一个从站）；每个从站的 station address 由
+/// 主站经 APWR 0x0010 配置（与真实设备一致，默认 0 = 未配置）。返回 `None` 表示帧非法。
+///
+/// 单从站（`slaves.len() == 1`）与 [`Responder::handle_frame`] 行为一致。
+#[must_use]
+pub fn handle_frame_chain(
+    slaves: &mut [Responder],
+    frame: &[u8],
+    own_mac: [u8; 6],
+) -> Option<Vec<u8>> {
+    let mut reply = frame.to_vec();
+    for slave in slaves.iter_mut() {
+        reply = slave.handle_frame(&reply, own_mac)?;
+        advance_auto_increment(&mut reply);
+    }
+    // 链式处理后 MAC 头可能被多次交换；回复统一为"目的=请求源、源=模拟器 MAC"。
+    if reply.len() >= ETHERNET_HEADER_LEN + ECAT_HEADER_LEN {
+        reply[0..6].copy_from_slice(&frame[6..12]);
+        reply[6..12].copy_from_slice(&own_mac);
+    }
+    Some(reply)
+}
+
+/// 把帧内所有自增寻址 datagram 的 ADP 加 1（从站转发给链上下一个从站的动作）。
+fn advance_auto_increment(frame: &mut [u8]) {
+    let mut offset = ETHERNET_HEADER_LEN + ECAT_HEADER_LEN;
+    loop {
+        if offset + 12 > frame.len() {
+            break;
+        }
+        let command = Command::from_u8(frame[offset]);
+        let adp = u16::from_le_bytes([frame[offset + 2], frame[offset + 3]]);
+        let len_flags = u16::from_le_bytes([frame[offset + 6], frame[offset + 7]]);
+        let data_len = usize::from(len_flags & 0x07FF);
+        let more = len_flags & 0x8000 != 0;
+        let wkc_offset = offset + 10 + data_len;
+        if wkc_offset + 2 > frame.len() {
+            break;
+        }
+        if matches!(
+            command,
+            Some(Command::Aprd | Command::Apwr | Command::Aprw | Command::Armw)
+        ) {
+            let forwarded = adp.wrapping_add(1);
+            frame[offset + 2..offset + 4].copy_from_slice(&forwarded.to_le_bytes());
+        }
+        offset = wkc_offset + 2;
+        if !more {
+            break;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1394,6 +1451,72 @@ mod tests {
         assert_eq!(data[0] & 0x0F, 0x01, "slave starts in INIT");
         assert_eq!(responder.stats().frames_in, 1);
         assert_eq!(responder.stats().frames_out, 1);
+    }
+
+    #[test]
+    fn multi_slave_chain_assigns_addresses_and_accumulates_wkc() {
+        let mut slaves = vec![Responder::default(), Responder::default()];
+        let data_start = ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10;
+
+        // 广播读：链上两个从站都处理，WKC 累加为 2。
+        let frame = request(&[DatagramData::auto_increment(
+            Command::Brd,
+            1,
+            0,
+            0x0000,
+            vec![0u8; 2],
+        )]);
+        let reply = handle_frame_chain(&mut slaves, &frame, DEFAULT_SIM_MAC).expect("reply");
+        let (wkc, _) = reply_datagram(&reply, data_start, 2);
+        assert_eq!(wkc, 2, "BRD 在 2 从站链上累加 WKC");
+
+        // 第 1 个从站：ADP=0 命中，转发 +1 后第 2 个不命中。
+        let frame = request(&[DatagramData::auto_increment(
+            Command::Apwr,
+            1,
+            0,
+            reg::STATION_ADDRESS,
+            1u16.to_le_bytes().to_vec(),
+        )]);
+        handle_frame_chain(&mut slaves, &frame, DEFAULT_SIM_MAC).expect("apwr 1");
+        assert_eq!(slaves[0].station_address(), 1);
+        assert_eq!(slaves[1].station_address(), 0);
+
+        // 第 2 个从站：初始 ADP=0xFFFF，第一级转发后变 0。
+        let frame = request(&[DatagramData::auto_increment(
+            Command::Apwr,
+            1,
+            u16::MAX,
+            reg::STATION_ADDRESS,
+            2u16.to_le_bytes().to_vec(),
+        )]);
+        handle_frame_chain(&mut slaves, &frame, DEFAULT_SIM_MAC).expect("apwr 2");
+        assert_eq!(slaves[1].station_address(), 2);
+
+        // 配置地址寻址：每帧只命中一个从站，WKC = 1。
+        let frame = request(&[DatagramData::auto_increment(
+            Command::Fprd,
+            1,
+            1,
+            reg::STATION_ADDRESS,
+            vec![0u8; 2],
+        )]);
+        let reply = handle_frame_chain(&mut slaves, &frame, DEFAULT_SIM_MAC).expect("fprd 1");
+        let (wkc, data) = reply_datagram(&reply, data_start, 2);
+        assert_eq!(wkc, 1);
+        assert_eq!(data, 1u16.to_le_bytes().to_vec());
+
+        let frame = request(&[DatagramData::auto_increment(
+            Command::Fprd,
+            1,
+            2,
+            reg::STATION_ADDRESS,
+            vec![0u8; 2],
+        )]);
+        let reply = handle_frame_chain(&mut slaves, &frame, DEFAULT_SIM_MAC).expect("fprd 2");
+        let (wkc, data) = reply_datagram(&reply, data_start, 2);
+        assert_eq!(wkc, 1);
+        assert_eq!(data, 2u16.to_le_bytes().to_vec());
     }
 
     #[test]

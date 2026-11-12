@@ -324,6 +324,7 @@ def main():
     cia402_pv = False
     cia402_ip = False
     expect_6502 = None
+    multi_slave = None
     dc_clock = False
     cia402_homing = False
     cia402_pp = False
@@ -371,13 +372,19 @@ def main():
             expect_string = arg.split("=", 1)[1]
         if arg.startswith("--expect-6502="):
             expect_6502 = int(arg.split("=", 1)[1], 0)
+        if arg.startswith("--multi-slave="):
+            multi_slave = int(arg.split("=", 1)[1], 0)
 
     master = SyntheticMaster(socket_path, timeout)
     try:
-        # 1) 广播读 ESC 类型寄存器 0x0000（BRD，2 字节）。
+        # 1) 广播读 ESC 类型寄存器 0x0000（BRD，2 字节）；多从站链上 WKC = 链上从站数。
+        expected_brd_wkc = multi_slave if multi_slave is not None else 1
         reply = master.transact([(CMD["BRD"], 0, 0x0000, b"\x00\x00")])
         check(len(reply) == 1, f"BRD 应答 datagram 数 {len(reply)} != 1")
-        check(reply[0][4] == 1, f"BRD WKC {reply[0][4]} != 1")
+        check(
+            reply[0][4] == expected_brd_wkc,
+            f"BRD WKC {reply[0][4]} != {expected_brd_wkc}",
+        )
         check(reply[0][3][0] == 0x01, f"ESC 类型 {reply[0][3][0]:#04x} != 0x01")
 
         # 2) APRD AL Status（0x0130）：INIT=0x01。
@@ -404,7 +411,10 @@ def main():
             ]
         )
         check(len(reply) == 2, f"M 位应答 datagram 数 {len(reply)} != 2")
-        check(reply[0][4] == 1 and reply[1][4] == 1, "多 datagram 帧 WKC 不是各 +1")
+        check(
+            reply[0][4] == expected_brd_wkc and reply[1][4] == expected_brd_wkc,
+            f"多 datagram 帧 WKC {reply[0][4]}/{reply[1][4]} != 各 {expected_brd_wkc}",
+        )
 
         # 5b) 可选：segmented SDO 上传（>4 字节字符串对象，如 manifest 的 0x1008 设备名）。
         #     主站侧按 CiA 301 发送 initiate + segment 请求，断言拼出的字符串与 manifest 一致。
@@ -738,6 +748,35 @@ def main():
                 f"0x6502={value:#06x} != 期望 {expect_6502:#06x}",
             )
             print(f"OK: 0x6502（Supported drive modes）= {value:#06x} 与期望一致")
+
+        # 5r) 可选：多从站链（B12）——`--multi-slave=N`，验证广播 WKC=N、逐站分配地址
+        #     与配置地址寻址只命中单站（需从站以 `--slaves N` 启动）。
+        if multi_slave is not None:
+            check(multi_slave >= 1, f"--multi-slave 数量 {multi_slave} 非法")
+            reply = master.transact([(CMD["BRD"], 0, 0x0000, b"\x00\x00")])
+            check(
+                reply[0][4] == multi_slave,
+                f"BRD WKC {reply[0][4]} != {multi_slave}（链上从站数不符）",
+            )
+            for i in range(1, multi_slave + 1):
+                adp = (1 - i) & 0xFFFF
+                master.transact([(CMD["APWR"], adp, 0x0010, struct.pack("<H", i))])
+            for i in range(1, multi_slave + 1):
+                reply = master.transact([(CMD["FPRD"], i, 0x0010, b"\x00\x00")])
+                check(
+                    reply[0][4] == 1,
+                    f"FPRD 站地址 {i} 的 WKC {reply[0][4]} != 1",
+                )
+                station = struct.unpack("<H", reply[0][3][:2])[0]
+                check(station == i, f"站 {i} 回读站地址 {station} != {i}")
+            reply = master.transact([(CMD["BRD"], 0, 0x0130, b"\x00\x00")])
+            check(
+                reply[0][4] == multi_slave,
+                f"分配地址后 BRD AL Status WKC {reply[0][4]} != {multi_slave}",
+            )
+            print(
+                f"OK: 多从站链（{multi_slave} 站）：广播 WKC、逐站地址分配与配置地址寻址通过"
+            )
 
         # 5c) 可选：CiA 402 状态机行为（完整 7 字节 RxPDO/TxPDO，Tier0）。
         if cia402:

@@ -2,8 +2,8 @@
 //!
 //! 用法（需 root 或 CAP_NET_ADMIN；UDS 模式不需要 root）：
 //! ```text
-//! ec-sim-esc --tap escsim0 [--verbose] [--esm-lax] [--manifest plugins/<id>/plugin.yaml]
-//! ec-sim-esc --uds /tmp/ecsim.sock [--verbose] [--esm-lax] [--manifest ...]
+//! ec-sim-esc --tap escsim0 [--verbose] [--esm-lax] [--manifest plugins/<id>/plugin.yaml] [--slaves N]
+//! ec-sim-esc --uds /tmp/ecsim.sock [--verbose] [--esm-lax] [--manifest ...] [--slaves N]
 //! ec-sim-esc --tap escsim0 [--esi <file.esi.xml>]   # B6：ESI XML → SII
 //! ec-sim-esc --dump-sii [--manifest ... | --esi ...]  # 打印 SII hex/类别链后退出
 //! ec-sim-esc --dump-dict [--manifest ... | --esi ...] # 打印运行时对象字典后退出
@@ -164,6 +164,8 @@ fn main() -> std::process::ExitCode {
     let mut verbose = false;
     let mut esm_preconditions = true;
     let mut fault: Option<u16> = None;
+    // 同一进程模拟的 ESC 数量（B12 多从站链；默认 1）。
+    let mut slave_count: usize = 1;
     let mut dump_sii = false;
     let mut dump_dict = false;
     while let Some(arg) = args.next() {
@@ -209,6 +211,19 @@ fn main() -> std::process::ExitCode {
                     return std::process::ExitCode::from(2);
                 }
             },
+            "--slaves" => match args.next() {
+                Some(text) => match text.parse::<usize>() {
+                    Ok(count) if (1..=64).contains(&count) => slave_count = count,
+                    _ => {
+                        eprintln!("ec-sim-esc: --slaves 需要 1..=64 的整数");
+                        return std::process::ExitCode::from(2);
+                    }
+                },
+                None => {
+                    eprintln!("ec-sim-esc: --slaves 需要数量（如 8）");
+                    return std::process::ExitCode::from(2);
+                }
+            },
             "--fault" => match args.next() {
                 Some(text) => {
                     let digits = text.trim_start_matches("0x").trim_start_matches("0X");
@@ -239,7 +254,7 @@ fn main() -> std::process::ExitCode {
                 println!(
                     "用法: ec-sim-esc [--tap <name> | --uds <path>] [--verbose] [--esm-lax] \
                      [--manifest <plugin.yaml>] [--esi <file.esi.xml>] [--behavior cia402]
-                     [--fault <hex>（需 --behavior cia402）]
+                     [--fault <hex>（需 --behavior cia402）] [--slaves <1..64>]
                      调试：--dump-sii [--manifest <yaml>] [--esi <xml>] 打印 SII 镜像 hex/类别链后退出；
                      --dump-dict [--manifest <yaml>] [--esi <xml>] 打印运行时对象字典后退出；
                      --version 打印版本。"
@@ -331,6 +346,7 @@ fn main() -> std::process::ExitCode {
             esi,
             behavior,
             fault,
+            slave_count,
         ),
         (Some(name), None) => run(
             &name,
@@ -340,6 +356,7 @@ fn main() -> std::process::ExitCode {
             esi,
             behavior,
             fault,
+            slave_count,
         ),
         (None, None) => run(
             "ecsim0",
@@ -349,6 +366,7 @@ fn main() -> std::process::ExitCode {
             esi,
             behavior,
             fault,
+            slave_count,
         ),
     }
 }
@@ -420,6 +438,20 @@ fn build_responder(
     Ok(responder.with_esm_preconditions(esm_preconditions))
 }
 
+/// 构造 `count` 个从站应答器（B12）：同一画像克隆 N 份，链序即向量顺序。
+#[cfg(target_os = "linux")]
+fn build_responders(
+    manifest: Option<&plugin_host::manifest::PluginManifest>,
+    esi: Option<&plugin_host::esi::EsiDevice>,
+    behavior: Option<&str>,
+    esm_preconditions: bool,
+    fault: Option<u16>,
+    count: usize,
+) -> Result<Vec<esc_node::Responder>, String> {
+    let first = build_responder(manifest, esi, behavior, esm_preconditions, fault)?;
+    Ok((0..count).map(|_| first.clone()).collect())
+}
+
 /// `--verbose` 时每 50 帧打印一次应答统计（TAP 与 UDS 两种线缆层共用）。
 #[cfg(target_os = "linux")]
 fn maybe_print_stats(responder: &esc_node::Responder, verbose: bool) {
@@ -456,6 +488,7 @@ fn now_ms() -> u64 {
 }
 
 #[cfg(target_os = "linux")]
+#[allow(clippy::too_many_arguments)]
 fn run_uds(
     path: &str,
     verbose: bool,
@@ -464,6 +497,7 @@ fn run_uds(
     esi: Option<plugin_host::esi::EsiDevice>,
     behavior: Option<String>,
     fault: Option<u16>,
+    slave_count: usize,
 ) -> std::process::ExitCode {
     use esc_node::DEFAULT_SIM_MAC;
     use std::io::Write;
@@ -481,14 +515,15 @@ fn run_uds(
     println!("READY uds={path}");
     let _ = std::io::stdout().flush();
 
-    let mut responder = match build_responder(
+    let mut responders = match build_responders(
         manifest.as_ref(),
         esi.as_ref(),
         behavior.as_deref(),
         esm_preconditions,
         fault,
+        slave_count,
     ) {
-        Ok(responder) => responder,
+        Ok(responders) => responders,
         Err(error) => {
             eprintln!("ec-sim-esc: 按 manifest/ESI 构造应答器失败：{error}");
             return std::process::ExitCode::from(7);
@@ -509,8 +544,12 @@ fn run_uds(
         if verbose {
             eprintln!("RX uds {len} bytes from {peer:?}");
         }
-        responder.tick(now_ms());
-        let Some(reply) = responder.handle_frame(&buf[..len], DEFAULT_SIM_MAC) else {
+        for responder in &mut responders {
+            responder.tick(now_ms());
+        }
+        let Some(reply) =
+            esc_node::handle_frame_chain(&mut responders, &buf[..len], DEFAULT_SIM_MAC)
+        else {
             if verbose {
                 eprintln!("DROP uds {len} bytes（非 EtherCAT 或非法帧）");
             }
@@ -524,12 +563,13 @@ fn run_uds(
             eprintln!("ec-sim-esc: 写回 UDS 失败（对端可能已退出）: {err}");
             continue;
         }
-        maybe_print_stats(&responder, verbose);
+        maybe_print_stats(&responders[0], verbose);
         let _ = DEFAULT_SIM_MAC;
     }
 }
 
 #[cfg(target_os = "linux")]
+#[allow(clippy::too_many_arguments)]
 fn run(
     tap_name: &str,
     verbose: bool,
@@ -538,6 +578,7 @@ fn run(
     esi: Option<plugin_host::esi::EsiDevice>,
     behavior: Option<String>,
     fault: Option<u16>,
+    slave_count: usize,
 ) -> std::process::ExitCode {
     use esc_node::DEFAULT_SIM_MAC;
     use std::io::Write;
@@ -556,14 +597,15 @@ fn run(
     );
     let _ = std::io::stdout().flush();
 
-    let mut responder = match build_responder(
+    let mut responders = match build_responders(
         manifest.as_ref(),
         esi.as_ref(),
         behavior.as_deref(),
         esm_preconditions,
         fault,
+        slave_count,
     ) {
-        Ok(responder) => responder,
+        Ok(responders) => responders,
         Err(error) => {
             eprintln!("ec-sim-esc: 按 manifest/ESI 构造应答器失败：{error}");
             return std::process::ExitCode::from(7);
@@ -580,20 +622,23 @@ fn run(
                 return std::process::ExitCode::from(5);
             }
         };
-        responder.tick(now_ms());
-        let Some(reply) = responder.handle_frame(&buf[..len], mac) else {
+        for responder in &mut responders {
+            responder.tick(now_ms());
+        }
+        let Some(reply) = esc_node::handle_frame_chain(&mut responders, &buf[..len], mac) else {
             continue;
         };
         if let Err(err) = tap.send(&reply) {
             eprintln!("ec-sim-esc: 写回 TAP 失败: {err}");
             return std::process::ExitCode::from(6);
         }
-        maybe_print_stats(&responder, verbose);
+        maybe_print_stats(&responders[0], verbose);
         let _ = DEFAULT_SIM_MAC;
     }
 }
 
 #[cfg(not(target_os = "linux"))]
+#[allow(clippy::too_many_arguments)]
 fn run(
     _tap_name: &str,
     _verbose: bool,
@@ -602,12 +647,14 @@ fn run(
     _esi: Option<plugin_host::esi::EsiDevice>,
     _behavior: Option<String>,
     _fault: Option<u16>,
+    _slave_count: usize,
 ) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)
 }
 
 #[cfg(not(target_os = "linux"))]
+#[allow(clippy::too_many_arguments)]
 fn run_uds(
     _path: &str,
     _verbose: bool,
@@ -616,6 +663,7 @@ fn run_uds(
     _esi: Option<plugin_host::esi::EsiDevice>,
     _behavior: Option<String>,
     _fault: Option<u16>,
+    _slave_count: usize,
 ) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)
