@@ -5,7 +5,8 @@
 
 > 环境基线：Linux 验证机（见 `docs/LINUX-SERVER.md`）上的**未修改** SOEM 2.0.0 与 IgH 1.6.13；
 > IgH 的 ecrt 应用夹具只在验证机本地构建、**不入库**（GPL 边界，见 `AGENTS.md` §3）。
-> 最近的完整验证状态：**2026-11-13 02:27**（详见 `WORKLOG.md` 同日各条目与 [STATUS.md](STATUS.md)）。
+> 最近的完整验证状态：**2026-11-13 03:43**（详见 `WORKLOG.md` 同日各条目与 [STATUS.md](STATUS.md)）；
+> 本轮 **14 个 UDS 探针全绿**（uds-loopback / cia402 行为·CSV·CST·故障·HM·IP·模式·PP·PV·TQ·SDO 下载 / CA / DC 时钟）。
 
 ## 无特权（UDS 合成主站，任意平台可跑）
 

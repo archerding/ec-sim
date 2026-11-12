@@ -1,5 +1,28 @@
 ---
 
+## 2026-11-13 03:43 班（低峰）— 预回归：**UDS 探针全量扫一遍（14/14 通过）**
+
+**做了什么**
+- 在 Linux 验证机上按顺序跑全部无特权 UDS 探针（覆盖最近连续改动后的回归面）：
+  `uds-loopback.sh`、`cia402-behavior/csv/cst/fault/homing/ip/modes/pp/pv/tq-probe.sh`、
+  `cia402-sdo-download-probe.sh`、`sdo-ca-probe.sh`、`dc-clock-probe.sh`。
+- 同步 `docs/VERIFICATION.md` 顶部"最近完整验证状态"（2026-11-13 03:43，14 个 UDS 探针全绿）。
+
+**验证结果**
+- 验证机结果（逐脚本退出码）：
+  `uds-loopback=0, behavior=0, csv=0, cst=0, fault=0, homing=0, ip=0, modes=0,
+  pp=0, pv=0, tq=0, sdo-download=0, sdo-ca=0, dc-clock=0` → **14/14 EXIT=0**。
+- 本机：纯文档改动；`cargo fmt --check` 通过，测试基线 **208 passed** 不变。
+
+**卡点**
+- 扫的是验证机已同步的 `ec-sim-esc` 构建；TAP/IgH 类探针需 root，未在本轮范围内。
+
+**下次开工第一件事**
+- B11：继续找 SV660N 默认 PDO 条目；或评估真实 DC 同步（SYNC0 脉冲）。
+
+---
+---
+
 ## 2026-11-13 03:41 班（低峰）— 工具：**`ec-sim-esc --dump-dict`（运行时对象字典 dump）**
 
 **做了什么**
