@@ -11,8 +11,12 @@
   配置 SM 后 INIT→PREOP→SAFEOP→OP 全部成功。
 - 加 `--lax` 对应 `ec-sim-esc --uds ... --esm-lax`（关闭前置条件检查）：不做拒绝断言，
   同样先按主站顺序配置 SM 再迁移。
+- 加 `--sdo-segmented`（可配 `--expect-string=<text>`）：额外读取 0x1008 字符串对象，
+  >4 字节时按 CiA 301 segmented upload（initiate 0x41 + segment 0x60）拼接并断言内容
+  （用于验证声明式 manifest 画像的设备名）。
 
 用法：python3 uds_master_probe.py [socket_path] [--timeout 2.0] [--lax]
+        [--sdo-segmented] [--expect-string=<text>]
 退出码 0 = 全部断言通过。
 """
 import os
@@ -127,17 +131,100 @@ def write_sync_managers(master, address, entries):
     check(reply[0][4] == 1, f"APWR SM@{address:#06x} WKC {reply[0][4]} != 1")
 
 
+def mailbox_exchange(master, service):
+    """把一条 CoE 服务数据写入 SM0（0x1000），轮询 SM1 full 位后读回响应服务数据。
+
+    邮箱头按 IgH/SOEM 约定：length = 服务数据长度（不含 6 字节头）、address、priority、
+    type（CoE = 0x03）；full 位在 SM1 Status（0x080D）bit3。
+    """
+    message = bytearray(128)
+    message[0:2] = struct.pack("<H", len(service))
+    message[2:4] = struct.pack("<H", 0x1001)
+    message[4] = 0x00
+    message[5] = 0x03  # CoE
+    message[6 : 6 + len(service)] = service
+    reply = master.transact([(CMD["APWR"], 0, 0x1000, bytes(message))])
+    check(reply[0][4] == 1, f"APWR SM0 mailbox WKC {reply[0][4]} != 1")
+
+    full = False
+    for _ in range(100):
+        status = master.transact([(CMD["APRD"], 0, 0x080D, b"\x00")])[0][3][0]
+        if status & 0x08:
+            full = True
+            break
+        time.sleep(0.01)
+    check(full, "SM1 mailbox full 位未置位（从站未响应）")
+
+    raw = master.transact([(CMD["APRD"], 0, 0x1080, bytes(128))])[0][3]
+    length = struct.unpack("<H", raw[0:2])[0]
+    check(0 < length <= 122, f"邮箱响应长度 {length} 非法")
+    return bytes(raw[6 : 6 + length])
+
+
+def sdo_upload_segmented(master, index, subindex):
+    """用 SDO 上传读取对象；>4 字节对象自动走 segmented upload（主站侧实现）。"""
+    # initiate upload request：CoE 服务 0x2<<12、Command 0x40、Index、SubIndex。
+    request = b"\x00\x20" + bytes([0x40]) + struct.pack("<H", index) + bytes([subindex])
+    response = mailbox_exchange(master, request)
+    check(len(response) >= 6, f"SDO 响应过短：{len(response)}")
+    check(response[0:2] == b"\x00\x30", "CoE 服务类型不是 SDO 响应")
+    command = response[2]
+    check(command & 0x40, "SDO 命令不是 upload response")
+    check(struct.unpack("<H", response[3:5])[0] == index, "SDO 索引回显不符")
+    check(response[5] == subindex, "SDO 子索引回显不符")
+
+    if command & 0x02:  # expedited
+        size = (4 - ((command >> 2) & 0x03)) if command & 0x01 else 4
+        return bytes(response[6 : 6 + size])
+
+    # normal upload：+6 u32 总长度，+10 首段数据；不足则发 segment 请求。
+    total = struct.unpack("<I", response[6:10])[0]
+    data = bytearray(response[10:])
+    toggle = 0
+    guard = 0
+    while len(data) < total:
+        guard += 1
+        check(guard <= 64, "分段上传段数超限")
+        segment_request = (
+            b"\x00\x20"
+            + bytes([0x60 | (toggle << 4)])
+            + struct.pack("<H", index)
+            + bytes([subindex, 0x00])
+        )
+        response = mailbox_exchange(master, segment_request)
+        check(len(response) == 10, f"segment 响应长度 {len(response)} != 10")
+        check(response[0:2] == b"\x00\x30", "segment 响应 CoE 类型不符")
+        command = response[2]
+        check((command & 0xE0) == 0x00, f"segment 响应命令 {command:#04x} 非法")
+        check(((command >> 4) & 0x01) == toggle, "segment 响应 toggle 未回显")
+        unused = (command >> 1) & 0x07
+        last = command & 0x01
+        data += response[3 : 3 + (7 - unused)]
+        toggle ^= 1
+        if last:
+            break
+    check(len(data) == total, f"分段上传长度 {len(data)} != {total}")
+    return bytes(data)
+
+
 def main():
     arguments = [a for a in sys.argv[1:] if not a.startswith("--")]
     socket_path = arguments[0] if arguments else DEFAULT_SOCKET
     timeout = 2.0
     lax = False
+    sdo_segmented = False
+    expect_string = None
     for arg in sys.argv[1:]:
         if arg.startswith("--timeout="):
             timeout = float(arg.split("=", 1)[1])
         # `--lax` 对应 `ec-sim-esc --esm-lax`（关闭前置条件检查）；`--strict` 是默认行为，保留兼容。
         if arg == "--lax":
             lax = True
+        # `--sdo-segmented`：额外验证 >4 字节对象（0x1008 设备名）的 segmented SDO 上传。
+        if arg == "--sdo-segmented":
+            sdo_segmented = True
+        if arg.startswith("--expect-string="):
+            expect_string = arg.split("=", 1)[1]
 
     master = SyntheticMaster(socket_path, timeout)
     try:
@@ -172,6 +259,15 @@ def main():
         )
         check(len(reply) == 2, f"M 位应答 datagram 数 {len(reply)} != 2")
         check(reply[0][4] == 1 and reply[1][4] == 1, "多 datagram 帧 WKC 不是各 +1")
+
+        # 5b) 可选：segmented SDO 上传（>4 字节字符串对象，如 manifest 的 0x1008 设备名）。
+        #     主站侧按 CiA 301 发送 initiate + segment 请求，断言拼出的字符串与 manifest 一致。
+        if sdo_segmented:
+            value = sdo_upload_segmented(master, 0x1008, 0x00)
+            text = value.decode("utf-8", errors="replace")
+            if expect_string is not None:
+                check(text == expect_string, f"SDO 分段读取 {text!r} != 期望 {expect_string!r}")
+            print(f"OK: segmented SDO 读到 0x1008 = {text!r}（{len(value)} 字节）")
 
         # 6) ESM 迁移 + SM 过程数据看门狗（B5 子项）。
         #    默认（模拟器默认开启前置条件检查）：先验证拒绝路径（SM 未配置 → 0x0015 / 0x0017），

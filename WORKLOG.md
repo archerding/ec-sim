@@ -6,6 +6,46 @@
 
 ---
 
+## 2026-11-12 22:20 班（低峰）— B7 缺口：UDS 合成主站的 **segmented SDO 上传**断言（IgH 侧受环境阻塞）
+
+**做了什么**
+- 扩展 `scripts/spikes/uds_master_probe.py`：新增邮箱收发辅助（APWR SM0 写请求 →
+  轮询 SM1 Status（0x080D）bit3 → APRD 0x1080 读响应）与**分段 SDO 上传客户端**
+  （initiate `0x40` → 响应 `0x41` + u32 长度 + 首段 → segment 请求 `0x60|toggle<<4` →
+  逐段拼接、校验 toggle/unused/last），新增 `--sdo-segmented` / `--expect-string=` 选项。
+- `scripts/spikes/uds-loopback.sh` 增加**第三轮**：以
+  `--manifest plugins/beckhoff-el2008/plugin.yaml` 启动声明式画像，合成主站读取
+  `0x1008` 设备名（42 字节，>4 字节 → 必须分段），断言完整字符串内容。
+- 尝试 IgH 侧验证（`ethercat upload -t string 0x1008 0` 与 ecrt
+  `ecrt_master_sdo_upload` 夹具）：均**超时**；同环境下 **expedited** 上传
+  （`ethercat upload -t uint16 0x1C12 1`）同样超时，dmesg 出现内核栈转储（ecrt/ethercat
+  ioctl 路径）→ 判定为验证机 IgH SDO ioctl 环境问题，与 segmented 实现无关。
+  期间已重启验证机清除残留 IgH 模块/master 占用（此前的 `Device or resource busy`），
+  重启后仍复现。相关本地 ecrt 夹具未提交（避免未验证脚本入库）。
+
+**验证结果**
+- 本机：`python -m py_compile`、`bash -n` 通过；Rust 代码未改（`cargo test --workspace`
+  **146 passed** 基线不变）。
+- Linux 验证机：`bash scripts/spikes/uds-loopback.sh` → **EXIT=0**，三轮全通过：
+  1) 默认 ESM 前置条件 + SM watchdog；2) `--esm-lax` 对照；
+  3) **manifest 画像 + segmented SDO**：
+  `OK: segmented SDO 读到 0x1008 = 'Beckhoff EL2008 compatible 8DO (SIMULATED)'（42 字节）`
+  —— 独立合成主站按 CiA 301 分段协议完整读出设备名，验证了 `esc-node` 的
+  initiate/segment 状态机与 `dict_gen` 字符串对象。
+
+**卡点**
+- **IgH 侧任何 SDO 上传当前都在验证机上超时**（expedited 与 segmented 同样失败，
+  dmesg 有 ecrt ioctl 内核栈转储）→ ⚠️ 待验证；需排查/重装 IgH 模块或查看完整栈日志。
+- IgH 侧夹具脚本未提交（未验证，避免把不可复现内容入库）。
+- B6 FMMU 寄存器空间映射仍未核实（ESC Sec.2 为 PDF，需离线读原文）。
+
+**下次开工第一件事**
+- 排查验证机 IgH SDO ioctl 超时（重装 IgH 模块、抓完整 dmesg 栈、或在 ecrt 应用激活/
+  周期上下文里重试 `ethercat upload -t string 0x1008 0`）；恢复后补 IgH 侧分段上传验证。
+  然后读 ESC Sec.2 原文核实 FMMU 寄存器空间 → 进 B11 CiA402 行为插件。
+
+---
+
 ## 2026-11-12 22:10 班（低峰）— B7 子项：CoE **分段 SDO 上传**（>4 字节对象）+ 设备名 `0x1008`
 
 **做了什么**

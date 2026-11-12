@@ -182,7 +182,14 @@ user.email = deepseek-harness@users.noreply.github.com
     （20 个对象）。
     ⚠️ IgH 侧分段上传待验证（`ethercat upload` CLI 需要 SDO 类型上下文；ecrt
     `ecrt_master_sdo_upload` 夹具在未配置应用场景下阻塞）；B6 FMMU 寄存器空间仍待原文核实。
-  - 待做：Complete Access、分段 Download、IgH 侧分段上传验证。
+  - 进度（2026-11-12 22:20 班）：**合成主站（UDS）segmented SDO 上传断言已加入**——
+    `uds_master_probe.py` 新增邮箱收发辅助与 `--sdo-segmented`（initiate `0x41` +
+    segment `0x60|toggle` 拼接），`uds-loopback.sh` 第三轮用 EL2008 manifest 画像读
+    `0x1008` 设备名：验证机 `EXIT=0`，输出
+    `segmented SDO 读到 0x1008 = 'Beckhoff EL2008 compatible 8DO (SIMULATED)'（42 字节）`。
+    ⚠️ IgH 侧 SDO 上传在该验证机上**整体超时**（expedited 与 segmented 同样失败，dmesg 有
+    ecrt ioctl 内核栈转储），判定为环境问题；恢复后需补 `ethercat upload -t string 0x1008 0`。
+  - 待做：IgH 侧分段上传验证（环境恢复后）、Complete Access、分段 Download。
 - [x] ~~**B9 声明式插件加载器**~~ ✅ **2026-11-12 21:25 班完成**：`plugin-host` 零依赖解析
   `plugin.yaml`（YAML 子集 + R2/R5 校验）→ `sii_gen` 生成 SII 镜像、`dict_gen` 生成运行时
   对象字典（0x1018 身份 / 0x1C00 SM 类型 / 0x1C12+0x1C13 分配 / PDO 映射 / 用户对象）；
