@@ -6,6 +6,45 @@
 
 ---
 
+## 2026-11-12 23:34 班（低峰）— B11 第六步：**Inovance SV660N 兼容画像**（Tier0，通用 DS402 布局）+ 双主站扫描/OP
+
+**做了什么**
+- 新增插件 `plugins/inovance-sv660n/`（B11 首个具体型号目标）：
+  - `plugin.yaml`：自有 VID `0x00000EC5` / PID `0x0000E5F1`（R2，不使用 Inovance 的
+    Vendor ID/Product Code）；名称带 `SIMULATED`；SM2/SM3 各 7 字节；RxPDO `0x1600`
+    = `0x6040` + `0x6060` + `0x607A`，TxPDO `0x1A00` = `0x6041` + `0x6061` + `0x6064`；
+    对象含 `0x603F`/`0x6077`/`0x1008`（分段 SDO）；`dc.supported=false`（⚠️ 待核实）。
+  - `facts.md`：只列**公开来源**（Inovance 产品页、公开 SV660N Communication Guide /
+    Commissioning Guide 的 URL、CiA 402），R1 未入库任何厂商 ESI/PDF/固件；明确列出
+    ⚠️ 待核实项（SV660N 默认 PDO 映射、扩展对象、DC、故障码）。
+  - `README.md`；`plugins/catalog.yaml`：inovance-sv660n → `researching` + deliverable。
+- `scripts/spikes/generic-cia402-probe.sh` 参数化（`EXPECT_VID/EXPECT_PID/
+  EXPECT_OUTPUT_BITS/EXPECT_INPUT_BITS/EXPECT_MAPPED`），可复用于任意 CiA 402 画像。
+- 新增验证记录 `docs/plugins/inovance-sv660n-verification.md`。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **160 passed**（插件守卫测试通过新 manifest）。
+- Linux 验证机（`MANIFEST=plugins/inovance-sv660n/plugin.yaml EXPECT_PID=0000e5f1`）：
+  `generic-cia402-probe.sh` **EXIT=0**：
+  - SOEM `slaveinfo`：`Output size: 56bits / Input size: 56bits`、
+    `Man: 00000ec5 ID: 0000e5f1 Rev: 00010000`、`MBX 128/128 protocols 04`；
+  - SOEM `-map`：`0x6040 Controlword` / `0x6041 Statusword` / `0x6064 Position actual value`；
+  - SOEM `simple_ng`（零补丁）：`mapped 7O+7I`、`all slaves are now operational`、`WKC 3`；
+  - IgH `ethercat slaves`：`0  0:0  PREOP  +  0x00000ec5:0x0000e5f1`。
+
+**卡点**
+- 画像当前是**通用 DS402 布局**：SV660N 具体默认 PDO/扩展对象/DC/故障码表
+  **⚠️ 尚未逐项核实**（公开手册为 PDF，未取到可检索文本；R1 不入库）。
+- 行为仍是 Tier0（无运动环/模式切换/Ti 时序）；IgH OP 行为验证复用通用画像夹具。
+- `generic-cia402-probe.sh` 的 `-map` 输出仍只显示部分映射项（完整 7O+7I 由 simple_ng 证明）。
+
+**下次开工第一件事**
+- 在可获取公开手册文本的条件下逐项核对 SV660N 默认 PDO/扩展对象并更新 manifest；
+  或给行为加入模式切换（CSP/CSV/CST）与错误码注入；之后处理 B6 FMMU/DC 原文核实。
+
+---
+
 ## 2026-11-12 23:30 班（低峰）— B11 第五步：**IgH 侧 CiA 402 画像进 OP + 运行时行为验证**
 
 **做了什么**

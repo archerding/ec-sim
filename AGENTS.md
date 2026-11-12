@@ -263,8 +263,16 @@ user.email = deepseek-harness@users.noreply.github.com
     应用运行中 `ethercat slaves` = **OP** + `0x00000ec5:0x0000e5e0`，
     `RESULT al_states=0x08`，`STATUS sw=0x0637 modes_display=8 pos=1000`（控制字序列
     `0x0006→0x0007→0x000F` 驱动 TxPDO）。证据：`docs/plugins/generic-cia402-verification.md`。
-  - 待做：派生 Inovance SV660N 兼容画像（公开手册默认 PDO/对象）；模式切换（CSP/CSV/CST）
-    与错误码注入；B6 FMMU/DC 原文核实。
+  - 进度（2026-11-12 23:34 班）：**Inovance SV660N 兼容画像（Tier0）已建档**——
+    `plugins/inovance-sv660n/`（自有 VID 0x0EC5/PID 0xE5F1，通用 DS402 7B PDO 布局，
+    `facts.md` 只列公开来源并标注 ⚠️ 待核实项），catalog 状态 `researching`。
+    验证机 `MANIFEST=... EXPECT_PID=0000e5f1 generic-cia402-probe.sh` **EXIT=0**：
+    SOEM `56bits/56bits`、`Man 00000ec5 ID 0000e5f1`、`mapped 7O+7I` 进 OP（WKC 3），
+    IgH PREOP + 身份 `0x00000ec5:0x0000e5f1`。记录见
+    `docs/plugins/inovance-sv660n-verification.md`。
+    ⚠️ SV660N 具体默认 PDO/扩展对象/DC/故障码表尚未逐项核实（公开手册为 PDF）。
+  - 待做：逐项核对 SV660N 公开手册（PDO/扩展对象/DC）并更新 manifest；行为模式切换
+    （CSP/CSV/CST）与错误码注入；B6 FMMU/DC 原文核实。
 - [x] ~~**B8 双主站冒烟**~~ ✅ **2026-11-12 19:56 班完成（单从站 8 位 I/O 画像）**：
   **未修改的 SOEM 与 IgH 都在本模拟器上看到从站进入 OP**，输出可复现脚本见
   [spike-4](docs/spikes/spike-4-dual-master-op.md)：

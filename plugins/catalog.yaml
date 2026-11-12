@@ -55,7 +55,8 @@ devices:
     model: SV660N
     kind: servo
     priority: P0
-    status: planned
+    status: researching
+    deliverable: "plugins/inovance-sv660n/（plugin.yaml + facts.md + README.md），验证记录 docs/plugins/inovance-sv660n-verification.md；⚠️ 默认 PDO/扩展对象待按公开手册核实"
     why: "国内 LinuxCNC/EtherCAT 用量最大的伺服之一；做出来就是市场刚需"
     need: "默认 RPDO/TPDO 映射、CSP/CSV 模式对象、状态字/控制字行为、DC 参数、错误码"
   - id: delta-asda-a3

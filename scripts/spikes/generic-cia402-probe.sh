@@ -21,6 +21,11 @@ set -euo pipefail
 TAP="${TAP:-escsim0}"
 MAC="${MAC:-02:ec:51:4d:00:01}"
 MANIFEST="${MANIFEST:-plugins/generic-cia402-servo/plugin.yaml}"
+EXPECT_VID="${EXPECT_VID:-00000ec5}"
+EXPECT_PID="${EXPECT_PID:-0000e5e0}"
+EXPECT_OUTPUT_BITS="${EXPECT_OUTPUT_BITS:-56}"
+EXPECT_INPUT_BITS="${EXPECT_INPUT_BITS:-56}"
+EXPECT_MAPPED="${EXPECT_MAPPED:-7O+7I}"
 BIN="${BIN:-target/release/ec-sim-esc}"
 SOEM_SLAVEINFO="${SOEM_SLAVEINFO:-/opt/ecsim/fixtures/soem/build/samples/slaveinfo/slaveinfo}"
 SOEM_SIMPLE_NG="${SOEM_SIMPLE_NG:-/opt/ecsim/fixtures/soem/build/samples/simple_ng/simple_ng}"
@@ -55,9 +60,9 @@ echo "=== SOEM slaveinfo（CiA 402 通用画像）==="
 timeout 60 "$SOEM_SLAVEINFO" "$TAP" >/tmp/soem-cia402.out 2>&1 || true
 tr '\r' '\n' </tmp/soem-cia402.out >/tmp/soem-cia402.lines
 grep -E "Man:|Output size|Input size|MBX protocols" /tmp/soem-cia402.lines | head -6 || true
-grep -q "Man: 00000ec5 ID: 0000e5e0" /tmp/soem-cia402.lines || fail "SOEM 身份不是 00000ec5:0000e5e0"
-grep -q "Output size: 56bits" /tmp/soem-cia402.lines || fail "SOEM 未识别 56 位输出（0x1600）"
-grep -q "Input size: 56bits" /tmp/soem-cia402.lines || fail "SOEM 未识别 56 位输入（0x1A00）"
+grep -q "Man: $EXPECT_VID ID: $EXPECT_PID" /tmp/soem-cia402.lines || fail "SOEM 身份不是 $EXPECT_VID:$EXPECT_PID"
+grep -q "Output size: ${EXPECT_OUTPUT_BITS}bits" /tmp/soem-cia402.lines || fail "SOEM 未识别 ${EXPECT_OUTPUT_BITS} 位输出（0x1600）"
+grep -q "Input size: ${EXPECT_INPUT_BITS}bits" /tmp/soem-cia402.lines || fail "SOEM 未识别 ${EXPECT_INPUT_BITS} 位输入（0x1A00）"
 grep -qE "MBX protocols *: *04" /tmp/soem-cia402.lines || fail "SOEM 未识别 CoE 邮箱"
 
 echo "=== SOEM slaveinfo -map（PDO 映射）==="
@@ -71,7 +76,7 @@ echo "=== SOEM simple_ng（OP，零补丁）==="
 timeout 30 "$SOEM_SIMPLE_NG" "$TAP" >/tmp/soem-cia402-ng.out 2>&1 || true
 tr '\r' '\n' </tmp/soem-cia402-ng.out >/tmp/soem-cia402-ng.lines
 grep -E "mapped|operational|WKC" /tmp/soem-cia402-ng.lines | head -6 || true
-grep -q "mapped 7O+7I" /tmp/soem-cia402-ng.lines || fail "SOEM simple_ng 未映射 7O+7I"
+grep -q "mapped $EXPECT_MAPPED" /tmp/soem-cia402-ng.lines || fail "SOEM simple_ng 未映射 $EXPECT_MAPPED"
 grep -q "all slaves are now operational" /tmp/soem-cia402-ng.lines || fail "SOEM simple_ng 未进入 OP"
 
 echo "=== IgH 扫描 ==="
@@ -84,7 +89,7 @@ else
 fi
 sleep 2
 "$IGH_BIN" slaves
-"$IGH_BIN" slaves | grep -q "0x00000ec5:0x0000e5e0" || fail "IgH 未看到 CiA 402 画像身份"
+"$IGH_BIN" slaves | grep -q "0x${EXPECT_VID}:0x${EXPECT_PID}" || fail "IgH 未看到 CiA 402 画像身份"
 "$IGH_BIN" slaves | grep -q "PREOP" || fail "IgH 未把从站配置到 PREOP"
 
-echo "OK: 通用 CiA 402 画像双主站通过（SOEM 56/56 bits、0x6040/0x6041 映射、7O+7I 进 OP；IgH PREOP + 身份 0x00000ec5:0x0000e5e0）"
+echo "OK: CiA 402 画像双主站通过（SOEM ${EXPECT_OUTPUT_BITS}/${EXPECT_INPUT_BITS} bits、0x6040/0x6041 映射、$EXPECT_MAPPED 进 OP；IgH PREOP + 身份 0x${EXPECT_VID}:0x${EXPECT_PID}）"

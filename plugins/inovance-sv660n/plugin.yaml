@@ -1,0 +1,73 @@
+# EC-Sim 声明式设备插件：**Inovance SV660N 兼容伺服（SIMULATED）**（B11 具体型号画像）
+#
+# 合规说明（docs/DEVICE-PLUGINS.md R1–R5）：
+# - 只用**公开资料**提取接口事实（CiA 402 对象、公开通讯手册中的 PDO 结构线索）；
+#   **未**把厂商 ESI/PDF/固件/示例代码入库（R1）；facts.md 只记录公开来源 URL。
+# - 设备身份使用**我方自有** Vendor ID / Product Code（R2），名称带 SIMULATED；
+#   不使用 Inovance 的 Vendor ID/Product Code。
+# - 不宣称与 Inovance 存在隶属、背书或认证关系（R3）。
+# - 具体型号默认 PDO 映射/扩展对象仍 **⚠️ 待与公开手册逐项核实**；当前使用通用 DS402
+#   默认布局作为 Tier0 画像（见 facts.md）。
+schema: ecsim.plugin/v1
+id: com.ecsim.compat.inovance-sv660n
+name: "Inovance SV660N-compatible servo drive (SIMULATED)"
+version: 0.1.0
+kind: device
+license: Apache-2.0 OR MIT
+pricing: {model: free, amount: 0, currency: CNY}
+
+compatibility:
+  brands: ["Inovance"]
+  models: ["SV660N"]
+  disclaimer: "Independent re-implementation from public documentation. Not affiliated with, endorsed by, or certified by Inovance. Default PDO mapping and vendor-specific objects are not yet verified against the vendor manual."
+
+identity:
+  vendor_id: 0x00000EC5
+  product_code: 0x0000E5F1
+  revision: 0x00010000
+  simulated: true
+
+profile: cia402
+mailbox:
+  coe: {sdo: true, sdo_info: true, complete_access: false}
+
+# Tier0 通用 DS402 布局（SM2/SM3 各 7 字节）；SV660N 默认映射 ⚠️ 待按公开手册核实。
+sm:
+  - {index: 0, dir: mbox-in,  start: 0x1000, len: 128}
+  - {index: 1, dir: mbox-out, start: 0x1080, len: 128}
+  - {index: 2, dir: out,      start: 0x1100, len: 7}
+  - {index: 3, dir: in,       start: 0x1110, len: 7}
+
+pdo:
+  rx:
+    - index: 0x1600
+      entries:
+        - {index: 0x6040, sub: 0, bits: 16}
+        - {index: 0x6060, sub: 0, bits: 8}
+        - {index: 0x607A, sub: 0, bits: 32}
+  tx:
+    - index: 0x1A00
+      entries:
+        - {index: 0x6041, sub: 0, bits: 16}
+        - {index: 0x6061, sub: 0, bits: 8}
+        - {index: 0x6064, sub: 0, bits: 32}
+
+objects:
+  - {index: 0x1008, sub: 0, name: Device name, dtype: VISIBLE_STRING, access: ro, value: "Inovance SV660N-compatible servo (SIMULATED)"}
+  - {index: 0x603F, sub: 0, name: Error code, dtype: UINT16, access: ro, value: 0x0000}
+  - {index: 0x6040, sub: 0, name: Controlword, dtype: UINT16, access: rw, value: 0x0000, pdo: rx}
+  - {index: 0x6041, sub: 0, name: Statusword, dtype: UINT16, access: ro, value: 0x0000, pdo: tx}
+  - {index: 0x6060, sub: 0, name: Modes of operation, dtype: INT8, access: rw, value: 0, pdo: rx}
+  - {index: 0x6061, sub: 0, name: Modes of operation display, dtype: INT8, access: ro, value: 0, pdo: tx}
+  - {index: 0x6064, sub: 0, name: Position actual value, dtype: INT32, access: ro, value: 0, pdo: tx}
+  - {index: 0x6077, sub: 0, name: Torque actual value, dtype: INT16, access: ro, value: 0}
+  - {index: 0x607A, sub: 0, name: Target position, dtype: INT32, access: rw, value: 0, pdo: rx}
+
+# 真实 SV660N 通常启用 DC；本 Tier0 画像暂不声明（⚠️ 待核实 DC 参数）。
+dc: {supported: false, sync0: false}
+
+sources:
+  - {title: "Inovance — SV660N 伺服驱动器产品页（公开）", url: "https://www.inovance.com/", accessed: "2026-11-12"}
+  - {title: "Inovance SV660N Servo Communication Guide（公开手册）", url: "https://idea-tech.in/wp-content/uploads/2024/04/INOVANCE-SV660N-SERVO-COMMUNICATION-GUIDE-ENGLISH-PAGE-292-06-04-2024.pdf", accessed: "2026-11-12"}
+  - {title: "SV660N Commissioning Guide（公开手册）", url: "https://documents.mrosupply.com/product_documents/64/86/6486865/SV660N_Commissioning_Guide_EN_C00_19011433_r3R1eXs.pdf", accessed: "2026-11-12"}
+  - {title: "CiA — CiA 402 servo drive profile（公开规范摘要）", url: "https://www.can-cia.org/cia-402", accessed: "2026-11-12"}
