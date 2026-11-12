@@ -92,6 +92,14 @@ user.email = deepseek-harness@users.noreply.github.com
   SII 固定区 CRC-8 已补齐（word 0x0007，B6 子项，2026-11-12 晚班）。
 - [x] ~~**B2 Spike 1（Linux TAP）**~~ ✅ **2026-11-12 完成**：TAP 双向承载 0x88A4，且**未修改的 SOEM 与 IgH 都能绑定 TAP 并发出真实帧**（IgH `ec_generic` 按 MAC 匹配 TAP）。证据：[spike-1](docs/spikes/spike-1-tap-bidirectional.md)、[spike-2](docs/spikes/spike-2-masters-on-tap.md)。
 - [ ] **B3 Spike 4（SOEM oshw shim）**：把 SOEM 的 `oshw` 收发包替换成 UDS，跑通 `ec_config_init` + `ec_config_map`（SOEM 以独立进程/容器方式使用）。
+  - 进度（2026-11-12 19:59 班）：**模拟器侧 ESC-over-UDS 线缆层已完成**——`ec-sim-esc --uds <path>`
+    绑定 `SOCK_DGRAM` Unix socket（每报文 = 一帧），复用同一个 `esc_node::Responder`；
+    新增合成主站断言（`uds-loopback.sh` + `uds_master_probe.py`：BRD/APRD/APWR/FPRD、
+    DL Status 0x5610、M 位多 datagram），验证机通过；TAP 路径无回归（B8 脚本重跑通过）。
+    证据：`crates/esc-node/src/bin/ec_sim_esc.rs`、[spike-5](docs/spikes/spike-5-esc-over-uds.md)。
+  - 待做：SOEM 侧 shim——复制 SOEM 到验证机工作目录（**不进仓库**），把
+    `oshw/linux/nicdrv.c` 的 setupnic/send/recv 换成 UDS 客户端（连接 `--uds` 路径），
+    用 `slaveinfo` 或最小程序跑通 `ec_config_init` + `ec_config_map`，与 TAP 路径输出对照。
 - [x] ~~**B4 `wire` crate**~~ ✅ **2026-11-12 完成**：帧/datagram 编解码、M 位串联、13 命令 WKC 规则、自增/配置/广播/逻辑寻址、FMMU 区间判定；16 个单元测试；fmt/clippy(-D warnings) 通过。证据：commit `9d32597`。
 - [ ] **B5 `esc-core` 最小 ESC**：寄存器阵列 + SM/FMMU + AL 状态机 INIT/PREOP 握手 + EEPROM 接口状态机（Busy/8 字节能力位）。
   - 进度（2026-11-12 19:02 班）：寄存器阵列/AL 状态机/EEPROM 接口已完成；**SM（0x0800–0x083F）

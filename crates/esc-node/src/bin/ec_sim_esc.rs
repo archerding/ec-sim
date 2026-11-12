@@ -1,30 +1,44 @@
-//! `ec-sim-esc`：在 Linux TAP 上运行的最小 ESC 从站应答器。
+//! `ec-sim-esc`：Linux 上运行的最小 ESC 从站应答器（两种线缆层）。
 //!
-//! 用法（需 root 或 CAP_NET_ADMIN）：
+//! 用法（需 root 或 CAP_NET_ADMIN；UDS 模式不需要 root）：
 //! ```text
-//! ec-sim-esc --tap escsim0 [--verbose]
+//! ec-sim-esc --tap escsim0 [--verbose]      # Linux TAP（旗舰路径，真实主站）
+//! ec-sim-esc --uds /tmp/ecsim.sock [--verbose]  # ESC-over-UDS（全平台/CI 路径）
 //! ```
-//! 进程自己创建/附着 TAP 接口并持有 fd（TAP 无持有者时为 NO-CARRIER，主站发不出帧），
-//! 随后由外部脚本把接口 MAC 设为 IgH `main_devices` 使用的 MAC 并 `ip link set up`。
 //!
-//! 仅 Linux 有 TAP；其他平台编译为可执行但直接报错退出（单元测试仍可在所有平台跑）。
+//! TAP 模式：进程自己创建/附着 TAP 接口并持有 fd（无持有者时为 NO-CARRIER，
+//! 主站发不出帧），外部脚本把接口 MAC 设为 IgH `main_devices` 使用的 MAC 并 `ip link set up`。
+//!
+//! UDS 模式：绑定 `SOCK_DGRAM` Unix socket，每个报文 = 一帧以太网数据；收到请求帧后
+//! 用 [`esc_node::Responder`] 生成应答并回给发送方（对端地址由 `recv_from` 给出）。
+//! 供 `ESC-over-UDS shim`（如替换 SOEM `oshw` 收发包的夹具）或 CI 中的合成主站使用。
+//!
+//! 仅 Linux 提供两种线缆层；其他平台编译为可执行但直接报错退出（单元测试仍全平台可跑）。
 
 fn main() -> std::process::ExitCode {
     let mut args = std::env::args().skip(1);
-    let mut tap_name = String::from("ecsim0");
+    let mut tap_name: Option<String> = None;
+    let mut uds_path: Option<String> = None;
     let mut verbose = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--tap" => match args.next() {
-                Some(name) => tap_name = name,
+                Some(name) => tap_name = Some(name),
                 None => {
                     eprintln!("ec-sim-esc: --tap 需要一个接口名");
                     return std::process::ExitCode::from(2);
                 }
             },
+            "--uds" => match args.next() {
+                Some(path) => uds_path = Some(path),
+                None => {
+                    eprintln!("ec-sim-esc: --uds 需要一个 socket 路径");
+                    return std::process::ExitCode::from(2);
+                }
+            },
             "--verbose" | "-v" => verbose = true,
             "--help" | "-h" => {
-                println!("用法: ec-sim-esc [--tap <name>] [--verbose]");
+                println!("用法: ec-sim-esc [--tap <name> | --uds <path>] [--verbose]");
                 return std::process::ExitCode::SUCCESS;
             }
             other => {
@@ -33,13 +47,97 @@ fn main() -> std::process::ExitCode {
             }
         }
     }
+    if tap_name.is_some() && uds_path.is_some() {
+        eprintln!("ec-sim-esc: --tap 与 --uds 互斥");
+        return std::process::ExitCode::from(2);
+    }
 
     if !cfg!(target_os = "linux") {
-        eprintln!("ec-sim-esc: TAP 链路仅在 Linux 可用（当前平台不支持）");
+        eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
         return std::process::ExitCode::from(3);
     }
 
-    run(&tap_name, verbose)
+    match (tap_name, uds_path) {
+        (_, Some(path)) => run_uds(&path, verbose),
+        (Some(name), None) => run(&name, verbose),
+        (None, None) => run("ecsim0", verbose),
+    }
+}
+
+/// `--verbose` 时每 50 帧打印一次应答统计（TAP 与 UDS 两种线缆层共用）。
+#[cfg(target_os = "linux")]
+fn maybe_print_stats(responder: &esc_node::Responder, verbose: bool) {
+    if !verbose {
+        return;
+    }
+    let stats = responder.stats();
+    if stats.frames_in % 50 != 0 {
+        return;
+    }
+    eprintln!(
+        "STATS in={} out={} dropped={} hits={} mbox={} mboxresp={} al=0x{:02x} station=0x{:04x}",
+        stats.frames_in,
+        stats.frames_out,
+        stats.frames_dropped,
+        stats.datagrams_hit,
+        stats.mailbox_requests,
+        stats.mailbox_responses,
+        responder.al_status(),
+        responder.station_address()
+    );
+}
+
+#[cfg(target_os = "linux")]
+fn run_uds(path: &str, verbose: bool) -> std::process::ExitCode {
+    use esc_node::{Responder, DEFAULT_SIM_MAC};
+    use std::io::Write;
+    use std::os::unix::net::UnixDatagram;
+
+    // 清理上次运行留下的 socket 文件；随后绑定 SOCK_DGRAM（保留报文边界 = 帧边界）。
+    let _ = std::fs::remove_file(path);
+    let socket = match UnixDatagram::bind(path) {
+        Ok(socket) => socket,
+        Err(err) => {
+            eprintln!("ec-sim-esc: 绑定 UDS {path} 失败: {err}");
+            return std::process::ExitCode::from(4);
+        }
+    };
+    println!("READY uds={path}");
+    let _ = std::io::stdout().flush();
+
+    let mut responder = Responder::default();
+    let mut buf = [0u8; 2048];
+    loop {
+        let (len, peer) = match socket.recv_from(&mut buf) {
+            Ok(received) => received,
+            Err(err) if err.kind() == std::io::ErrorKind::Interrupted => continue,
+            // 对端已关闭/不可达时继续等待下一个客户端（CI 场景常见）。
+            Err(err) if err.kind() == std::io::ErrorKind::ConnectionRefused => continue,
+            Err(err) => {
+                eprintln!("ec-sim-esc: 读取 UDS 失败: {err}");
+                return std::process::ExitCode::from(5);
+            }
+        };
+        if verbose {
+            eprintln!("RX uds {len} bytes from {peer:?}");
+        }
+        let Some(reply) = responder.handle_frame(&buf[..len], DEFAULT_SIM_MAC) else {
+            if verbose {
+                eprintln!("DROP uds {len} bytes（非 EtherCAT 或非法帧）");
+            }
+            continue;
+        };
+        // 回包需要客户端绑定到文件系统路径（abstract/匿名对端无法 send_to，直接跳过）。
+        let Some(peer_path) = peer.as_pathname() else {
+            continue;
+        };
+        if let Err(err) = socket.send_to(&reply, peer_path) {
+            eprintln!("ec-sim-esc: 写回 UDS 失败（对端可能已退出）: {err}");
+            continue;
+        }
+        maybe_print_stats(&responder, verbose);
+        let _ = DEFAULT_SIM_MAC;
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -80,27 +178,20 @@ fn run(tap_name: &str, verbose: bool) -> std::process::ExitCode {
             eprintln!("ec-sim-esc: 写回 TAP 失败: {err}");
             return std::process::ExitCode::from(6);
         }
-        let stats = responder.stats();
-        if verbose && stats.frames_in % 50 == 0 {
-            eprintln!(
-                "STATS in={} out={} dropped={} hits={} mbox={} mboxresp={} al=0x{:02x} station=0x{:04x}",
-                stats.frames_in,
-                stats.frames_out,
-                stats.frames_dropped,
-                stats.datagrams_hit,
-                stats.mailbox_requests,
-                stats.mailbox_responses,
-                responder.al_status(),
-                responder.station_address()
-            );
-        }
+        maybe_print_stats(&responder, verbose);
         let _ = DEFAULT_SIM_MAC;
     }
 }
 
 #[cfg(not(target_os = "linux"))]
 fn run(_tap_name: &str, _verbose: bool) -> std::process::ExitCode {
-    eprintln!("ec-sim-esc: TAP 链路仅在 Linux 可用（当前平台不支持）");
+    eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
+    std::process::ExitCode::from(3)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn run_uds(_path: &str, _verbose: bool) -> std::process::ExitCode {
+    eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)
 }
 

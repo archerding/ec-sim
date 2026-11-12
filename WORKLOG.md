@@ -6,6 +6,42 @@
 
 ---
 
+## 2026-11-12 19:59 班（低峰）— B3 子项 1：ESC-over-UDS 线缆层（`ec-sim-esc --uds`）+ 合成主站断言
+
+**做了什么**
+- `crates/esc-node/src/bin/ec_sim_esc.rs`：新增 `--uds <path>` 线缆层（仅 Linux）——
+  `SOCK_DGRAM` Unix socket，每个报文 = 一帧；`recv_from` → `Responder::handle_frame` →
+  `send_to(peer_path)` 回包；`--verbose` 打印 RX/DROP 明细与每 50 帧统计（与 TAP 共用
+  `maybe_print_stats`）。`--tap` 与 `--uds` 互斥，`--help` 更新。
+- 新增 `scripts/spikes/uds_master_probe.py`：零依赖（Python 标准库）合成主站，自行构造
+  EtherCAT 帧并断言：BRD 0x0000（ESC 类型）、APRD AL Status、APWR 站地址 + FPRD、APRD
+  DL Status `0x5610`、一帧两 datagram（M 位）WKC。
+- 新增 `scripts/spikes/uds-loopback.sh`：启动 `ec-sim-esc --uds`、等 socket 就绪、跑 probe、清理。
+- 新增 `docs/spikes/spike-5-esc-over-uds.md`：协议/实现/证据/限制/与 B3 下一步的关系。
+
+**验证结果**
+- 本机 Windows：`cargo fmt --check` / `clippy -D warnings` / `test` 通过（UDS 代码用 cfg 隔离，
+  非 Linux 是明确报错桩）。
+- Linux 验证机：`SOCK=/tmp/ecsim-uds.sock bash scripts/spikes/uds-loopback.sh` →
+  `OK: ESC-over-UDS 线缆层可用（/tmp/ecsim-uds.sock）：BRD/APRD/APWR/FPRD/M 位均通过`（exit 0）；
+  `--verbose` 日志可见 `READY uds=...`、`RX uds 28 bytes from "<client path>" (pathname)`。
+- TAP 无回归：`minimal-esc-responder.sh`（SOEM/IgH 扫描）exit 0、`igh-op-probe.sh`（IgH OP）
+  exit 0；`cargo test --workspace` **100 passed**。
+- 踩坑修正：ETG.1000.4 datagram 头是 **10 字节**（含 2 字节 IRQ）；probe 首版漏了 IRQ 字段
+  导致帧被拒（服务端 `DROP`），已修复并写进 spike-5 作为回归点。
+
+**卡点**
+- 仅完成**模拟器侧**；SOEM `oshw` 的 UDS shim（B3 主体）尚未实现，不能声称 B3 完成。
+- UDS 仅 Linux；客户端必须 bind 文件系统路径（abstract/匿名 socket 无法被回包）。
+
+**下次开工第一件事**
+- **B3 子项 2：SOEM oshw UDS shim**——把 SOEM 复制到验证机工作目录（**不进仓库**），将
+  `oshw/linux/nicdrv.c` 的 setupnic/send/recv 换成 UDS 客户端（连接 `--uds` socket、客户端
+  bind 自己的路径），用 `slaveinfo` 或最小程序跑通 `ec_config_init` + `ec_config_map`，
+  并与 TAP 路径输出对照；补 `scripts/spikes/soem-uds-probe.sh` 作为可复现证据。
+
+---
+
 ## 2026-11-12 19:56 班（低峰）— B8 收尾：双主站 OP 冒烟记录（spike-4）并勾选 B8
 
 **做了什么**
