@@ -1,5 +1,32 @@
 ---
 
+## 2026-11-13 06:38 班（低峰）— **B33：`--serve --web-root` 同源托管 `web/`**
+
+**做了什么**
+- 新增 `--web-root <dir>`：`--serve` 时对 `GET /`、`/index.html`、`/app.js` 返回 `web/` 下白名单文件
+  （HTML/JS 内容类型；不拼接用户路径、无目录遍历；目录不存在时回退纯 API 路由）。
+  静态快照模式与 UDS/TAP 实时模式都支持（实时线程同样传 web_root）。
+- `web/README.md`、`docs/CONTROL-PLANE.md`（启动示例/路由表/安全边界/WebUI 段）、
+  `docs/STATUS.md` 快速开始补充同源托管用法。
+- 新增 `scripts/spikes/serve-web-probe.sh`：静态模式 `/` HTML + `/app.js` JS + `/state` JSON + 未知
+  路径 404；实时模式同源 `/` 且 `/state` 含 live；无效 web-root 时 `/` 回退 API 自述 JSON、`/state` 仍 200。
+- AGENTS：B33 完成、新增 B34（SSE `/events` 推送）。
+
+**验证结果**
+- 本机：静态模式手工请求 `/`（text/html）、`/app.js`（application/javascript）、`/state`（JSON）、
+  `/nope`（404）符合；`cargo fmt --check`、clippy 通过；`cargo test --workspace` **223 passed**。
+- 验证机：重建后 `serve-web-probe.sh` **EXIT=0**（三段全通过）；`control-plane-doc-check.py` 仍通过。
+
+**卡点**
+- Web 仍为 1s 轮询；SSE 推送属 B34。
+
+**下次开工第一件事**
+- **B34**：`GET /events`（SSE `text/event-stream`）推送 `/state` 快照，Web 用 `EventSource` 替代轮询；
+  探针校验事件格式与断连处理。
+
+---
+---
+
 ## 2026-11-13 06:37 班（低峰）— **B32：Web 拓扑链式 SVG 图**
 
 **做了什么**

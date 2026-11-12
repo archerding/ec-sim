@@ -20,14 +20,26 @@ sudo target/release/ec-sim-esc --tap escsim0 --serve 127.0.0.1:8092 --slaves 1
 ```
 
 - 绑定地址由用户显式给出（建议 `127.0.0.1`）；服务不监听其他地址、不做 TLS/鉴权。
+- `--web-root <dir>`：同源托管 `web/` 白名单文件（`/` 与 `/index.html` → `index.html`，`/app.js` → `app.js`），
+  UI 与 API 同端口，无需另起静态服务器；未给出或目录不存在时回退为纯 API（`/` 返回自述 JSON）。
 - 服务只接受 `GET`；其他方法按 404/忽略处理（实现为路径匹配，未做方法校验）。
 - 所有路由均带 `Access-Control-Allow-Origin: *` 与 `Cache-Control: no-store`，便于本机 WebUI 直接 `fetch`。
+
+示例（同源托管 WebUI，推荐）：
+
+```bash
+cargo run -q -p esc-node --bin ec-sim-esc -- \
+  --uds /tmp/ecsim.sock --esm-lax --serve 127.0.0.1:8091 --slaves 3 --web-root web
+# 浏览器打开 http://127.0.0.1:8091/ ，页面内 API 地址填 http://127.0.0.1:8091 后“从 API 载入”
+```
 
 ## 2. 路由总表
 
 | 路径 | 模式 | schema | 说明 |
 | --- | --- | --- | --- |
-| `GET /` | 全部 | （内联 JSON） | 服务自述 + 路由列表 |
+| `GET /` | 全部 | HTML 或内联 JSON | `--web-root` 有效时返回 `index.html`；否则服务自述 JSON + 路由列表 |
+| `GET /index.html` | 全部 | HTML | 同上（显式 index） |
+| `GET /app.js` | 全部 | JavaScript | Web 前端脚本（仅在 `--web-root` 有效时） |
 | `GET /health` | 全部 | （内联 JSON） | 同上（健康检查） |
 | `GET /state` | 全部 | `ec-sim/state-v1` | 只读状态快照；实时模式额外含 `live` 字段 |
 | `GET /dict` | 全部 | `ec-sim/dict-v1` | 运行时对象字典（无 manifest 时 404） |
@@ -122,6 +134,8 @@ curl -si http://127.0.0.1:8091/nope   # 404 JSON
 ## 5. 安全边界（务必遵守）
 
 - **只读**：没有任何写路由；不会触发 SDO 写/PDO 写/ESM 迁移。
+- **静态文件白名单**：`--web-root` 只映射上面三个路径，不拼接用户路径、无目录遍历风险；
+  路径不匹配时回退到 API 路由/404。
 - **无鉴权、无 TLS**：`Access-Control-Allow-Origin: *` 仅适合本机/受信网络调试；**不要暴露到公网**。
 - 默认示例都绑定 `127.0.0.1`；如需远程访问，应自行加反向代理/鉴权，并注意泄漏面。
 - `--serve` 与 `--uds`/`--tap` 同进程时只增加一个 HTTP 线程；实时路径仍由线缆层主循环驱动，HTTP 请求仅加锁读快照（不改变实时语义）。
@@ -129,7 +143,8 @@ curl -si http://127.0.0.1:8091/nope   # 404 JSON
 
 ## 6. 与 WebUI 的关系
 
-`web/` 是零依赖只读页面：可载入 `--dump-state` / `--dump-dict --json` 生成的 JSON 文件，也可填 API 地址后从本控制面拉取
+`web/` 是零依赖只读页面：可载入 `--dump-state` / `--dump-dict --json` 生成的 JSON 文件，也可用 `--web-root web`
+同源托管（`http://127.0.0.1:<port>/`），或另起静态服务器后填 API 地址，从本控制面拉取
 `/state`、`/dict`、`/pdo`、`/pdo?history=1`、`/topology`、`/metrics`；支持“从站 N”切换、拓扑行点击切换、1s 实时轮询与 PDO Canvas 波形。
 
 ## 7. 验证
@@ -138,6 +153,7 @@ curl -si http://127.0.0.1:8091/nope   # 404 JSON
 | --- | --- |
 | 路由/JSON schema | `cargo test -p control-plane`（13 个单测） |
 | 静态服务 | `scripts/spikes/http-state-probe.sh` |
+| 同源托管 web/ | `scripts/spikes/serve-web-probe.sh` |
 | 实时状态/PDO/历史/拓扑/逐站/指标 | `live-state-probe.sh`、`pdo-live-probe.sh`、`pdo-history-probe.sh`、`pdo-decode-probe.sh`、`topology-probe.sh`、`slave-select-probe.sh`、`metrics-probe.sh`、`metrics-filter-probe.sh`（Linux/UDS） |
 | TAP 实时 | `scripts/spikes/tap-live-state-probe.sh`（root，验证机） |
 | 文档与代码路由一致 | `python3 scripts/spikes/control-plane-doc-check.py` |

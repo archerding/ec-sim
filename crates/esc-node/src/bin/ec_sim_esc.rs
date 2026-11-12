@@ -234,10 +234,28 @@ fn dump_state_and_exit(
 const PDO_HISTORY_CAPACITY: usize = 256;
 
 /// `--serve <addr>`：只读 HTTP JSON API（`/state`、`/dict`；std `TcpListener`，无外部依赖）。
+/// 静态托管 `web/` 的少量白名单文件（`/`、`/index.html`、`/app.js`；只读、无目录遍历）。
+fn static_web_response(path: &str, web_root: Option<&str>) -> Option<control_plane::HttpResponse> {
+    let root = web_root?;
+    let path = path.split('?').next().unwrap_or(path);
+    let (file, content_type) = match path {
+        "/" | "/index.html" => ("index.html", "text/html; charset=utf-8"),
+        "/app.js" => ("app.js", "application/javascript; charset=utf-8"),
+        _ => return None,
+    };
+    let body = std::fs::read_to_string(format!("{root}/{file}")).ok()?;
+    Some(control_plane::HttpResponse {
+        status_line: "HTTP/1.1 200 OK",
+        content_type,
+        body,
+    })
+}
+
 fn serve_http(
     manifest_path: Option<&str>,
     esi_path: Option<&str>,
     addr: &str,
+    web_root: Option<&str>,
 ) -> std::process::ExitCode {
     use std::io::{Read, Write as _};
     use std::net::TcpListener;
@@ -326,7 +344,10 @@ fn serve_http(
             .next()
             .and_then(|line| line.split_whitespace().nth(1))
             .unwrap_or("/");
-        let response = control_plane::handle_get(path, &state, dict_json.as_deref());
+        let response = match static_web_response(path, web_root) {
+            Some(response) => response,
+            None => control_plane::handle_get(path, &state, dict_json.as_deref()),
+        };
         let headers = format!(
             "{}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: {}\r\nConnection: close\r\n\r\n",
             response.status_line,
@@ -378,6 +399,7 @@ fn serve_live_http(
     manifest: Option<plugin_host::manifest::PluginManifest>,
     esi: Option<plugin_host::esi::EsiDevice>,
     responders: std::sync::Arc<std::sync::Mutex<Vec<esc_node::Responder>>>,
+    web_root: Option<String>,
 ) {
     use std::io::{Read, Write as _};
     use std::net::TcpListener;
@@ -573,7 +595,9 @@ fn serve_live_http(
                 control_plane::pdo_json_decoded(&pdo, &decoded)
             }
         });
-        let response = if invalid_slave {
+        let response = if let Some(response) = static_web_response(path, web_root.as_deref()) {
+            response
+        } else if invalid_slave {
             control_plane::not_found_json(&format!(
                 "slave {} 不存在（共 {slave_count} 个从站）",
                 slave_param.unwrap_or("")
@@ -634,6 +658,7 @@ fn main() -> std::process::ExitCode {
     let mut dump_json = false;
     let mut dump_state = false;
     let mut serve_addr: Option<String> = None;
+    let mut web_root: Option<String> = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--tap" => match args.next() {
@@ -713,6 +738,13 @@ fn main() -> std::process::ExitCode {
             "--dump-dict" => dump_dict = true,
             "--json" => dump_json = true,
             "--dump-state" => dump_state = true,
+            "--web-root" => match args.next() {
+                Some(dir) => web_root = Some(dir),
+                None => {
+                    eprintln!("ec-sim-esc: --web-root 需要目录（如 web）");
+                    return std::process::ExitCode::from(2);
+                }
+            },
             "--serve" => match args.next() {
                 Some(addr) => serve_addr = Some(addr),
                 None => {
@@ -756,7 +788,12 @@ fn main() -> std::process::ExitCode {
         if uds_path.is_some() || tap_name.is_some() {
             live_serve = Some(addr.to_string());
         } else {
-            return serve_http(manifest_path.as_deref(), esi_path.as_deref(), addr);
+            return serve_http(
+                manifest_path.as_deref(),
+                esi_path.as_deref(),
+                addr,
+                web_root.as_deref(),
+            );
         }
     }
 
@@ -841,6 +878,7 @@ fn main() -> std::process::ExitCode {
             slave_count,
             poll,
             live_serve,
+            web_root.clone(),
         ),
         (Some(name), None) => run(
             &name,
@@ -852,6 +890,7 @@ fn main() -> std::process::ExitCode {
             fault,
             slave_count,
             live_serve,
+            web_root.clone(),
         ),
         (None, None) => run(
             "ecsim0",
@@ -863,6 +902,7 @@ fn main() -> std::process::ExitCode {
             fault,
             slave_count,
             live_serve,
+            web_root.clone(),
         ),
     }
 }
@@ -996,6 +1036,7 @@ fn run_uds(
     slave_count: usize,
     poll: bool,
     serve: Option<String>,
+    web_root: Option<String>,
 ) -> std::process::ExitCode {
     use esc_node::DEFAULT_SIM_MAC;
     use std::io::Write;
@@ -1032,7 +1073,10 @@ fn run_uds(
     let responders = std::sync::Arc::new(std::sync::Mutex::new(responders));
     if let Some(addr) = serve {
         let shared = std::sync::Arc::clone(&responders);
-        std::thread::spawn(move || serve_live_http(addr, http_manifest, http_esi, shared));
+        let root = web_root.clone();
+        std::thread::spawn(move || {
+            serve_live_http(addr, http_manifest, http_esi, shared, root);
+        });
     }
     let mut buf = [0u8; 2048];
     if poll {
@@ -1102,6 +1146,7 @@ fn run(
     fault: Option<u16>,
     slave_count: usize,
     serve: Option<String>,
+    web_root: Option<String>,
 ) -> std::process::ExitCode {
     use esc_node::DEFAULT_SIM_MAC;
     use std::io::Write;
@@ -1139,7 +1184,10 @@ fn run(
     let responders = std::sync::Arc::new(std::sync::Mutex::new(responders));
     if let Some(addr) = serve {
         let shared = std::sync::Arc::clone(&responders);
-        std::thread::spawn(move || serve_live_http(addr, http_manifest, http_esi, shared));
+        let root = web_root.clone();
+        std::thread::spawn(move || {
+            serve_live_http(addr, http_manifest, http_esi, shared, root);
+        });
     }
     let mut buf = [0u8; 2048];
     loop {
@@ -1186,6 +1234,7 @@ fn run(
     _fault: Option<u16>,
     _slave_count: usize,
     _serve: Option<String>,
+    _web_root: Option<String>,
 ) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)
@@ -1204,6 +1253,7 @@ fn run_uds(
     _slave_count: usize,
     _poll: bool,
     _serve: Option<String>,
+    _web_root: Option<String>,
 ) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)

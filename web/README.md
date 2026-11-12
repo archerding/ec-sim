@@ -14,10 +14,10 @@ cargo run -q -p esc-node --bin ec-sim-esc -- \
   --dump-dict --json --manifest plugins/generic-cia402-cst-servo/plugin.yaml > web/dict.json
 python3 -m http.server 8080 --directory web   # 打开 http://127.0.0.1:8080/
 
-# 方式 B：控制面只读 API（实时模式）
+# 方式 B：控制面只读 API（实时模式）+ 同源托管本页（推荐）
 cargo run -q -p esc-node --bin ec-sim-esc -- \
-  --uds /tmp/ecsim.sock --esm-lax --serve 127.0.0.1:8090 --slaves 3
-# 打开 http://127.0.0.1:8080/（页面填 API 地址后“从 API 载入”），或直接双击 index.html
+  --uds /tmp/ecsim.sock --esm-lax --serve 127.0.0.1:8090 --slaves 3 --web-root web
+# 直接打开 http://127.0.0.1:8090/ ，API 地址填 http://127.0.0.1:8090 后“从 API 载入”
 ```
 
 页面支持：
