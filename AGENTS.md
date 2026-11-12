@@ -497,6 +497,9 @@ user.email = deepseek-harness@users.noreply.github.com
 - [x] ~~**B39 M3-W3：SDO 只读浏览 `GET /sdo?index&sub`（M3）**~~ ✅ **2026-11-13 07:30 完成**：`control-plane::sdo_json`（运行时字典，不 mailbox；未知对象 None）+ 1 单测（共 14）；`GET /sdo?index=0x6040&sub=0` 静态与实时 `--serve` 均可用（sdo-v1：index/sub/object_name/name/type/bits/access/value_hex），缺 index/非法/未知对象/未知子索引 → 404；探针 `sdo-read-probe.sh` 验证机 **EXIT=0**；CONTROL-PLANE 路由/schema/验证、M3 清单 W3 状态、run-all-probes 清单同步；测试 **224 passed**。
 - [ ] **B40 M3-W4：SDO 受控写 `POST /sdo`（M3）**：`--serve-write` + manifest `writable` 白名单 + 安全排除表（0x1018 等身份对象）+ 审计环形缓冲（时间/来源/对象/旧值/新值，`/metrics` 写计数）；默认 405、非白名单 403、未知 404；探针覆盖默认/成功/拒绝/审计。
 
+- [x] ~~**B40 M3-W4：SDO 受控写 `POST /sdo`（M3）**~~ ✅ **2026-11-13 07:35 完成**：`--serve-write` 下启用 `POST /sdo?index&sub`（body=原始值字节）：仅 manifest `writable` 对象可写、安全排除表（0x1000/0x1008/0x1009/0x1010/0x1011/0x1018/0x1C12/0x1C13）403、未知 404、长度错 400；写入进 `Responder::write_object_override`，`/sdo` 读回覆盖值；新增 `GET /sdo-audit`（sdo-audit-v1，≤64 条）与 `/metrics` 的 `ecsim_sdo_writes_total`；静态模式非 GET 统一 405；探针 `sdo-write-probe.sh` 验证机 **EXIT=0**；CONTROL-PLANE/M3 清单/doc-check/run-all 同步；测试 **225 passed**。
+- [ ] **B41 M3-W5：可选静态 token（M3）**：`--serve-token-env VAR` 从环境变量读 Bearer token；非空时 `/state`、`/dict`、`/pdo`、`/sdo`、`/sdo-audit`、`/topology`、`/metrics`、`/events` 需 `Authorization: Bearer <token>`（401/403），空 = 现状；探针校验带/不带 token 的行为矩阵。
+
 ## 7. 目录约定
 
 ```

@@ -45,6 +45,8 @@ cargo run -q -p esc-node --bin ec-sim-esc -- \
 | `GET /dict` | 全部 | `ec-sim/dict-v1` | 运行时对象字典（无 manifest 时 404） |
 | `GET /pdo` | 实时 | `ec-sim/pdo-v1` | SM2/SM3 原始字节 + `decoded` 具名解码 |
 | `GET /sdo?index=0x6040&sub=0` | 全部 | `ec-sim/sdo-v1` | 运行时对象字典只读浏览（不经过 mailbox；未知对象 404） |
+| `POST /sdo?index=0x6040&sub=0` | 实时（需 `--serve-write`） | （内联 JSON） | 受控写对象值（白名单/长度/审计；默认 405、非白名单 403、未知 404、长度错 400） |
+| `GET /sdo-audit` | 实时 | `ec-sim/sdo-audit-v1` | 最近 64 条 SDO 写审计事件 |
 | `GET /pdo?history=1` | 实时 | `ec-sim/pdo-history-v1` | 按变化去重的 PDO 时间序列（每站 256 条） |
 | `GET /topology` | 实时 | `ec-sim/topology-v1` | 链上所有从站摘要 |
 | `GET /metrics` | 实时 | Prometheus 文本 | 每站计数器/状态，`text/plain; version=0.0.4` |
@@ -120,14 +122,21 @@ curl -si http://127.0.0.1:8091/nope   # 404 JSON
 
 > 只读、来自运行时对象字典（`/dict` 的内存视图），**不发起** CoE SDO 邮箱往返；写路径见 M3 范围。
 
-### 4.6 `ec-sim/topology-v1`
+### 4.6 `ec-sim/sdo-audit-v1`
+
+| 字段 | 说明 |
+| --- | --- |
+| `schema` / `tool` / `count` | 元信息（count ≤ 64） |
+| `events[]` | `ts_ms` / `slave` / `index` / `sub` / `old_hex` / `new_hex` |
+
+### 4.7 `ec-sim/topology-v1`
 
 | 字段 | 说明 |
 | --- | --- |
 | `schema` / `tool` / `count` | 元信息 |
 | `slaves[]` | `index` / `station_address` / `al_status` / `al_status_code` / `frames_in` / `frames_out` / `sm2{address,hex}` / `sm3{address,hex}` |
 
-### 4.7 `/metrics`（Prometheus 文本）
+### 4.8 `/metrics`（Prometheus 文本）
 
 | 指标 | 类型 | 说明 |
 | --- | --- | --- |
@@ -147,7 +156,11 @@ curl -si http://127.0.0.1:8091/nope   # 404 JSON
 
 ## 5. 写操作（默认关闭）
 
-- 只有显式加 **`--serve-write`** 才启用 `POST /pdo`（其余 POST 返回 404；未启用时返回 405 JSON）。
+- 只有显式加 **`--serve-write`** 才启用 `POST /pdo` 与 `POST /sdo`（其余 POST 返回 404；未启用时返回 405 JSON）。
+- `POST /sdo` 额外规则：只允许 manifest 声明 `writable: true` 的对象；身份/配置类对象
+  （`0x1000/0x1008/0x1009/0x1010/0x1011/0x1018/0x1C12/0x1C13`）一律 403；值长度必须等于对象位长，
+  否则 400；每次成功写入追加到 `/sdo-audit`（≤64 条）并使 `/metrics` 的
+  `ecsim_sdo_writes_total` 递增。
 - 请求体 = 原始 SM2 字节（长度截断到 SM2 映射长度，≤1024 字节），`?slave=N` 选择从站；
   服务端 `write_process_data` 只写对应 DL 用户内存，**不改变** ESM/SDO/邮箱语义。
 - 响应：`{"ok": true, "slave": N, "sm2_address": "0x1100", "written_hex": "beef"}`。
@@ -179,6 +192,7 @@ curl -si http://127.0.0.1:8091/nope   # 404 JSON
 | 同源托管 web/ | `scripts/spikes/serve-web-probe.sh` |
 | SSE 推送 | `scripts/spikes/events-probe.sh` |
 | SDO 只读浏览 | `scripts/spikes/sdo-read-probe.sh` |
+| SDO 受控写/审计 | `scripts/spikes/sdo-write-probe.sh` |
 | 写操作（默认关闭） | `scripts/spikes/write-pdo-probe.sh` |
 | 实时状态/PDO/历史/拓扑/逐站/指标 | `live-state-probe.sh`、`pdo-live-probe.sh`、`pdo-history-probe.sh`、`pdo-decode-probe.sh`、`topology-probe.sh`、`slave-select-probe.sh`、`metrics-probe.sh`、`metrics-filter-probe.sh`（Linux/UDS） |
 | TAP 实时 | `scripts/spikes/tap-live-state-probe.sh`（root，验证机） |

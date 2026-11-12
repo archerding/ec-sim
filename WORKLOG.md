@@ -1,5 +1,35 @@
 ---
 
+## 2026-11-13 07:35 班（低峰）— **B40：M3-W4 SDO 受控写 `POST /sdo`（白名单/审计/指标）**
+
+**做了什么**
+- `Responder` 新增 `write_object_override`/`object_override`/`object_writable`：写运行时对象覆盖值
+  （校验长度 = 位长字节数），`/sdo` 读取时覆盖值优先。
+- `--serve-write` 下新增 **`POST /sdo?index&sub`**（body = 原始值字节）：仅 manifest `writable` 对象可写；
+  安全排除表（0x1000/0x1008/0x1009/0x1010/0x1011/0x1018/0x1C12/0x1C13）→403；未知对象→404；
+  未开开关→405；长度不匹配→400。每次成功写入追加 `GET /sdo-audit`（sdo-audit-v1，≤64 条）并让
+  `/metrics` 的 `ecsim_sdo_writes_total` 递增；静态模式非 GET 统一 405。
+- `control-plane` 新增 `sdo_json_with_value`/`sdo_value_hex`/`sdo_audit_json`/`metrics_text_with_sdo`
+  + 1 个单测（control-plane 共 15）。
+- 新增 `scripts/spikes/sdo-write-probe.sh`（静态 405、未开开关 405、写入成功+审计+指标、403/404/400）。
+- `docs/CONTROL-PLANE.md` 路由/schema/写操作规则、`docs/plan/M3-scope.md` W4 状态、
+  doc-check（14 路由 / 15 探针）、`run-all-probes.sh` 同步。
+- AGENTS：B40 完成、新增 B41（M3-W5 可选 token）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **225 passed**；
+  `control-plane-doc-check.py` EXIT=0（14 路由 / 15 探针）。
+- 验证机：重建后 `sdo-write-probe.sh` **EXIT=0**（值/审计/指标/403/404/400 全通过；release build 0 warning）。
+
+**卡点**
+- 写操作仍无鉴权（token 属 B41/W5）；审计只保存在内存、进程重启丢失（后续可落盘）。
+
+**下次开工第一件事**
+- **B41**：`--serve-token-env VAR` 可选 Bearer token；空 = 现状；探针校验带/不带 token 的 200/401 矩阵。
+
+---
+---
+
 ## 2026-11-13 07:30 班（低峰）— **B39：M3-W3 SDO 只读浏览 `GET /sdo`**
 
 **做了什么**

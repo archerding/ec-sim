@@ -714,11 +714,34 @@ pub fn metrics_text(slaves: &[MetricsSlave]) -> String {
     out
 }
 
+/// 读取对象的默认值 hex（字典当前值，不含控制面覆盖值）。
+#[must_use]
+pub fn sdo_value_hex(dict: &ObjectDictionary, index: u16, sub: u8) -> Option<String> {
+    dict.entry(index, sub).map(|entry| {
+        entry
+            .value
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    })
+}
+
 /// 生成 `sdo-v1` JSON：从运行时对象字典读取单个条目（不经过 EtherCAT mailbox）。
 ///
 /// 未知对象/子索引返回 `None`。
 #[must_use]
 pub fn sdo_json(dict: &ObjectDictionary, index: u16, sub: u8) -> Option<String> {
+    sdo_json_with_value(dict, index, sub, None)
+}
+
+/// 同 [`sdo_json`]，但可用 `value` 覆盖当前值（控制面写入后的运行时覆盖值）。
+#[must_use]
+pub fn sdo_json_with_value(
+    dict: &ObjectDictionary,
+    index: u16,
+    sub: u8,
+    value: Option<&[u8]>,
+) -> Option<String> {
     let entry = dict.entry(index, sub)?;
     let object_name = dict
         .objects()
@@ -726,8 +749,8 @@ pub fn sdo_json(dict: &ObjectDictionary, index: u16, sub: u8) -> Option<String> 
         .find(|object| object.index == index)
         .map(|object| object.name.as_str())
         .unwrap_or("");
-    let value_hex: String = entry
-        .value
+    let value_bytes = value.unwrap_or(&entry.value);
+    let value_hex: String = value_bytes
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect();
@@ -743,6 +766,32 @@ pub fn sdo_json(dict: &ObjectDictionary, index: u16, sub: u8) -> Option<String> 
         if entry.writable { "rw" } else { "ro" },
         value_hex
     ))
+}
+
+/// 生成 `sdo-audit-v1` JSON：控制面 SDO 写审计事件（`events` 为已序列化的 JSON 对象字符串）。
+#[must_use]
+pub fn sdo_audit_json(events: &[String]) -> String {
+    let mut out = format!(
+        "{{\n  \"schema\": \"ec-sim/sdo-audit-v1\",\n  \"tool\": \"ec-sim-esc {}\",\n  \"count\": {},\n  \"events\": [\n",
+        TOOL_VERSION,
+        events.len()
+    );
+    for (index, event) in events.iter().enumerate() {
+        let tail = if index + 1 == events.len() { "" } else { "," };
+        let _ = writeln!(out, "    {event}{tail}");
+    }
+    out.push_str("  ]\n}");
+    out
+}
+
+/// 同 [`metrics_text`]，附带控制面 SDO 写计数。
+#[must_use]
+pub fn metrics_text_with_sdo(slaves: &[MetricsSlave], sdo_writes: u64) -> String {
+    let mut out = metrics_text(slaves);
+    let _ = writeln!(out, "# HELP ecsim_sdo_writes_total 控制面 SDO 写操作次数");
+    let _ = writeln!(out, "# TYPE ecsim_sdo_writes_total counter");
+    let _ = writeln!(out, "ecsim_sdo_writes_total {sdo_writes}");
+    out
 }
 
 #[cfg(test)]
@@ -982,6 +1031,40 @@ mod tests {
         assert!(json.contains("\"value_hex\": \""));
         assert!(sdo_json(&dict, 0xFFFF, 0).is_none());
         assert!(sdo_json(&dict, 0x1018, 9).is_none());
+    }
+
+    #[test]
+    fn sdo_audit_and_sdo_write_metric_serialize() {
+        let events = vec![
+            "{\"index\": \"0x6040\", \"sub\": 0, \"old_hex\": \"0000\", \"new_hex\": \"0f00\"}"
+                .to_string(),
+        ];
+        let json = sdo_audit_json(&events);
+        assert!(json.contains("\"schema\": \"ec-sim/sdo-audit-v1\""));
+        assert!(json.contains("\"count\": 1"));
+        assert!(json.contains("\"new_hex\": \"0f00\""));
+        assert!(json.trim_end().ends_with('}'));
+
+        let text = metrics_text_with_sdo(
+            &[MetricsSlave {
+                index: 0,
+                station_address: 1,
+                al_status: 8,
+                al_status_code: 0,
+                frames_in: 1,
+                frames_out: 1,
+                frames_dropped: 0,
+                datagrams_hit: 1,
+                mailbox_requests: 0,
+                mailbox_responses: 0,
+                dc_reg_reads: 0,
+                dc_reg_writes: 0,
+                dc_time_ns: 0,
+            }],
+            3,
+        );
+        assert!(text.contains("# TYPE ecsim_sdo_writes_total counter"));
+        assert!(text.contains("ecsim_sdo_writes_total 3"));
     }
 
     #[test]

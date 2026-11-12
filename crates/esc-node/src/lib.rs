@@ -473,6 +473,33 @@ impl Responder {
         self.dc_time_ns
     }
 
+    /// 写运行时对象覆盖值（供控制面受控写使用；校验对象存在与长度匹配）。
+    ///
+    /// 返回 `false` 表示对象不存在或数据长度不等于对象位长对应字节数。
+    pub fn write_object_override(&mut self, index: u16, sub: u8, data: &[u8]) -> bool {
+        let Some(entry) = self.dict.entry(index, sub) else {
+            return false;
+        };
+        let expected = usize::from(entry.bit_length).div_ceil(8);
+        if data.len() != expected {
+            return false;
+        }
+        self.object_writes.insert((index, sub), data.to_vec());
+        true
+    }
+
+    /// 读运行时对象覆盖值（控制面写入优先于字典默认值）。
+    #[must_use]
+    pub fn object_override(&self, index: u16, sub: u8) -> Option<&[u8]> {
+        self.object_writes.get(&(index, sub)).map(Vec::as_slice)
+    }
+
+    /// 对象是否声明为可写（来自 manifest/字典）。
+    #[must_use]
+    pub fn object_writable(&self, index: u16, sub: u8) -> Option<bool> {
+        self.dict.entry(index, sub).map(|entry| entry.writable)
+    }
+
     /// 写入 DL 用户内存/过程数据（供控制面显式写操作使用；越界返回 false）。
     pub fn write_process_data(&mut self, address: u16, data: &[u8]) -> bool {
         self.memory.write(address, data)

@@ -27,6 +27,7 @@ EXPECTED_PATHS = [
     "/pdo?history=1",
     "/topology",
     "/sdo",
+    "/sdo-audit",
     "/metrics",
     "/state?slave=N",
     "/pdo?slave=N",
@@ -49,6 +50,7 @@ EXPECTED_PROBES = [
     "events-probe.sh",
     "write-pdo-probe.sh",
     "sdo-read-probe.sh",
+    "sdo-write-probe.sh",
 ]
 
 
@@ -104,7 +106,11 @@ m2_path = ROOT / "docs" / "plan" / "M2-exit-checklist.md"
 if not m2_path.is_file():
     fail(f"M2 退出清单不存在：{m2_path}")
 m2_text = m2_path.read_text(encoding="utf-8")
-m2_probes = [probe for probe in EXPECTED_PROBES if probe != "sdo-read-probe.sh"]
+m2_probes = [
+    probe
+    for probe in EXPECTED_PROBES
+    if probe not in ("sdo-read-probe.sh", "sdo-write-probe.sh")
+]
 for probe in m2_probes:
     if probe not in m2_text:
         fail(f"M2 退出清单未引用探针：{probe}")
@@ -117,8 +123,10 @@ adr2_path = ROOT / "docs" / "adr" / "0002-m3-plugin-host-and-write-paths.md"
 for required in (m3_path, adr2_path):
     if not required.is_file():
         fail(f"M3 文档不存在：{required}")
-if "sdo-read-probe.sh" not in (ROOT / "docs" / "plan" / "M3-scope.md").read_text(encoding="utf-8"):
-    fail("M3 范围未引用 sdo-read-probe.sh")
+m3_text = (ROOT / "docs" / "plan" / "M3-scope.md").read_text(encoding="utf-8")
+for probe in ("sdo-read-probe.sh", "sdo-write-probe.sh"):
+    if probe not in m3_text:
+        fail(f"M3 范围未引用 {probe}")
 for doc_path in (ROOT / "docs" / "STATUS.md", ROOT / "README.md", m2_path):
     text = doc_path.read_text(encoding="utf-8")
     if "M3-scope" not in text:

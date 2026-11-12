@@ -388,11 +388,28 @@ fn serve_http(
         let mut buf = [0u8; 2048];
         let _ = stream.read(&mut buf);
         let request = String::from_utf8_lossy(&buf);
-        let path = request
-            .lines()
-            .next()
-            .and_then(|line| line.split_whitespace().nth(1))
-            .unwrap_or("/");
+        let request_line = request.lines().next().unwrap_or("");
+        let method = request_line.split_whitespace().next().unwrap_or("GET");
+        if method != "GET" {
+            let response = control_plane::HttpResponse {
+                status_line: "HTTP/1.1 405 Method Not Allowed",
+                content_type: "application/json; charset=utf-8",
+                body: "{\"error\": \"静态模式仅支持 GET；写操作需实时模式 --serve-write\"}"
+                    .to_string(),
+            };
+            let headers = format!(
+                "{}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: {}\r\nConnection: close\r\n\r\n",
+                response.status_line,
+                response.content_type,
+                response.body.len(),
+                control_plane::CORS_ALLOW_ORIGIN
+            );
+            let _ = stream.write_all(headers.as_bytes());
+            let _ = stream.write_all(response.body.as_bytes());
+            let _ = stream.flush();
+            continue;
+        }
+        let path = request_line.split_whitespace().nth(1).unwrap_or("/");
         let response = if let Some(response) = static_web_response(path, web_root) {
             response
         } else if path.split('?').next() == Some("/sdo") {
@@ -434,19 +451,86 @@ fn parse_u16_param(text: &str) -> Option<u16> {
     }
 }
 
-fn sdo_response(
-    path: &str,
-    dict: Option<&esc_core::obj_dict::ObjectDictionary>,
-) -> control_plane::HttpResponse {
+fn parse_sdo_query(path: &str) -> Result<(u16, u8), control_plane::HttpResponse> {
     let Some(index_text) = query_param(path, "index") else {
-        return control_plane::not_found_json("需要 ?index=0x....[&sub=N]");
+        return Err(control_plane::not_found_json("需要 ?index=0x....[&sub=N]"));
     };
     let Some(index) = parse_u16_param(index_text) else {
-        return control_plane::not_found_json("index 非法（支持 0x 十六进制或十进制）");
+        return Err(control_plane::not_found_json(
+            "index 非法（支持 0x 十六进制或十进制）",
+        ));
     };
     let sub = query_param(path, "sub")
         .and_then(|value| value.parse::<u8>().ok())
         .unwrap_or(0);
+    Ok((index, sub))
+}
+
+#[cfg(target_os = "linux")]
+fn forbidden_json(message: &str) -> control_plane::HttpResponse {
+    control_plane::HttpResponse {
+        status_line: "HTTP/1.1 403 Forbidden",
+        content_type: "application/json; charset=utf-8",
+        body: format!(
+            "{{\"error\": \"{}\", \"hint\": \"仅 manifest 声明 writable 的对象可写，且身份/配置对象被排除\"}}",
+            control_plane::json_escape(message)
+        ),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn bad_request_json(message: &str) -> control_plane::HttpResponse {
+    control_plane::HttpResponse {
+        status_line: "HTTP/1.1 400 Bad Request",
+        content_type: "application/json; charset=utf-8",
+        body: format!("{{\"error\": \"{}\"}}", control_plane::json_escape(message)),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn is_excluded_object(index: u16) -> bool {
+    matches!(
+        index,
+        0x1000 | 0x1008 | 0x1009 | 0x1010 | 0x1011 | 0x1018 | 0x1C12 | 0x1C13
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn sdo_response_with_override(
+    path: &str,
+    dict: Option<&esc_core::obj_dict::ObjectDictionary>,
+    responders: &std::sync::Mutex<Vec<esc_node::Responder>>,
+    slave_index: usize,
+) -> control_plane::HttpResponse {
+    let (index, sub) = match parse_sdo_query(path) {
+        Ok(parsed) => parsed,
+        Err(response) => return response,
+    };
+    let guard = responders.lock().unwrap();
+    let value = guard
+        .get(slave_index)
+        .and_then(|responder| responder.object_override(index, sub))
+        .map(|data| data.to_vec());
+    match dict
+        .and_then(|dict| control_plane::sdo_json_with_value(dict, index, sub, value.as_deref()))
+    {
+        Some(body) => control_plane::HttpResponse {
+            status_line: "HTTP/1.1 200 OK",
+            content_type: "application/json; charset=utf-8",
+            body,
+        },
+        None => control_plane::not_found_json(&format!("对象不存在：0x{index:04X}:{sub:02X}")),
+    }
+}
+
+fn sdo_response(
+    path: &str,
+    dict: Option<&esc_core::obj_dict::ObjectDictionary>,
+) -> control_plane::HttpResponse {
+    let (index, sub) = match parse_sdo_query(path) {
+        Ok(parsed) => parsed,
+        Err(response) => return response,
+    };
     match dict.and_then(|dict| control_plane::sdo_json(dict, index, sub)) {
         Some(body) => control_plane::HttpResponse {
             status_line: "HTTP/1.1 200 OK",
@@ -532,6 +616,9 @@ fn serve_live_http(
     };
     println!("SERVE (live) http://{addr} routes=/state,/dict");
     let _ = std::io::stdout().flush();
+    let mut sdo_writes: u64 = 0;
+    let mut sdo_audit: std::collections::VecDeque<String> =
+        std::collections::VecDeque::with_capacity(64);
     for stream in listener.incoming() {
         let mut stream = match stream {
             Ok(stream) => stream,
@@ -553,6 +640,80 @@ fn serve_live_http(
         let invalid_slave = matches!(path_only, "/state" | "/pdo" | "/metrics" | "/events")
             && slave_index.is_none();
         let slave_index = slave_index.unwrap_or(0);
+        if method == "POST" && path_only == "/sdo" {
+            let response = if !serve_write {
+                control_plane::HttpResponse {
+                    status_line: "HTTP/1.1 405 Method Not Allowed",
+                    content_type: "application/json; charset=utf-8",
+                    body: "{\"error\": \"写操作未启用（需要 --serve-write）\"}".to_string(),
+                }
+            } else {
+                match parse_sdo_query(&path) {
+                    Err(response) => response,
+                    Ok((index, sub)) => {
+                        let mut guard = responders.lock().unwrap();
+                        match guard.get_mut(slave_index) {
+                            None => control_plane::not_found_json("从站不存在"),
+                            Some(responder) => match responder.object_writable(index, sub) {
+                                None => control_plane::not_found_json(&format!(
+                                    "对象不存在：0x{index:04X}:{sub:02X}"
+                                )),
+                                Some(false) => {
+                                    forbidden_json("对象不可写（manifest 未声明 writable）")
+                                }
+                                Some(true) if is_excluded_object(index) => {
+                                    forbidden_json("安全排除对象（身份/配置类，不允许控制面写）")
+                                }
+                                Some(true) => {
+                                    let old_hex = responder
+                                        .object_override(index, sub)
+                                        .map(hex_encode)
+                                        .or_else(|| {
+                                            dict_for_decode.as_ref().and_then(|dict| {
+                                                control_plane::sdo_value_hex(dict, index, sub)
+                                            })
+                                        })
+                                        .unwrap_or_default();
+                                    if responder.write_object_override(index, sub, &body) {
+                                        let written: String =
+                                            body.iter().map(|byte| format!("{byte:02x}")).collect();
+                                        sdo_writes += 1;
+                                        let event = format!(
+                                            "{{\"ts_ms\": {}, \"slave\": {slave_index}, \"index\": \"0x{index:04X}\", \"sub\": {sub}, \"old_hex\": \"{old_hex}\", \"new_hex\": \"{written}\"}}",
+                                            now_ms()
+                                        );
+                                        sdo_audit.push_back(event);
+                                        if sdo_audit.len() > 64 {
+                                            sdo_audit.pop_front();
+                                        }
+                                        control_plane::HttpResponse {
+                                            status_line: "HTTP/1.1 200 OK",
+                                            content_type: "application/json; charset=utf-8",
+                                            body: format!(
+                                                "{{\"ok\": true, \"slave\": {slave_index}, \"index\": \"0x{index:04X}\", \"sub\": {sub}, \"old_hex\": \"{old_hex}\", \"written_hex\": \"{written}\"}}"
+                                            ),
+                                        }
+                                    } else {
+                                        bad_request_json("值长度不匹配对象位长")
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            };
+            let headers = format!(
+                "{}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: {}\r\nConnection: close\r\n\r\n",
+                response.status_line,
+                response.content_type,
+                response.body.len(),
+                control_plane::CORS_ALLOW_ORIGIN
+            );
+            let _ = stream.write_all(headers.as_bytes());
+            let _ = stream.write_all(response.body.as_bytes());
+            let _ = stream.flush();
+            continue;
+        }
         if method == "POST" {
             let response = if path_only != "/pdo" {
                 control_plane::not_found_json("仅支持 POST /pdo")
@@ -678,7 +839,7 @@ fn serve_live_http(
                     }
                 })
                 .collect();
-            Some(control_plane::metrics_text(&slaves))
+            Some(control_plane::metrics_text_with_sdo(&slaves, sdo_writes))
         } else {
             None
         };
@@ -791,7 +952,14 @@ fn serve_live_http(
         let response = if let Some(response) = static_web_response(&path, web_root.as_deref()) {
             response
         } else if path_only == "/sdo" {
-            sdo_response(&path, dict_for_decode.as_ref())
+            sdo_response_with_override(&path, dict_for_decode.as_ref(), &responders, slave_index)
+        } else if path_only == "/sdo-audit" {
+            let events: Vec<String> = sdo_audit.iter().cloned().collect();
+            control_plane::HttpResponse {
+                status_line: "HTTP/1.1 200 OK",
+                content_type: "application/json; charset=utf-8",
+                body: control_plane::sdo_audit_json(&events),
+            }
         } else if invalid_slave {
             control_plane::not_found_json(&format!(
                 "slave {} 不存在（共 {slave_count} 个从站）",
