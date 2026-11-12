@@ -39,26 +39,35 @@
 - 本机 Windows：`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets
   -- -D warnings` exit 0；`cargo test --workspace` **119 passed**（esc-core 68 /
   esc-node 35 / wire 16）。
-- `python -m py_compile scripts/spikes/uds_master_probe.py` 通过（脚本语法级验证）。
-- **⚠️ 未在 Linux 验证机执行**：VM 目录锁自 20:32 起被另一个 worker 占用
-  （`D:\tokengence.ai\.local\vm.lock`），本班遵守跨项目互斥未使用验证机。因此
-  `--esm-strict` 的 UDS 端到端（`uds-loopback.sh` 第二轮）与双主站回归**留待下一班**；
-  默认路径的代码分支未改变（`esm_preconditions = false` 走原 `handle_control`）。
+- `python -m py_compile scripts/spikes/uds_master_probe.py`、`bash -n uds-loopback.sh` 通过。
+- Linux 验证机（真实 TAP + 两家未修改主站；先把本 commit 的 `git archive` 传到验证机
+  `cargo build --release -p esc-node` 后执行）：
+  - `SOCK=/tmp/ecsim-uds.sock bash scripts/spikes/uds-loopback.sh` → 两轮均通过：
+    默认模式 `OK: ... SM watchdog（10 ms → SAFEOP+ERROR 0x001B → ACK 清错）均通过`；
+    `--esm-strict` 模式 `OK: ... + ESM 前置条件（0x0015/0x0017）均通过`
+    （SM 未配置 → 0x0015/0x0017 + error 位、ACK 清错、配置 SM 后放行）。
+  - 双主站回归（三个脚本 × 默认/strict 两种模式，全 **EXIT=0**）：
+    `minimal-esc-responder.sh`：SOEM `1 slaves found and configured`、IgH 拓扑计算无报错
+    （IgH 无应用路径的 PREOP 也在邮箱 SM 配置之后，strict 同样通过）；
+    `soem-process-data.sh`：`simple_ng` 进入 OP、**1055 轮 WKC=3、无 WKC 不符**；
+    `igh-op-probe.sh`：未修改 IgH ecrt 应用把从站推入 OP
+    （`RESULT al_states=0x08 slaves_responding=1 wc=3`）。
+  - ⇒ 前置条件只依赖"主站先配置 SM 再请求状态"这一真实顺序，**strict 模式对现有双主站
+    冒烟无回归**；默认关闭仅作为保守开关，已有证据可在下一班改为默认开启。
 
 **卡点**
-- 严格模式缺 Linux 端到端证据；`uds-loopback.sh` 第二轮脚本本轮未实跑。
-- 前置条件默认关闭：是否改为默认开启，需双主站全链路回归确认（尤其"无应用时 IgH
-  `ethercat slaves` 显示 PREOP"这条路径是否已配置邮箱 SM）后再定。
+- 前置条件默认仍为关闭（opt-in）：本班只做到"实现 + 验证"，改为默认开启留作下一班
+  独立小步（需同步调整 `uds_master_probe.py` 默认路径与单测夹具）。
 - 0x0015 / 0x0016 的规范区分（邮箱输入/输出方向）未从公开资料核实 → 统一回 0x0015，
   `INVALID_MAILBOX_CONFIGURATION_OUT` 常量保留但不用。
 - 未做 OP 前置条件（0x0018/0x0019、映射类 0x0024/0x0025）。
 
 **下次开工第一件事**
-- 先抢 VM 锁（被占用则等 2 分钟重试）：`SOCK=/tmp/ecsim-uds.sock bash
-  scripts/spikes/uds-loopback.sh`（现含 `--esm-strict` 第二轮）→ 全绿后跑
-  `minimal-esc-responder.sh`、`soem-process-data.sh`、`igh-op-probe.sh` 确认默认路径无回归；
-  然后把 ESM 前置条件改为默认开启（若 IgH 无应用 PREOP 路径也在 SM 配置之后）并更新本条。
-  若 VM 仍被占用：做 **B6 剩余 SII FMMU 类别 0x0028**（先以 SOEM `ecx_siiFMMU`、IgH
+- 把 ESM 前置条件改为**默认开启**（`Responder::new` 里 `esm_preconditions = true`，CLI 增加
+  `--esm-lax` 兼容关闭；同步改 `setup_watchdog_environment` 等测试夹具、`uds_master_probe.py`
+  默认路径先配 SM），然后重跑 `uds-loopback.sh`（改成单轮即可）与三个双主站脚本；
+  证据已在 commit `0ebe484` 的班次记录里（strict 模式六项回归全绿）。
+  若时间有富余：做 **B6 剩余 SII FMMU 类别 0x0028**（先以 SOEM `ecx_siiFMMU`、IgH
   `slave.c` 复核字段语义，不凭记忆猜）。
 
 ---

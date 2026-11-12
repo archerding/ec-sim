@@ -125,9 +125,12 @@ user.email = deepseek-harness@users.noreply.github.com
     SM → error + **0x0017**；未知状态位 → **0x0012**；只检查向上迁移。`esc-node
     --esm-strict` 开启（`Responder::with_esm_preconditions`，**默认关闭**以保持与既有双主站
     冒烟一致）；UDS probe 加 `--strict` 负向/正向断言。测试 **119 passed**。
-    ⚠️ 严格模式端到端与双主站回归因 VM 锁被占用未执行，下一班补。
-  - 待做：OP 前置条件（0x0018/0x0019、映射类 0x0024/0x0025）；前置条件是否默认开启待双主站
-    全链路回归确认；无独立硬件定时器（帧驱动时钟）；0x0410 PDI watchdog 仅保留读写语义。
+    Linux 验证机回归：`uds-loopback.sh` 两轮全通过；`minimal-esc-responder.sh` /
+    `soem-process-data.sh`（OP、1055 轮 WKC=3）/ `igh-op-probe.sh`（IgH OP）在默认与 strict
+    两种模式下 **6/6 全绿** → 前置条件对现有双主站行为无回归，可择机改为默认开启。
+  - 待做：前置条件改为默认开启（同步改测试夹具与 probe 默认路径）；OP 前置条件
+    （0x0018/0x0019、映射类 0x0024/0x0025）；无独立硬件定时器（帧驱动时钟）；
+    0x0410 PDI watchdog 仅保留读写语义。
 - [ ] **B6 SII 生成器**：ESI XML → SII 镜像（含固定区 CRC-8（**word 0x0007**，覆盖 0x0000–0x0006，已实现）、category 链 0x0029/0x0032/0x0033、0xFFFF 终止）。
   - 进度（2026-11-12 19:26 班）：**SM 类别 0x0029 + TxPDO 0x0032 + RxPDO 0x0033 已实现**
     （SM0/SM1 = mailbox、SM2 输出 0x1100、SM3 输入 0x1110；PDO 0x1A00/0x1600，
