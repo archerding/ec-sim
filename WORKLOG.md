@@ -6,6 +6,41 @@
 
 ---
 
+## 2026-11-12 23:52 班（低峰）— B5 子项：**SAFEOP→OP 前置条件**（AL Status Code 0x0018/0x0019/0x002B）
+
+**做了什么**
+- `esc-core::EsmPreconditions` 增加 OP 迁移的前置条件字段：
+  `outputs_declared/outputs_configured`（SII 是否声明 RxPDO / SM2 是否配置）、
+  `inputs_declared/inputs_configured`（TxPDO / SM3）；`failure_for(AlState::Op)`：
+  - 声明了 RxPDO 但 SM2 未配置 → **0x0019** `No valid outputs`；
+  - 声明了 TxPDO 但 SM3 未配置 → **0x0018** `No valid inputs`；
+  - 两者都缺 → **0x002B** `No valid inputs and outputs`。
+- `esc-node::Responder::esm_preconditions()` 由 SII 的 RxPDO/TxPDO 类别是否存在 +
+  SM2/SM3 是否配置（Activate bit0 且 Length>0）推导这些字段。
+- 新增单测：esc-core `checked_esm_rejects_op_without_valid_outputs_or_inputs`
+  （三种缺失组合 + ACK 清错 + 都配置后 OP 通过）；esc-node
+  `esm_strict_rejects_op_until_inputs_configured`（SM0–SM2 配置、缺 SM3 → OP 拒绝且
+  状态保持 SAFEOP，配置 SM3 后 OP 通过）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **166 passed**（esc-core 78 / esc-node 50 / plugin-host 21 + 1 集成 / wire 16）。
+- Linux 验证机回归（默认前置条件检查开启）：
+  - `soem-process-data.sh` **EXIT=0**：SOEM `simple_ng` OP、1055 轮 WKC=3、无 WKC 不符；
+  - `generic-cia402-probe.sh` **EXIT=0**：CiA 402 画像扫描/OP 正常（IgH PREOP + 身份）；
+  - `igh-el2008-op-probe.sh` **EXIT=0**：IgH ecrt 应用 `al_states=0x08`、EL2008 画像 OP。
+
+**卡点**
+- 以"SM 已配置"近似"有效输出/输入"：**未检查 PDO 映射对象（0x1600/0x1A00）的内容**，
+  映射类错误码 **0x0024/0x0025** 未实现（⚠️ 待后续，需更精确语义）。
+- 与既有 0x0015/0x0017 一样是"配置存在性"近似，未覆盖 TI 时序/动态配置错误。
+
+**下次开工第一件事**
+- 实现映射类前置条件 0x0024/0x0025（检查 SM 映射对象内容与 SM 长度一致性），或继续
+  B11（9/11 字节 PDO → CSV、SV660N 手册核对）；B6 FMMU/DC 原文核实仍待条件。
+
+---
+
 ## 2026-11-12 23:47 班（低峰）— B7 验证：**分段 SDO 下载（合成主站）** + 可写配置字符串对象
 
 **做了什么**

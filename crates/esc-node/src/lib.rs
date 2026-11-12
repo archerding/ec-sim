@@ -931,6 +931,14 @@ impl Responder {
             process_data_declared: sii.declares_process_data_sync_managers(),
             process_data_configured: (2..=3)
                 .any(|index| Self::sync_manager_configured(&self.regs, index)),
+            outputs_declared: sii
+                .category_bytes(esc_core::sii::category::RX_PDO)
+                .is_some(),
+            outputs_configured: Self::sync_manager_configured(&self.regs, 2),
+            inputs_declared: sii
+                .category_bytes(esc_core::sii::category::TX_PDO)
+                .is_some(),
+            inputs_configured: Self::sync_manager_configured(&self.regs, 3),
         }
     }
 
@@ -2361,6 +2369,34 @@ mod tests {
             al_status_code(&mut responder),
             esc_core::al_status::UNKNOWN_REQUESTED_STATE
         );
+    }
+
+    #[test]
+    fn esm_strict_rejects_op_until_inputs_configured() {
+        let mut responder = Responder::default().with_esm_preconditions(true);
+        configure_sync_managers(&mut responder, 3); // SM0/SM1/SM2，缺 SM3
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x02]);
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x04]);
+        assert_eq!(al_status_byte(&mut responder) & 0x0F, 0x04);
+        // SII 声明了 TxPDO 但 SM3 未配置 → OP 被拒绝，AL Status Code 0x0018。
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x08]);
+        let status = al_status_byte(&mut responder);
+        assert_eq!(status & 0x0F, 0x04, "前置条件失败时状态保持 SAFEOP");
+        assert_eq!(status & 0x10, 0x10, "error 位必须置位");
+        assert_eq!(
+            al_status_code(&mut responder),
+            esc_core::al_status::NO_VALID_INPUTS
+        );
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x14]); // SAFEOP|ACK
+        assert_eq!(al_status_byte(&mut responder) & 0x10, 0x00);
+        configure_sync_managers(&mut responder, 4);
+        write_regs(&mut responder, reg::AL_CONTROL, vec![0x08]);
+        assert_eq!(
+            al_status_byte(&mut responder) & 0x0F,
+            0x08,
+            "SM3 配置后 OP 通过"
+        );
+        assert_eq!(al_status_code(&mut responder), 0);
     }
 
     #[test]

@@ -192,6 +192,14 @@ pub struct EsmPreconditions {
     pub process_data_declared: bool,
     /// SM2/SM3 中是否至少有一个已配置。
     pub process_data_configured: bool,
+    /// SII 是否声明 RxPDO（输出过程数据）。
+    pub outputs_declared: bool,
+    /// SM2（输出过程数据）是否已配置：activate bit0 且 length > 0。
+    pub outputs_configured: bool,
+    /// SII 是否声明 TxPDO（输入过程数据）。
+    pub inputs_declared: bool,
+    /// SM3（输入过程数据）是否已配置：activate bit0 且 length > 0。
+    pub inputs_configured: bool,
 }
 
 impl EsmPreconditions {
@@ -207,6 +215,23 @@ impl EsmPreconditions {
             }
             AlState::SafeOp if self.process_data_declared && !self.process_data_configured => {
                 Some(al_status::INVALID_SYNC_MANAGER_CONFIGURATION)
+            }
+            // SAFEOP → OP：按 SII 声明的方向检查 SM2/SM3 是否可用（⚠️ 以 SM 配置近似
+            // "有效输出/输入"，尚未检查 PDO 映射对象 0x1600/0x1A00 的内容，0x0024/0x0025
+            // 的映射校验待后续）。
+            AlState::Op
+                if self.outputs_declared
+                    && !self.outputs_configured
+                    && self.inputs_declared
+                    && !self.inputs_configured =>
+            {
+                Some(al_status::NO_VALID_INPUTS_AND_OUTPUTS)
+            }
+            AlState::Op if self.outputs_declared && !self.outputs_configured => {
+                Some(al_status::NO_VALID_OUTPUTS)
+            }
+            AlState::Op if self.inputs_declared && !self.inputs_configured => {
+                Some(al_status::NO_VALID_INPUTS)
             }
             _ => None,
         }
@@ -555,7 +580,61 @@ mod tests {
             mailbox_in_configured: true,
             process_data_declared: true,
             process_data_configured: true,
+            outputs_declared: true,
+            outputs_configured: true,
+            inputs_declared: true,
+            inputs_configured: true,
         }
+    }
+
+    #[test]
+    fn checked_esm_rejects_op_without_valid_outputs_or_inputs() {
+        // SAFEOP → OP：SII 声明了 RxPDO 但 SM2 未配置 → 0x0019。
+        let mut al = EscAl {
+            state: AlState::SafeOp,
+            error: false,
+            status_code: 0,
+        };
+        let no_outputs = EsmPreconditions {
+            outputs_configured: false,
+            inputs_configured: true,
+            ..configured_preconditions()
+        };
+        assert!(al.handle_control_checked(AlControl::from_byte(0x08), &no_outputs));
+        assert_eq!(al.state, AlState::SafeOp, "前置条件失败时状态保持 SAFEOP");
+        assert!(al.error);
+        assert_eq!(al.status_code, al_status::NO_VALID_OUTPUTS);
+        assert!(al.handle_control_checked(AlControl::from_byte(0x18), &no_outputs));
+        assert!(!al.error, "ACK 清错");
+        assert_eq!(al.status_code, al_status::NO_ERROR);
+
+        // SII 声明了 TxPDO 但 SM3 未配置 → 0x0018。
+        let no_inputs = EsmPreconditions {
+            outputs_configured: true,
+            inputs_configured: false,
+            ..configured_preconditions()
+        };
+        assert!(al.handle_control_checked(AlControl::from_byte(0x08), &no_inputs));
+        assert_eq!(al.status_code, al_status::NO_VALID_INPUTS);
+        assert!(al.handle_control_checked(AlControl::from_byte(0x18), &no_inputs));
+        assert!(!al.error);
+
+        // 两者都缺失 → 0x002B。
+        let neither = EsmPreconditions {
+            outputs_configured: false,
+            inputs_configured: false,
+            ..configured_preconditions()
+        };
+        assert!(al.handle_control_checked(AlControl::from_byte(0x08), &neither));
+        assert_eq!(al.status_code, al_status::NO_VALID_INPUTS_AND_OUTPUTS);
+        assert!(al.handle_control_checked(AlControl::from_byte(0x18), &neither));
+
+        // 都配置后 OP 通过。
+        let both = configured_preconditions();
+        assert!(al.handle_control_checked(AlControl::from_byte(0x08), &both));
+        assert_eq!(al.state, AlState::Op);
+        assert!(!al.error);
+        assert_eq!(al.status_code, al_status::NO_ERROR);
     }
 
     #[test]

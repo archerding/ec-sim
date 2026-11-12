@@ -133,7 +133,14 @@ user.email = deepseek-harness@users.noreply.github.com
     测试夹具与 `uds_master_probe.py` 默认路径同步（默认断言 0x0015/0x0017 拒绝路径再放行）。
     测试 **119 passed**；Linux 验证机 `uds-loopback.sh` 两轮 + 三个双主站脚本在默认/lax
     两种模式下 **6/6 全绿**（SOEM OP 1055 轮 WKC=3、IgH ecrt OP `al_states=0x08 wc=3`）。
-  - 待做：OP 前置条件（0x0018/0x0019、映射类 0x0024/0x0025）；SM 配置合法性校验
+  - 进度（2026-11-12 23:52 班）：**SAFEOP→OP 前置条件已实现**——`EsmPreconditions` 增加
+    `outputs_declared/outputs_configured`（RxPDO/SM2）与 `inputs_declared/inputs_configured`
+    （TxPDO/SM3）；`failure_for(Op)` 返回 **0x0019**（无有效输出）/ **0x0018**（无有效输入）/
+    两者都缺 **0x002B**；`esc-node` 由 SII 类别 + SM2/SM3 配置推导。测试 **166 passed**；
+    验证机回归 `soem-process-data.sh`（OP 1055 轮 WKC=3）、`generic-cia402-probe.sh`、
+    `igh-el2008-op-probe.sh`（IgH OP）全部 EXIT=0。
+    ⚠️ 以 SM 配置近似"有效输出/输入"，未检查映射对象内容（0x0024/0x0025 待实现）。
+  - 待做：映射类前置条件 0x0024/0x0025（映射对象内容与 SM 长度一致性）；SM 配置合法性校验
     （地址越界/区间重叠/类型方向）；无独立硬件定时器（帧驱动时钟）；0x0410 PDI watchdog
     仅保留读写语义。
 - [ ] **B6 SII 生成器**：ESI XML → SII 镜像（含固定区 CRC-8（**word 0x0007**，覆盖 0x0000–0x0006，已实现）、category 链 0x0029/0x0032/0x0033、0xFFFF 终止）。
