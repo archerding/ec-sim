@@ -10,15 +10,29 @@
 //! | 0x07 | Logical End Bit（低 3 位） | 读写 |
 //! | 0x08–0x09 | Physical Start Address | 读写 |
 //! | 0x0A | Physical Start Bit（低 3 位） | 读写 |
-//! | 0x0B | Type（bit0 read、bit1 write） | **只读** |
+//! | 0x0B | Type（bit0 read、bit1 write） | 读写（主站配置） |
 //! | 0x0C | Activate（bit0） | 读写 |
 //! | 0x0D–0x0F | 保留（0） | **只读** |
 //!
-//! 主站在 `PREOP → SAFEOP` 之前写入 FMMU0/1（逻辑地址 → 物理地址映射，本模拟器的物理侧
-//! 就是 4 KiB 寄存器/DL-user 内存）；本模块只实现寄存器语义与位域解码，**不执行**实际
-//! 逻辑寻址读写（Lrd/Lwr/Lrw 需要按 FMMU 查表搬运，属 B5 后续子步骤 / B8）。
+//! **Type 是主站写入的配置字节**（不是 ESC 自述信息）：IgH 1.6.13 `master/fmmu_config.c:
+//! ec_fmmu_config_page()` 写 `data + 11 = 0x01/0x02`（输入/输出方向）；SOEM
+//! `src/ec_config.c: ecx_config_map_group()` 整块写 `ec_fmmut` 结构（含 `FMMUtype`）。
+//! 若把 Type 当只读丢弃，方向位恒为 0，逻辑寻址永远不会命中——2026-11-12 19:19 班修正
+//! 了上一班次"Type 只读"的错误假设。
 //!
-//! ⚠️ 尚未实现：FMMU 命中判定与逻辑→物理搬运、位级映射（bit 偏移）、FMMU 数量上限校验。
+//! 本模块同时承担**逻辑→物理翻译**（[`Fmmu::translate`]）：给定 datagram 的逻辑地址区间
+//! `[address, address + len)`，返回它与本 FMMU 逻辑区间 `[logical_start_address,
+//! logical_start_address + length)` 的**字节对齐**交集，以及交集的物理侧起始地址。
+//! 数据搬运本身由 [`crate::memory::DlUserMemory`] 完成（物理侧 = DL 用户内存 0x1000–0xFFFF）。
+//!
+//! 字节对齐依据（只读参考，未复制代码）：
+//! - IgH 1.6.13 `master/fmmu_config.c: ec_fmmu_config_page()` 恒写逻辑起始位 `0x00`、
+//!   逻辑结束位 `0x07`、物理起始位 `0x00`；
+//! - SOEM `src/ec_config.c: ecx_config_map_group()` 的默认（字节）映射同样用 `BitPos 0/7`。
+//!
+//! ⚠️ 尚未实现：位级映射（任意 logical/physical bit 偏移，需整帧位移搬运）、FMMU 数量上限
+//! 校验（主站配置超过 8 个实体时的行为）、FMMU 物理地址指向寄存器区（0x0000–0x0FFF）
+//! 的语义（真实 ESC 允许，本模拟器当前只在 DL 用户内存内搬运）。
 
 use crate::Registers;
 
@@ -57,14 +71,16 @@ pub fn fmmu_address(index: u8) -> Option<u16> {
     Some(FMMU_ADDRESS + u16::from(index) * FMMU_SIZE)
 }
 
-/// 该寄存器地址是否是 FMMU 区的只读字节（Type 与保留字节）。
+/// 该寄存器地址是否是 FMMU 区的只读字节（保留字节 0x0D–0x0F）。
+///
+/// Type（0x0B）由主站配置，可写（见模块文档）。
 #[must_use]
 pub fn is_read_only_byte(address: u16) -> bool {
     if !(FMMU_ADDRESS..FMMU_ADDRESS + u16::from(FMMU_MAX) * FMMU_SIZE).contains(&address) {
         return false;
     }
     let offset = (address - FMMU_ADDRESS) % FMMU_SIZE;
-    offset == OFFSET_TYPE || offset >= OFFSET_TYPE + 2
+    offset >= OFFSET_TYPE + 2
 }
 
 /// 一个 FMMU 实体的寄存器值。
@@ -82,7 +98,7 @@ pub struct Fmmu {
     pub physical_start_address: u16,
     /// 0x0A：物理起始位（低 3 位有效）。
     pub physical_start_bit: u8,
-    /// 0x0B：Type（bit0 read、bit1 write，只读）。
+    /// 0x0B：Type（bit0 read、bit1 write，主站配置，可写）。
     pub fmmu_type: u8,
     /// 0x0C：Activate（bit0）。
     pub activate: u8,
@@ -147,6 +163,64 @@ impl Fmmu {
     pub fn can_write(self) -> bool {
         self.fmmu_type & 0x02 != 0
     }
+
+    /// 逻辑区间终点（不含）。长度为 0 或 32 位地址溢出返回 [`None`]。
+    #[must_use]
+    pub fn logical_end(self) -> Option<u32> {
+        if self.length == 0 {
+            return None;
+        }
+        self.logical_start_address
+            .checked_add(u32::from(self.length))
+    }
+
+    /// 是否字节对齐映射：逻辑起始位 `0`、逻辑结束位 `7`、物理起始位 `0`。
+    ///
+    /// 两家主站的默认映射都满足（见模块文档）。非字节对齐的位级映射尚未实现。
+    #[must_use]
+    pub fn is_byte_aligned(self) -> bool {
+        self.logical_start_bit == 0 && self.logical_end_bit == 7 && self.physical_start_bit == 0
+    }
+
+    /// 计算逻辑地址区间 `[logical_address, logical_address + len)` 与本 FMMU 映射区间的
+    /// **字节对齐**交集。
+    ///
+    /// 返回 [`None`] 表示本 datagram 未命中此 FMMU（未激活、非字节对齐、长度为 0、
+    /// 区间不相交、32 位地址溢出，或物理地址越过 16 位地址空间）。
+    #[must_use]
+    pub fn translate(self, logical_address: u32, len: usize) -> Option<Translation> {
+        if !self.is_enabled() || !self.is_byte_aligned() || len == 0 {
+            return None;
+        }
+        let fmmu_end = self.logical_end()?;
+        let datagram_len = u32::try_from(len).ok()?;
+        let datagram_end = logical_address.checked_add(datagram_len)?;
+        let start = logical_address.max(self.logical_start_address);
+        let end = datagram_end.min(fmmu_end);
+        if start >= end {
+            return None;
+        }
+        let datagram_offset = usize::try_from(start.checked_sub(logical_address)?).ok()?;
+        let mapped_len = usize::try_from(end.checked_sub(start)?).ok()?;
+        let physical_start = u32::from(self.physical_start_address)
+            .checked_add(start - self.logical_start_address)?;
+        Some(Translation {
+            datagram_offset,
+            physical_address: u16::try_from(physical_start).ok()?,
+            len: mapped_len,
+        })
+    }
+}
+
+/// 逻辑→物理翻译结果：datagram 数据区里的一段连续字节映射到物理侧的一段连续地址。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Translation {
+    /// 该段在 datagram 数据区中的起始偏移。
+    pub datagram_offset: usize,
+    /// 该段在物理侧（DL 用户内存）的起始地址。
+    pub physical_address: u16,
+    /// 该段字节数（保证 > 0）。
+    pub len: usize,
 }
 
 #[cfg(test)]
@@ -162,12 +236,15 @@ mod tests {
     }
 
     #[test]
-    fn read_only_bytes_are_type_and_reserved() {
+    fn read_only_bytes_are_reserved_only_type_is_configurable() {
         for index in 0..FMMU_MAX {
             let base = fmmu_address(index).expect("in range");
             assert!(!is_read_only_byte(base + OFFSET_LOGICAL_START_ADDRESS));
             assert!(!is_read_only_byte(base + OFFSET_ACTIVATE));
-            assert!(is_read_only_byte(base + OFFSET_TYPE));
+            assert!(
+                !is_read_only_byte(base + OFFSET_TYPE),
+                "Type 由主站写入方向位，必须可写"
+            );
             assert!(
                 !is_read_only_byte(base + OFFSET_TYPE + 1),
                 "0x0C 是 Activate，可写"
@@ -212,7 +289,124 @@ mod tests {
     }
 
     #[test]
-    fn registers_reject_master_writes_to_type_and_reserved_bytes() {
+    fn translate_maps_full_datagram_into_physical_memory() {
+        // IgH 为 8 字节输出 PDO 写入的典型实体：逻辑 0x00001000 → 物理 0x1000。
+        let fmmu = Fmmu {
+            logical_start_address: 0x0000_1000,
+            length: 8,
+            logical_start_bit: 0,
+            logical_end_bit: 7,
+            physical_start_address: 0x1000,
+            physical_start_bit: 0,
+            fmmu_type: 0x02,
+            activate: 0x01,
+        };
+        assert_eq!(fmmu.logical_end(), Some(0x0000_1008));
+        assert_eq!(
+            fmmu.translate(0x0000_1000, 8),
+            Some(Translation {
+                datagram_offset: 0,
+                physical_address: 0x1000,
+                len: 8,
+            })
+        );
+    }
+
+    #[test]
+    fn translate_returns_only_the_intersecting_bytes() {
+        let fmmu = Fmmu {
+            logical_start_address: 0x0000_1000,
+            length: 8,
+            logical_end_bit: 7,
+            physical_start_address: 0x1000,
+            fmmu_type: 0x03,
+            activate: 0x01,
+            ..Fmmu::default()
+        };
+        // datagram 从 FMMU 区间前 4 字节开始、长 16 字节：只映射后 4 字节。
+        assert_eq!(
+            fmmu.translate(0x0000_0FFC, 16),
+            Some(Translation {
+                datagram_offset: 4,
+                physical_address: 0x1000,
+                len: 8,
+            })
+        );
+        // datagram 落在区间尾部：偏移 4 起 8 字节中只命中 4 字节。
+        assert_eq!(
+            fmmu.translate(0x0000_1004, 8),
+            Some(Translation {
+                datagram_offset: 0,
+                physical_address: 0x1004,
+                len: 4,
+            })
+        );
+    }
+
+    #[test]
+    fn translate_rejects_inactive_misaligned_or_non_intersecting() {
+        let base = Fmmu {
+            logical_start_address: 0x0000_1000,
+            length: 8,
+            logical_end_bit: 7,
+            physical_start_address: 0x1000,
+            activate: 0x01,
+            fmmu_type: 0x03,
+            ..Fmmu::default()
+        };
+        // 未激活。
+        let inactive = Fmmu {
+            activate: 0,
+            ..base
+        };
+        assert_eq!(inactive.translate(0x1000, 8), None);
+        // 位级映射（逻辑起止位不是 0/7）：本阶段未实现，按未命中处理。
+        let misaligned = Fmmu {
+            logical_start_bit: 3,
+            logical_end_bit: 6,
+            ..base
+        };
+        assert!(!misaligned.is_byte_aligned());
+        assert_eq!(misaligned.translate(0x1000, 8), None);
+        // 长度为 0 / datagram 长度为 0 / 区间不相交。
+        assert_eq!(Fmmu { length: 0, ..base }.translate(0x1000, 8), None);
+        assert_eq!(base.translate(0x1000, 0), None);
+        assert_eq!(base.translate(0x0000_2000, 8), None);
+        // 32 位逻辑地址溢出。
+        let overflow = Fmmu {
+            logical_start_address: 0xFFFF_FFF0,
+            length: 0x20,
+            ..base
+        };
+        assert_eq!(overflow.logical_end(), None);
+        assert_eq!(overflow.translate(0xFFFF_FFF0, 0x20), None);
+    }
+
+    #[test]
+    fn translate_rejects_physical_address_overflow() {
+        // 物理起始 0xFFF8 + 逻辑偏移 8 → 0x10000，越过 16 位物理地址空间。
+        let fmmu = Fmmu {
+            logical_start_address: 0x0000_1000,
+            length: 16,
+            logical_end_bit: 7,
+            physical_start_address: 0xFFF8,
+            fmmu_type: 0x03,
+            activate: 0x01,
+            ..Fmmu::default()
+        };
+        assert_eq!(
+            fmmu.translate(0x1000, 8),
+            Some(Translation {
+                datagram_offset: 0,
+                physical_address: 0xFFF8,
+                len: 8,
+            })
+        );
+        assert_eq!(fmmu.translate(0x1008, 8), None);
+    }
+
+    #[test]
+    fn registers_store_master_fmmu_page_writes_except_reserved_bytes() {
         let mut registers = Registers::new();
         let base = fmmu_address(0).expect("in range");
         let master = Fmmu {
@@ -222,7 +416,7 @@ mod tests {
             logical_end_bit: 7,
             physical_start_address: 0x1200,
             physical_start_bit: 0,
-            fmmu_type: 0xFF,
+            fmmu_type: 0x02, // 主站写的输出方向位
             activate: 0x01,
         };
         for (i, byte) in master.to_bytes().iter().enumerate() {
@@ -233,7 +427,9 @@ mod tests {
         assert_eq!(stored.length, 8);
         assert_eq!(stored.physical_start_address, 0x1200);
         assert_eq!(stored.activate, 0x01);
-        assert_eq!(stored.fmmu_type, 0, "Type 只读");
+        assert_eq!(stored.fmmu_type, 0x02, "Type 由主站配置");
+        assert!(stored.can_write());
+        assert!(!stored.can_read());
         for offset in 0x0Du16..=0x0F {
             assert_eq!(registers.read_u8(base + offset), Some(0), "保留字节只读");
         }

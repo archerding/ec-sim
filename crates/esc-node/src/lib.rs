@@ -10,11 +10,14 @@
 //! - `BRD/BWR/BRW`：广播，命中本从站；
 //! - `APRD/APWR/APRW`：收到 ADP == 0 的从站命中（见 [`wire::auto_increment_step`]）；
 //! - `FPRD/FPWR/FPRW`：配置站地址或站别名匹配才命中；
-//! - `LRD/LWR/LRW`：需要 FMMU，本阶段未实现 → 不命中（WKC 不增）。
+//! - `LRD/LWR/LRW`：按已激活的 FMMU 命中（[`esc_core::fmmu::Fmmu::translate`]），在
+//!   逻辑地址与 DL 用户内存（0x1000–0xFFFF）之间搬运字节；WKC 按"读命中 +1、写命中 +1"。
 //!
 //! 命中后按命令的读/写属性回填数据并累加 WKC；未命中的 datagram 原样保留（WKC 不变）。
 
 use esc_core::eeprom::EepromInterface;
+use esc_core::fmmu::{Fmmu, FMMU_MAX};
+use esc_core::memory::DlUserMemory;
 use esc_core::sii::SiiImage;
 use esc_core::{reg, AlControl, EscAl, Registers};
 use wire::{
@@ -96,6 +99,7 @@ pub struct Responder {
     regs: Registers,
     al: EscAl,
     eeprom: EepromInterface,
+    memory: DlUserMemory,
     stats: Stats,
 }
 
@@ -118,6 +122,7 @@ impl Responder {
             regs,
             al,
             eeprom: EepromInterface::new(sii),
+            memory: DlUserMemory::new(),
             stats: Stats::default(),
         }
     }
@@ -172,8 +177,21 @@ impl Responder {
                 break;
             }
 
-            if self.matches(command, adp) {
-                self.stats.datagrams_hit = self.stats.datagrams_hit.saturating_add(1);
+            let increment = if Self::is_logical(command) {
+                // 逻辑寻址的 4 字节地址是 32 位逻辑地址（小端，跨 ADP/ADO 两个字段）。
+                let logical_address = u32::from_le_bytes([
+                    reply[offset + 2],
+                    reply[offset + 3],
+                    reply[offset + 4],
+                    reply[offset + 5],
+                ]);
+                let (read_hit, write_hit) = self.process_logical(
+                    command,
+                    logical_address,
+                    &mut reply[data_start..wkc_offset],
+                );
+                u16::from(read_hit) + u16::from(write_hit)
+            } else if self.matches(command, adp) {
                 if command.is_read() {
                     let bytes = self.read_registers(register_offset, data_len);
                     reply[data_start..wkc_offset].copy_from_slice(&bytes);
@@ -182,8 +200,15 @@ impl Responder {
                     let data = reply[data_start..wkc_offset].to_vec();
                     self.write_registers(register_offset, &data);
                 }
+                command.wkc_increment()
+            } else {
+                0
+            };
+
+            if increment > 0 {
+                self.stats.datagrams_hit = self.stats.datagrams_hit.saturating_add(1);
                 let wkc = u16::from_le_bytes([reply[wkc_offset], reply[wkc_offset + 1]]);
-                let updated = wkc.wrapping_add(command.wkc_increment());
+                let updated = wkc.wrapping_add(increment);
                 reply[wkc_offset..wkc_offset + 2].copy_from_slice(&updated.to_le_bytes());
             }
 
@@ -224,9 +249,61 @@ impl Responder {
                 let alias = self.regs.read_u16(reg::STATION_ALIAS).unwrap_or(0);
                 matches_configured_address(adp, self.station_address(), alias)
             }
-            // 逻辑寻址需要 FMMU，本阶段不实现。
+            // 逻辑寻址由 [`Self::process_logical`] 单独处理（按 FMMU 命中）。
             Command::Lrd | Command::Lwr | Command::Lrw => false,
         }
+    }
+
+    /// 是否为逻辑寻址命令（LRD/LWR/LRW）。
+    const fn is_logical(command: Command) -> bool {
+        matches!(command, Command::Lrd | Command::Lwr | Command::Lrw)
+    }
+
+    /// 处理一条逻辑寻址 datagram：按 FMMU 命中把数据搬进/搬出 DL 用户内存。
+    ///
+    /// 命中条件（[`Fmmu::translate`]）：FMMU 已激活、字节对齐、datagram 逻辑区间与
+    /// FMMU 逻辑区间有交集，且物理侧落在 DL 用户内存内；读/写方向还必须分别满足
+    /// FMMU 的 Type 位（bit0 = 可读、bit1 = 可写）。
+    ///
+    /// 返回 `(读命中, 写命中)`，WKC 由调用方累加（读 +1、写 +1；LRW 双向 = +2）。
+    fn process_logical(
+        &mut self,
+        command: Command,
+        logical_address: u32,
+        data: &mut [u8],
+    ) -> (bool, bool) {
+        let (mut read_hit, mut write_hit) = (false, false);
+        if data.is_empty() {
+            return (read_hit, write_hit);
+        }
+        for index in 0..FMMU_MAX {
+            let Some(fmmu) = Fmmu::read(&self.regs, index) else {
+                continue;
+            };
+            let Some(translation) = fmmu.translate(logical_address, data.len()) else {
+                continue;
+            };
+            let start = translation.datagram_offset;
+            let end = start + translation.len;
+            if command.is_read() && fmmu.can_read() {
+                if let Some(bytes) = self
+                    .memory
+                    .read(translation.physical_address, translation.len)
+                {
+                    data[start..end].copy_from_slice(&bytes);
+                    read_hit = true;
+                }
+            }
+            if command.is_write()
+                && fmmu.can_write()
+                && self
+                    .memory
+                    .write(translation.physical_address, &data[start..end])
+            {
+                write_hit = true;
+            }
+        }
+        (read_hit, write_hit)
     }
 
     fn read_registers(&self, address: u16, len: usize) -> Vec<u8> {
@@ -664,10 +741,10 @@ mod tests {
     }
 
     #[test]
-    fn master_fmmu_config_is_stored_but_type_is_read_only() {
+    fn master_fmmu_config_is_stored_including_type() {
         use esc_core::fmmu::Fmmu;
 
-        // 主站按 16 字节块整块写 FMMU0；Type 与保留字节只读。
+        // 主站按 16 字节块整块写 FMMU0（IgH fmmu_config.c 的字段顺序）；Type 是方向位，可写。
         let mut responder = Responder::default();
         let master = Fmmu {
             logical_start_address: 0x0000_1000,
@@ -676,7 +753,7 @@ mod tests {
             logical_end_bit: 7,
             physical_start_address: 0x1200,
             physical_start_bit: 0,
-            fmmu_type: 0x03,
+            fmmu_type: 0x02,
             activate: 0x01,
         };
         let write = request(&[DatagramData::auto_increment(
@@ -709,7 +786,211 @@ mod tests {
         assert_eq!(stored.logical_end_bit, 7);
         assert_eq!(stored.physical_start_address, 0x1200);
         assert_eq!(stored.activate, 0x01);
-        assert_eq!(stored.fmmu_type, 0, "Type 只读");
+        assert_eq!(stored.fmmu_type, 0x02, "Type 由主站配置");
+        assert!(stored.can_write() && !stored.can_read());
         assert_eq!(&bytes[0x0D..0x10], &[0, 0, 0], "保留字节只读");
+    }
+
+    /// 构造一页 FMMU 寄存器内容（与 IgH `ec_fmmu_config_page()` 相同的字段值：
+    /// 逻辑起始位 0、逻辑结束位 7、物理起始位 0）。
+    fn fmmu_page(
+        logical_start: u32,
+        len: u16,
+        physical_start: u16,
+        fmmu_type: u8,
+        activate: u8,
+    ) -> Vec<u8> {
+        esc_core::fmmu::Fmmu {
+            logical_start_address: logical_start,
+            length: len,
+            logical_start_bit: 0,
+            logical_end_bit: 7,
+            physical_start_address: physical_start,
+            physical_start_bit: 0,
+            fmmu_type,
+            activate,
+        }
+        .to_bytes()
+        .to_vec()
+    }
+
+    /// 用 APWR 整块写第 `index` 个 FMMU（主站配置 FMMU 的真实做法）。
+    fn configure_fmmu(responder: &mut Responder, index: u8, page: Vec<u8>) {
+        let address = esc_core::fmmu::fmmu_address(index).expect("fmmu in range");
+        let frame = request(&[DatagramData::auto_increment(
+            Command::Apwr,
+            1,
+            0,
+            address,
+            page,
+        )]);
+        responder
+            .handle_frame(&frame, DEFAULT_SIM_MAC)
+            .expect("reply");
+    }
+
+    fn logical_frame(command: Command, address: u32, data: Vec<u8>) -> Vec<u8> {
+        request(&[DatagramData::logical(command, 1, address, data)])
+    }
+
+    #[test]
+    fn logical_write_then_read_roundtrip_through_fmmus() {
+        // 输出（写）FMMU0 与输入（读）FMMU1 映射同一物理区，模拟 IgH 的 PDO 方向配置。
+        let mut responder = Responder::default();
+        configure_fmmu(
+            &mut responder,
+            0,
+            fmmu_page(0x0000_1000, 8, 0x1000, 0x02, 0x01),
+        );
+        configure_fmmu(
+            &mut responder,
+            1,
+            fmmu_page(0x0000_1000, 8, 0x1000, 0x01, 0x01),
+        );
+
+        let payload = vec![0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
+        let write = logical_frame(Command::Lwr, 0x0000_1000, payload.clone());
+        let reply = responder
+            .handle_frame(&write, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let (wkc, _) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 8);
+        assert_eq!(wkc, 1, "写命中 +1");
+
+        let read = logical_frame(Command::Lrd, 0x0000_1000, vec![0u8; 8]);
+        let reply = responder
+            .handle_frame(&read, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let (wkc, data) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 8);
+        assert_eq!(wkc, 1, "读命中 +1");
+        assert_eq!(data, payload, "逻辑写进了 DL 用户内存，逻辑读同一物理区");
+    }
+
+    #[test]
+    fn logical_datagram_misses_without_active_fmmu() {
+        let mut responder = Responder::default();
+        // 配置了 FMMU 但未激活：不得命中，WKC 不增。
+        configure_fmmu(
+            &mut responder,
+            0,
+            fmmu_page(0x0000_1000, 8, 0x1000, 0x03, 0x00),
+        );
+        let write = logical_frame(Command::Lwr, 0x0000_1000, vec![1u8; 8]);
+        let reply = responder
+            .handle_frame(&write, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let (wkc, _) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 8);
+        assert_eq!(wkc, 0, "未激活的 FMMU 不命中");
+
+        // 逻辑地址不在任何 FMMU 区间内：同样不命中。
+        let read = logical_frame(Command::Lrd, 0x0000_2000, vec![0u8; 8]);
+        let reply = responder
+            .handle_frame(&read, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let (wkc, _) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 8);
+        assert_eq!(wkc, 0);
+        // 只有配置 FMMU 的 APWR 命中过一次，两条逻辑 datagram 都没有命中。
+        assert_eq!(responder.stats().datagrams_hit, 1);
+    }
+
+    #[test]
+    fn lrd_requires_read_direction_bit() {
+        // 只配置写方向 FMMU（IgH 的 output FMMU 写 Type=0x02）：LRD 不命中。
+        let mut responder = Responder::default();
+        configure_fmmu(
+            &mut responder,
+            0,
+            fmmu_page(0x0000_1000, 8, 0x1000, 0x02, 0x01),
+        );
+        let read = logical_frame(Command::Lrd, 0x0000_1000, vec![0u8; 8]);
+        let reply = responder
+            .handle_frame(&read, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let (wkc, _) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 8);
+        assert_eq!(wkc, 0, "写方向 FMMU 不满足读命中");
+    }
+
+    #[test]
+    fn lrw_increments_wkc_per_processed_direction() {
+        let mut responder = Responder::default();
+        // 只有写方向 FMMU：LRW 的写部分命中 → WKC 1。
+        configure_fmmu(
+            &mut responder,
+            0,
+            fmmu_page(0x0000_1000, 8, 0x1000, 0x02, 0x01),
+        );
+        let lrw = logical_frame(Command::Lrw, 0x0000_1000, vec![0xA5u8; 8]);
+        let reply = responder
+            .handle_frame(&lrw, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let (wkc, _) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 8);
+        assert_eq!(wkc, 1, "写方向命中 +1");
+
+        // 再加读方向 FMMU：LRW 读写都命中 → WKC 2，且读到同一物理区。
+        configure_fmmu(
+            &mut responder,
+            1,
+            fmmu_page(0x0000_1000, 8, 0x1000, 0x01, 0x01),
+        );
+        let lrw = logical_frame(Command::Lrw, 0x0000_1000, vec![0x5Au8; 8]);
+        let reply = responder
+            .handle_frame(&lrw, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let (wkc, data) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 8);
+        assert_eq!(wkc, 2, "读写都命中 +2");
+        assert_eq!(data, vec![0x5Au8; 8]);
+    }
+
+    #[test]
+    fn logical_write_maps_only_the_intersection_with_fmmu_range() {
+        // FMMU：逻辑 0x1000..0x1008 → 物理 0x1000。datagram 逻辑 0x0FFC 起 12 字节，
+        // 只有后 8 字节落在 FMMU 区间内 → 写到物理 0x1000..0x1008。
+        let mut responder = Responder::default();
+        configure_fmmu(
+            &mut responder,
+            0,
+            fmmu_page(0x0000_1000, 8, 0x1000, 0x02, 0x01),
+        );
+        configure_fmmu(
+            &mut responder,
+            1,
+            fmmu_page(0x0000_1000, 8, 0x1000, 0x01, 0x01),
+        );
+
+        let payload: Vec<u8> = (0u8..12).map(|i| 0xA0 + i).collect();
+        let write = logical_frame(Command::Lwr, 0x0000_0FFC, payload.clone());
+        let reply = responder
+            .handle_frame(&write, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let (wkc, _) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 12);
+        assert_eq!(wkc, 1, "部分重叠仍算一次命中");
+
+        let read = logical_frame(Command::Lrd, 0x0000_1000, vec![0u8; 8]);
+        let reply = responder
+            .handle_frame(&read, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let (wkc, data) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 8);
+        assert_eq!(wkc, 1);
+        assert_eq!(data, payload[4..].to_vec(), "只搬运交集的 8 字节");
+    }
+
+    #[test]
+    fn logical_read_leaves_unmapped_bytes_untouched() {
+        // datagram 逻辑 0x0FFC 起 12 字节，FMMU 只覆盖偏移 4..12；前 4 字节保持请求里的值。
+        let mut responder = Responder::default();
+        configure_fmmu(
+            &mut responder,
+            0,
+            fmmu_page(0x0000_1000, 8, 0x1000, 0x01, 0x01),
+        );
+        let mut requested = vec![0xFFu8; 12];
+        requested[4..].fill(0);
+        let read = logical_frame(Command::Lrd, 0x0000_0FFC, requested);
+        let reply = responder
+            .handle_frame(&read, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let (wkc, data) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 12);
+        assert_eq!(wkc, 1);
+        assert_eq!(&data[..4], &[0xFF; 4], "未映射字节不被覆盖");
+        assert_eq!(&data[4..], &[0u8; 8], "DL 用户内存初值为 0");
     }
 }

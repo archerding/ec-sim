@@ -94,8 +94,13 @@ user.email = deepseek-harness@users.noreply.github.com
   - 进度（2026-11-12 19:02 班）：寄存器阵列/AL 状态机/EEPROM 接口已完成；**SM（0x0800–0x083F）
     与 FMMU（0x0600–0x067F）寄存器块已实现**（解码/编码、Status/PDI Control/Type/保留字节只读语义、
     主站整块写后回读；+8 条单测 +2 条 datagram 路径集成测试）。
-  - 待做：FMMU 逻辑→物理搬运（Lrd/Lwr/Lrw 最小闭环）、SM 触发的 mailbox 握手/watchdog、
-    AL SAFEOP/OP 的 ESM 前置条件检查。
+  - 进度（2026-11-12 19:19 班）：**FMMU 逻辑→物理搬运最小闭环已完成**——LRD/LWR/LRW 按已激活
+    FMMU 命中（字节对齐、Type 方向位、部分重叠），在逻辑地址与 `DlUserMemory`（0x1000–0xFFFF）
+    之间搬运；WKC 读/写各 +1。同班修正了 19:02 班"FMMU Type（0x0B）只读"的错误假设（两主站都会写
+    方向位），只读的只有保留字节 0x0D–0x0F。证据：`crates/esc-core/src/{fmmu,memory}.rs`、
+    `crates/esc-node/src/lib.rs`，测试 79 passed。
+  - 待做：SM 触发的 mailbox 握手/watchdog、AL SAFEOP/OP 的 ESM 前置条件检查、
+    **SII 的 SM/PDO 类别（B6，主站配置 FMMU/SM 的前提）**。
 - [ ] **B6 SII 生成器**：ESI XML → SII 镜像（含固定区 CRC-8（**word 0x0007**，覆盖 0x0000–0x0006，已实现）、category 链 0x0029/0x0032/0x0033、0xFFFF 终止）。
   ⚠️ 旧文档把 CRC 写成 word 0x003F，经 SOEM `eepromtool`/IgH `tool/sii_crc.cpp` 复核已更正（0x003F 是 SII 版本 = 1）。
 - [ ] **B7 CoE 最小闭环**：加速 SDO 上传/下载 + 0x1C12/0x1C13/0x1600/0x1A00 + Abort 码；先**不做** SDO Info 与 Complete Access（SII 对应位清 0）。

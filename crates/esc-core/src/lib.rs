@@ -6,13 +6,15 @@
 //! - AL Control (0x0120) / AL Status (0x0130) / AL Status Code (0x0134) 语义；
 //! - ESM 合法迁移表、错误位与 Error ACK、ID Request。
 //!
-//! 尚未实现（后续子步骤）：SM/FMMU 寄存器块、watchdog、DC。
+//! 尚未实现（后续子步骤）：watchdog、DC、SM 触发的 mailbox 握手。
 //!
 //! 已实现（B2b 起）：[`sii`] 最小 SII 镜像、[`eeprom`] EEPROM 寄存器接口状态机；
-//! （B5 子项）[`sm`] Sync Manager 寄存器块（0x0800–0x083F）、[`fmmu`] FMMU 寄存器块（0x0600–0x067F）。
+//! （B5 子项）[`sm`] Sync Manager 寄存器块（0x0800–0x083F）、[`fmmu`] FMMU 寄存器块
+//! （0x0600–0x067F）与逻辑→物理翻译、[`memory`] DL 用户内存（0x1000–0xFFFF）。
 
 pub mod eeprom;
 pub mod fmmu;
+pub mod memory;
 pub mod sii;
 pub mod sm;
 
@@ -250,7 +252,8 @@ impl Registers {
     /// 该寄存器地址的访问权限（未列出的按可读写处理）。
     ///
     /// 只读子寄存器：识别类/状态类、SM Status/PDI Control
-    /// （[`sm::is_read_only_byte`]）、FMMU Type/保留字节（[`fmmu::is_read_only_byte`]）。
+    /// （[`sm::is_read_only_byte`]）、FMMU 保留字节（[`fmmu::is_read_only_byte`]）。
+    /// FMMU Type（方向位）由主站写入，可写。
     /// 主站对只读字节的写入被丢弃，但同一 8/16 字节块里的可写字段照常生效
     /// （主站会整块写 SM/FMMU 配置）。
     #[must_use]

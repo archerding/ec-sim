@@ -6,6 +6,54 @@
 
 ---
 
+## 2026-11-12 19:19 班（低峰）— B5 子项：FMMU 逻辑寻址最小闭环（LRD/LWR/LRW）+ 修正 FMMU Type 只读错误
+
+**做了什么**
+- `esc-core` 新增 `memory` 模块：`DlUserMemory` 覆盖 **DL 用户内存 0x1000–0xFFFF**（48 KiB），
+  提供 `covers/read/write` 与越界拒绝；这是 FMMU 逻辑寻址的"物理侧"。
+- `fmmu.rs` 新增逻辑→物理翻译：
+  - `Fmmu::logical_end()`（32 位溢出返回 `None`）、`is_byte_aligned()`（逻辑起始位 0 / 逻辑结束位 7 /
+    物理起始位 0；IgH `master/fmmu_config.c` 恒写 0/7/0，SOEM `ec_config.c` 默认映射相同）；
+  - `Fmmu::translate(address, len)` 返回 datagram 数据区与 FMMU 逻辑区间的**字节对齐交集**
+    （`datagram_offset` + `physical_address` + `len`），支持 datagram 大于或部分覆盖 FMMU 区间；
+    未激活、非字节对齐、区间不相交、32 位/16 位地址溢出均返回 `None`。位级（任意 bit 偏移）映射
+    仍未实现（⚠️ 待验证项，见下文）。
+- `esc-node` 接入逻辑寻址：LRD/LWR/LRW 不再一律不命中，改为遍历 8 个 FMMU；读方向要求
+  Type.bit0、写方向要求 Type.bit1，按 `translate` 在逻辑地址与 DL 用户内存之间搬运；WKC 按
+  "读命中 +1、写命中 +1"（LRW 双向命中 = +2），未命中不增。
+- **修正上一班次（19:02）的错误假设：FMMU Type（0x0B）不是只读**，它是主站写入的方向配置位
+  （IgH `fmmu_config.c: ec_fmmu_config_page()` 写 `data + 11 = 0x01/0x02`；SOEM `ec_config.c`
+  整块写 `ec_fmmut` 结构含 `FMMUtype`）。按只读丢弃会让方向位恒为 0、FMMU 永不命中；现在只读
+  的只有保留字节 0x0D–0x0F。
+- 测试新增 **14 条**：esc-core +8（FMMU 翻译：全区间/部分重叠/未激活/非对齐/零长度/逻辑溢出/
+  物理越界；DL 用户内存：读写往返/末端边界/寄存器区与越界拒绝）、esc-node +6（LWR→LRD 经两个
+  方向 FMMU 往返、未激活不命中、LRD 需读方向位、LRW 按方向累加 WKC、部分重叠只搬交集、
+  未映射字节不被覆盖），另把原 FMMU 配置测试改为断言 Type 写入生效。
+
+**验证结果**
+- 本机 Windows（rustc 1.97.1）：`cargo fmt --all -- --check` exit 0；
+  `cargo clippy --workspace --all-targets -- -D warnings` exit 0；
+  `cargo test --workspace` **79 passed**（esc-core 41 / esc-node 22 / wire 16）。
+- Linux 验证机（**未修改的** IgH 1.6.13 + SOEM，回归）：SOEM `1 slaves found and configured`、
+  `Activeports:1.0.0.0`、`Man: 00000ec5 ID: 0000e5c1`；IgH `0  0:0  PREOP  +  0x00000ec5:0x0000e5c1`；
+  拓扑断言 `OK: 单从站拓扑计算未报错`；脚本 exit 0（本次改动未影响扫描路径）。
+- ⚠️ 待验证：**真实主站端到端的 LRD/LWR**。主站要配置 domain 才会下发逻辑读写，当前 SII 还缺
+  SM/PDO 类别与 mailbox（B6/B7），尚未进入该阶段；验证方法 = B6 补齐 SII 类别后看 IgH/SOEM 是否
+  进 SAFEOP 并出现 LRD/LWR 命中（WKC 与数据往返）。位级 FMMU 映射同理待后续。
+- ⚠️ 待复核：FMMU Type 可写性有 IgH/SOEM 两处源码行为证据，但未逐字复核 ESC Sec.II 寄存器表
+  （无离线手册）；下次有手册时补一条引用。
+
+**卡点**
+- 无。SM 触发的 mailbox 握手与 SII 的 SM/PDO 类别仍缺失，主站不会下发 PDO 逻辑读写，
+  因此本班闭环只能靠本仓库的 datagram 级集成测试验证。
+
+**下次开工第一件事**
+- **B6 SII 生成器（前置优先）**：SII 增加 SM 类别 0x0029 + TxPDO 0x0032 / RxPDO 0x0033 +
+  默认 PDO 映射（0x1600/0x1A00），让 IgH/SOEM 能配置 SM/FMMU 并下发给从站；随后再进 B7 CoE
+  最小闭环，最终以 B8 双主站冒烟端到端验证本班的 FMMU 逻辑寻址。
+
+---
+
 ## 2026-11-12 19:02 班（低峰）— B5 子项：SM/FMMU 寄存器块（主站整块写 + 只读字节语义）
 
 **做了什么**

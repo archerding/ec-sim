@@ -28,7 +28,9 @@
   非 ETG 注册号）、字符串类别 0x000A（`EC-Sim SIMULATED slave`）、通用类别 0x001E（32 字节）、
   `0xFFFF` 终止；**无 mailbox**（因此主站不会协商 CoE，扫描后停在 INIT/PREOP）；
 - datagram：BRD/BWR/BRW 广播命中，APRD/APWR 收到 ADP==0 命中，FPRD/FPWR 按站地址/别名命中，
-  WKC 按读/写属性累加；逻辑寻址（需 FMMU）本阶段不命中。
+  WKC 按读/写属性累加；逻辑寻址（LRD/LWR/LRW）本 spike 时未实现（2026-11-12 19:19 班已补：
+  按已激活 FMMU 命中在逻辑地址与 DL 用户内存 0x1000–0xFFFF 之间搬运；本 spike 的扫描阶段主站
+  尚不下发逻辑读写，故实测输出不受影响）。
 
 ## 3. 实测输出（脱敏）
 
