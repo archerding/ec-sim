@@ -16,4 +16,5 @@ path = "src/bin/ec_sim_esc.rs"
 
 [dependencies]
 esc-core = { path = "../esc-core" }
+plugin-host = { path = "../plugin-host" }
 wire = { path = "../wire" }

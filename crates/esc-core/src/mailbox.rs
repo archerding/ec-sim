@@ -1,4 +1,4 @@
-//! EtherCAT 邮箱协议最小实现（B7 子项 1）：邮箱头解析 + CoE SDO Abort 应答。
+﻿//! EtherCAT 邮箱协议最小实现（B7 子项 1）：邮箱头解析 + CoE SDO Abort 应答。
 //!
 //! 目的：让主站能通过 SM0/SM1 邮箱与从站跑通 **CoE SDO 数据链路**：
 //! 对 `0x40`（initiate upload）请求从 [`crate::obj_dict`] 查表回 expedited upload 响应，
@@ -357,32 +357,49 @@ pub fn build_sdo_info_od_list(indices: &[u16]) -> Vec<u8> {
 }
 
 /// 构造 **Get OD 响应**服务数据（对象描述 + 名称）。
+///
+/// 字段：index +6、data_type +8、max_subindex +10、object_code +11、名称 +12
+/// （IgH `fsm_coe.c` 与 SOEM `ec_coe.c` 一致）。
 #[must_use]
 pub fn build_sdo_info_object_description(
-    description: &crate::obj_dict::ObjectDescription,
+    index: u16,
+    data_type: u16,
+    max_subindex: u8,
+    object_code: u8,
+    name: &str,
 ) -> Vec<u8> {
     let mut service = sdo_info_response_header(SDO_INFO_GET_OD_RESPONSE);
-    service.extend_from_slice(&description.index.to_le_bytes());
-    service.extend_from_slice(&description.data_type.to_le_bytes());
-    service.push(description.max_subindex);
-    service.push(description.object_code);
-    service.extend_from_slice(description.name.as_bytes());
+    service.extend_from_slice(&index.to_le_bytes());
+    service.extend_from_slice(&data_type.to_le_bytes());
+    service.push(max_subindex);
+    service.push(object_code);
+    service.extend_from_slice(name.as_bytes());
     service
 }
 
 /// 构造 **Get Entry Description 响应**服务数据（条目描述 + 名称）。
+///
+/// 字段：index +6、subindex +8、value_info +9、data_type +10、bit_length +12、
+/// access +14、名称 +16（IgH `fsm_coe.c` 与 SOEM `ec_coe.c` 一致）。
 #[must_use]
+#[allow(clippy::too_many_arguments)]
 pub fn build_sdo_info_entry_description(
-    description: &crate::obj_dict::EntryDescription,
+    index: u16,
+    subindex: u8,
+    value_info: u8,
+    data_type: u16,
+    bit_length: u16,
+    access: u16,
+    name: &str,
 ) -> Vec<u8> {
     let mut service = sdo_info_response_header(SDO_INFO_GET_ENTRY_RESPONSE);
-    service.extend_from_slice(&description.index.to_le_bytes());
-    service.push(description.subindex);
-    service.push(description.value_info);
-    service.extend_from_slice(&description.data_type.to_le_bytes());
-    service.extend_from_slice(&description.bit_length.to_le_bytes());
-    service.extend_from_slice(&description.access.to_le_bytes());
-    service.extend_from_slice(description.name.as_bytes());
+    service.extend_from_slice(&index.to_le_bytes());
+    service.push(subindex);
+    service.push(value_info);
+    service.extend_from_slice(&data_type.to_le_bytes());
+    service.extend_from_slice(&bit_length.to_le_bytes());
+    service.extend_from_slice(&access.to_le_bytes());
+    service.extend_from_slice(name.as_bytes());
     service
 }
 
@@ -622,7 +639,13 @@ mod tests {
 
         // Get OD：index +6、data_type +8、max_subindex +10、object_code +11、名称 +12。
         let description = crate::obj_dict::object_description(0x1C12).expect("object");
-        let response = build_sdo_info_object_description(&description);
+        let response = build_sdo_info_object_description(
+            description.index,
+            description.data_type,
+            description.max_subindex,
+            description.object_code,
+            description.name,
+        );
         assert_eq!(response[2], SDO_INFO_GET_OD_RESPONSE);
         assert_eq!(u16::from_le_bytes([response[6], response[7]]), 0x1C12);
         assert_eq!(response[10], 1, "max_subindex");
@@ -636,7 +659,15 @@ mod tests {
         // Get Entry Description：index +6、subindex +8、value_info +9、data_type +10、
         // bit_length +12、access +14、名称 +16。
         let entry = crate::obj_dict::entry_description(0x1C12, 1).expect("entry");
-        let response = build_sdo_info_entry_description(&entry);
+        let response = build_sdo_info_entry_description(
+            entry.index,
+            entry.subindex,
+            entry.value_info,
+            entry.data_type,
+            entry.bit_length,
+            entry.access,
+            entry.name,
+        );
         assert_eq!(response[2], SDO_INFO_GET_ENTRY_RESPONSE);
         assert_eq!(u16::from_le_bytes([response[6], response[7]]), 0x1C12);
         assert_eq!(response[8], 1);

@@ -27,7 +27,7 @@ use esc_core::eeprom::EepromInterface;
 use esc_core::fmmu::{Fmmu, FMMU_MAX};
 use esc_core::mailbox::{self, MailboxHeader, SdoInfoRequest, SdoRequest};
 use esc_core::memory::DlUserMemory;
-use esc_core::obj_dict;
+use esc_core::obj_dict::ObjectDictionary;
 use esc_core::sii::SiiImage;
 use esc_core::sm::SyncManager;
 use esc_core::{reg, watchdog, AlControl, EscAl, EsmPreconditions, Registers};
@@ -124,6 +124,8 @@ pub struct Responder {
     /// 是否启用 ESM 状态迁移前置条件检查（默认**开启**，见
     /// [`Responder::with_esm_preconditions`]）。
     esm_preconditions: bool,
+    /// 运行时对象字典（内置画像或声明式 manifest 生成，见 [`Responder::with_dictionary`]）。
+    dict: ObjectDictionary,
     stats: Stats,
 }
 
@@ -151,8 +153,22 @@ impl Responder {
             now_ms: 0,
             last_process_data_ms: None,
             esm_preconditions: true,
+            dict: ObjectDictionary::simulated(),
             stats: Stats::default(),
         }
+    }
+
+    /// 替换运行时对象字典（声明式 manifest 生成的画像用），返回自身以便链式构造。
+    #[must_use]
+    pub fn with_dictionary(mut self, dict: ObjectDictionary) -> Self {
+        self.dict = dict;
+        self
+    }
+
+    /// 当前运行时对象字典。
+    #[must_use]
+    pub fn dictionary(&self) -> &ObjectDictionary {
+        &self.dict
     }
 
     /// 设置是否启用 ESM 状态迁移前置条件检查，返回自身以便链式构造。
@@ -527,20 +543,30 @@ impl Responder {
             // CoE SDO Information 服务（`ethercat sdos` / SOEM `slaveinfo -sdo`）。
             match info_request {
                 SdoInfoRequest::OdList { .. } => {
-                    mailbox::build_sdo_info_od_list(&obj_dict::object_index_list())
+                    mailbox::build_sdo_info_od_list(&self.dict.object_indices())
                 }
-                SdoInfoRequest::ObjectDescription { index } => {
-                    match obj_dict::object_description(index) {
-                        Some(description) => {
-                            mailbox::build_sdo_info_object_description(&description)
-                        }
-                        None => mailbox::build_sdo_info_error(mailbox::SDO_ABORT_OBJECT_NOT_EXIST),
-                    }
-                }
+                SdoInfoRequest::ObjectDescription { index } => match self.dict.object(index) {
+                    Some(description) => mailbox::build_sdo_info_object_description(
+                        description.index,
+                        description.data_type,
+                        description.max_subindex,
+                        description.object_code,
+                        &description.name,
+                    ),
+                    None => mailbox::build_sdo_info_error(mailbox::SDO_ABORT_OBJECT_NOT_EXIST),
+                },
                 SdoInfoRequest::EntryDescription {
                     index, subindex, ..
-                } => match obj_dict::entry_description(index, subindex) {
-                    Some(description) => mailbox::build_sdo_info_entry_description(&description),
+                } => match self.dict.entry(index, subindex) {
+                    Some(entry) => mailbox::build_sdo_info_entry_description(
+                        entry.index,
+                        entry.subindex,
+                        entry.value_info,
+                        entry.data_type,
+                        entry.bit_length,
+                        entry.access,
+                        &entry.name,
+                    ),
                     None => mailbox::build_sdo_info_error(mailbox::SDO_ABORT_OBJECT_NOT_EXIST),
                 },
             }
@@ -561,11 +587,15 @@ impl Responder {
                     subindex,
                     data,
                 }) => {
-                    if obj_dict::is_writable(index) {
+                    if self
+                        .dict
+                        .entry(index, subindex)
+                        .is_some_and(|entry| entry.writable)
+                    {
                         self.object_writes.insert((index, subindex), data.to_vec());
                         mailbox::sdo_download_ok_service(index, subindex)
                     } else {
-                        let abort_code = if obj_dict::read_object(index, subindex).is_some() {
+                        let abort_code = if self.dict.entry(index, subindex).is_some() {
                             mailbox::SDO_ABORT_READ_ONLY
                         } else {
                             mailbox::SDO_ABORT_OBJECT_NOT_EXIST
@@ -592,12 +622,12 @@ impl Responder {
         self.stats.mailbox_responses = self.stats.mailbox_responses.saturating_add(1);
     }
 
-    /// 查对象当前值：优先 Download 覆盖值，其次静态对象字典。
+    /// 查对象当前值：优先 Download 覆盖值，其次运行时对象字典。
     fn object_value(&self, index: u16, subindex: u8) -> Option<&[u8]> {
         if let Some(value) = self.object_writes.get(&(index, subindex)) {
             return Some(value.as_slice());
         }
-        obj_dict::read_object(index, subindex).map(|entry| entry.value)
+        self.dict.value(index, subindex)
     }
 
     fn sync_al_state(&mut self) {
@@ -1795,6 +1825,57 @@ mod tests {
             al_status_code(&mut responder),
             esc_core::al_status::UNKNOWN_REQUESTED_STATE
         );
+    }
+
+    #[test]
+    fn custom_dictionary_drives_sdo_upload_and_info() {
+        // 运行时字典可被整体替换（声明式 manifest 画像用）：SDO 上传与 SDO Info 都应以新字典为准。
+        use esc_core::obj_dict::{RuntimeEntry, RuntimeObject};
+
+        let dict = ObjectDictionary::new(
+            vec![RuntimeObject {
+                index: 0x2000,
+                max_subindex: 0,
+                object_code: esc_core::obj_dict::object_code::VAR,
+                data_type: esc_core::obj_dict::data_type::UNSIGNED16,
+                name: "Custom counter".to_string(),
+            }],
+            vec![RuntimeEntry {
+                index: 0x2000,
+                subindex: 0,
+                value: 0x1234u16.to_le_bytes().to_vec(),
+                data_type: esc_core::obj_dict::data_type::UNSIGNED16,
+                bit_length: 16,
+                access: esc_core::obj_dict::access::READ_ONLY,
+                value_info: 0,
+                name: "Custom counter".to_string(),
+                writable: false,
+            }],
+        );
+        let mut responder = Responder::default().with_dictionary(dict);
+        assert_eq!(responder.dictionary().object_indices(), vec![0x2000]);
+
+        // SDO 上传 0x2000:00 → 0x1234。
+        write_mailbox(
+            &mut responder,
+            mailbox_request_payload(
+                mailbox::MAILBOX_TYPE_COE,
+                mailbox::COE_COMMAND_SDO_REQUEST,
+                0x40,
+                0x2000,
+                0x00,
+            ),
+        );
+        let response = read_tx_mailbox(&mut responder);
+        assert_eq!(response[8], 0x4B, "2 字节 expedited upload");
+        assert_eq!(u16::from_le_bytes([response[12], response[13]]), 0x1234);
+
+        // SDO Info：Get OD List 只返回新字典的索引。
+        let od_list = [0x00, 0x80, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00];
+        write_mailbox(&mut responder, mailbox_sdo_info_payload(&od_list));
+        let response = read_tx_service(&mut responder);
+        assert_eq!(u16::from_le_bytes([response[8], response[9]]), 0x2000);
+        assert_eq!(response.len(), 8 + 2, "只有 1 个对象");
     }
 
     /// 把完整 CoE 服务数据（含 CoE 头与操作码）写成一条 SM0 邮箱报文。

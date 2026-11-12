@@ -23,6 +23,7 @@ name = "esc-node"
 version = "0.0.1"
 dependencies = [
  "esc-core",
+ "plugin-host",
  "wire",
 ]
 

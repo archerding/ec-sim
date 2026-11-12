@@ -519,6 +519,145 @@ pub fn entry_description(index: u16, subindex: u8) -> Option<EntryDescription> {
         .copied()
 }
 
+/// 运行时对象条目：值 + 描述（内置画像与声明式 manifest 生成共用）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeEntry {
+    /// 对象索引。
+    pub index: u16,
+    /// 子索引。
+    pub subindex: u8,
+    /// 当前值（小端字节序）。
+    pub value: Vec<u8>,
+    /// 数据类型，见 [`data_type`]。
+    pub data_type: u16,
+    /// 位长度。
+    pub bit_length: u16,
+    /// 访问权限位，见 [`access`]。
+    pub access: u16,
+    /// ValueInfo（0 = 普通值）。
+    pub value_info: u8,
+    /// 名称（SDO Info 响应中的字符串）。
+    pub name: String,
+    /// 是否允许 SDO Download。
+    pub writable: bool,
+}
+
+/// 运行时对象描述（SDO Info Get OD 用）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeObject {
+    /// 对象索引。
+    pub index: u16,
+    /// 最大子索引。
+    pub max_subindex: u8,
+    /// 对象代码，见 [`object_code`]。
+    pub object_code: u8,
+    /// 对象数据类型，见 [`data_type`]。
+    pub data_type: u16,
+    /// 对象名。
+    pub name: String,
+}
+
+/// 运行时对象字典。
+///
+/// 内置画像由 [`ObjectDictionary::simulated`] 从 [`SIM_OBJECTS`] / [`SIM_ENTRY_DESCRIPTIONS`]
+/// / [`SIM_OBJECT_DESCRIPTIONS`] 构造；声明式插件由 `plugin_host::dict_gen` 从 manifest 生成。
+/// `esc-node::Responder` 持有它，SDO 上传/下载与 SDO Info 均按运行时字典回复。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ObjectDictionary {
+    objects: Vec<RuntimeObject>,
+    entries: Vec<RuntimeEntry>,
+}
+
+impl ObjectDictionary {
+    /// 用给定的对象/条目构造字典。
+    #[must_use]
+    pub fn new(objects: Vec<RuntimeObject>, entries: Vec<RuntimeEntry>) -> Self {
+        Self { objects, entries }
+    }
+
+    /// 内置仿真从站画像（与静态 [`SIM_OBJECTS`] / `SIM_*_DESCRIPTIONS` 一致）。
+    #[must_use]
+    pub fn simulated() -> Self {
+        let objects = SIM_OBJECT_DESCRIPTIONS
+            .iter()
+            .map(|description| RuntimeObject {
+                index: description.index,
+                max_subindex: description.max_subindex,
+                object_code: description.object_code,
+                data_type: description.data_type,
+                name: description.name.to_string(),
+            })
+            .collect();
+        let entries = SIM_ENTRY_DESCRIPTIONS
+            .iter()
+            .map(|description| {
+                let value = read_object(description.index, description.subindex)
+                    .map(|object| object.value.to_vec())
+                    .unwrap_or_default();
+                RuntimeEntry {
+                    index: description.index,
+                    subindex: description.subindex,
+                    value,
+                    data_type: description.data_type,
+                    bit_length: description.bit_length,
+                    access: description.access,
+                    value_info: description.value_info,
+                    name: description.name.to_string(),
+                    writable: description.access & 0x0038 != 0,
+                }
+            })
+            .collect();
+        Self { objects, entries }
+    }
+
+    /// 对象描述表。
+    #[must_use]
+    pub fn objects(&self) -> &[RuntimeObject] {
+        &self.objects
+    }
+
+    /// 条目表。
+    #[must_use]
+    pub fn entries(&self) -> &[RuntimeEntry] {
+        &self.entries
+    }
+
+    /// 按索引查对象描述。
+    #[must_use]
+    pub fn object(&self, index: u16) -> Option<&RuntimeObject> {
+        self.objects.iter().find(|object| object.index == index)
+    }
+
+    /// 按索引+子索引查条目。
+    #[must_use]
+    pub fn entry(&self, index: u16, subindex: u8) -> Option<&RuntimeEntry> {
+        self.entries
+            .iter()
+            .find(|entry| entry.index == index && entry.subindex == subindex)
+    }
+
+    /// 读条目当前值。
+    #[must_use]
+    pub fn value(&self, index: u16, subindex: u8) -> Option<&[u8]> {
+        self.entry(index, subindex)
+            .map(|entry| entry.value.as_slice())
+    }
+
+    /// 对象索引列表（SDO Info Get OD List 顺序）。
+    #[must_use]
+    pub fn object_indices(&self) -> Vec<u16> {
+        self.objects.iter().map(|object| object.index).collect()
+    }
+
+    /// 该索引下是否有可写条目。
+    #[must_use]
+    pub fn is_writable(&self, index: u16) -> bool {
+        self.entries
+            .iter()
+            .any(|entry| entry.index == index && entry.writable)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

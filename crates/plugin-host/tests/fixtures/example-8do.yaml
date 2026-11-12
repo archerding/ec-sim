@@ -1,0 +1,48 @@
+# EC-Sim 声明式插件样例（8DO 数字输出，SIMULATED 画像）：
+# 自有 VID/PID（R2），sources 为公开规范入口（R5）；不得用于冒充厂商设备（R3）。
+schema: ecsim.plugin/v1
+id: com.ecsim.compat.example-8do
+name: "Example 8DO (SIMULATED)"
+version: 0.1.0
+kind: device
+license: Apache-2.0 OR MIT
+pricing: {model: free, amount: 0, currency: CNY}
+
+compatibility:
+  brands: ["Generic"]
+  models: ["8DO"]
+  disclaimer: "Independent re-implementation from public documentation. Not affiliated with, endorsed by, or certified by any vendor."
+
+identity:
+  vendor_id: 0x00000EC5
+  product_code: 0x0000E5D1
+  revision: 0x00010000
+  simulated: true
+
+profile: generic-io
+mailbox:
+  coe: {sdo: true, sdo_info: true, complete_access: false}
+
+sm:
+  - {index: 0, dir: mbox-in,  start: 0x1000, len: 128}
+  - {index: 1, dir: mbox-out, start: 0x1080, len: 128}
+  - {index: 2, dir: out,      start: 0x1100, len: 1}
+  - {index: 3, dir: in,       start: 0x1110, len: 1}
+
+pdo:
+  rx:
+    - index: 0x1600
+      entries:
+        - {index: 0x7000, sub: 0, bits: 8}
+  tx:
+    - index: 0x1A00
+      entries:
+        - {index: 0x6000, sub: 0, bits: 8}
+
+objects:
+  - {index: 0x2000, sub: 0, name: Sample counter, dtype: UINT16, access: ro, value: 0x1234}
+
+dc: {supported: false, sync0: false}
+
+sources:
+  - {title: "EtherCAT Technology Group — EtherCAT Specification (ETG.1000)", url: "https://www.ethercat.org/", accessed: "2026-11-12"}

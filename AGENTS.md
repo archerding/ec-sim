@@ -174,15 +174,19 @@ user.email = deepseek-harness@users.noreply.github.com
     ⚠️ IgH `ethercat sdos` 无应用时无输出（需 ecrt 应用上下文），IgH 侧待验证。
   - 待做：SDO Info 的 IgH 侧验证（ecrt 夹具）、Complete Access、分段传输；
     IgH 进 OP 需 B8 的 ecrt 应用夹具（Download 已具备）。
-- [ ] **B9 声明式插件加载器**：读取 `plugins/<id>/plugin.yaml` → 生成 SII + 对象字典 + 默认 PDO 分配 + SM/FMMU 布局（不依赖行为代码），并在 IgH/SOEM 上扫描到该从站。
-  - 进度（2026-11-12 21:20 班，子项 1）：**manifest 解析 + SII 生成已实现**——`plugin-host::manifest`
-    零依赖解析 `plugin.yaml`（YAML 子集）+ R2/R5 校验（自有 VID/PID、名称含 SIMULATED、
-    sources 必填）；`plugin-host::sii_gen` 把 manifest 的身份/邮箱/SM/PDO 声明转成
-    `esc_core::sii::SiiSpec`，`SiiImage::from_spec()` 生成 SII 镜像（CRC/EEPROM 大小自动）。
-    `simulated_slave()` 改为 `from_spec` 薄封装且逐 word 等价（旧镜像不变）。测试 **137 passed**。
-    ⚠️ 尚未接入 `esc-node`（对象字典/SM/FMMU 运行时装配），也未在验证机上扫描 manifest 画像。
-  - 待做（子项 2）：`Responder::from_manifest` + 示例 manifest（8DO）→ SOEM/IgH 扫描验证。
+- [x] ~~**B9 声明式插件加载器**~~ ✅ **2026-11-12 21:25 班完成**：`plugin-host` 零依赖解析
+  `plugin.yaml`（YAML 子集 + R2/R5 校验）→ `sii_gen` 生成 SII 镜像、`dict_gen` 生成运行时
+  对象字典（0x1018 身份 / 0x1C00 SM 类型 / 0x1C12+0x1C13 分配 / PDO 映射 / 用户对象）；
+  `esc-node` 新增运行时 `ObjectDictionary` 与 **`ec-sim-esc --manifest`**，SDO 上传/下载/
+  SDO Info 全走运行时字典。Linux 验证机端到端（`scripts/spikes/manifest-slave-probe.sh`）：
+  SOEM 扫描到 manifest 身份（`00000ec5:0000e5d1`）、8 位 I/O、**OP + 1055 轮 WKC=3**、
+  `slaveinfo -sdo` 读到 7 个对象（含用户对象 `0x2000=0x1234`）；IgH 身份/拓扑正常。测试 **141 passed**。
+  - 已知限制：SOEM `slaveinfo -sdo` 对 UINT8 子索引 0 的 2 字节读取有未初始化高位（偶发
+    段错误，属 SOEM 工具夹具缺陷，脚本重试规避）；manifest 初值仅 8/16/32 位整数；
+    FMMU 仍由主站配置阶段写入；DC 未实现。
 - [ ] **B10 首个 P0 设备插件**：Beckhoff EL2008 兼容 8DO（声明式），完成 `facts.md`（含来源 URL）、manifest、双主站扫描验证记录（`docs/plugins/`）。
+  - 依赖 B9 已完成：`ec-sim-esc --manifest` + `scripts/spikes/manifest-slave-probe.sh` 可直接
+    用于验证设备画像；按 DEVICE-PLUGINS R1–R5 走（公开资料、自有 VID/PID、sources、SIMULATED）。
 - [ ] **B11 CiA402 行为插件**：以 Inovance SV660N 兼容画像为第一个目标，实现 CSP 状态机（Tier0/内置 profile 起步）。
 - [x] ~~**B8 双主站冒烟**~~ ✅ **2026-11-12 19:56 班完成（单从站 8 位 I/O 画像）**：
   **未修改的 SOEM 与 IgH 都在本模拟器上看到从站进入 OP**，输出可复现脚本见

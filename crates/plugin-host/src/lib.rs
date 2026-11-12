@@ -10,6 +10,7 @@
 //! [`esc_core::sii::SiiSpec`]，再用 `SiiImage::from_spec()` 生成可被 IgH/SOEM 解析的 SII 镜像。
 //! 后续：对象字典运行时生成、FMMU 布局与 `esc-node::Responder` 的按 manifest 装配。
 
+pub mod dict_gen;
 pub mod manifest;
 pub mod sii_gen;
 

@@ -371,6 +371,8 @@ pub struct ObjectConfig {
     pub access: String,
     /// 是否属于 PDO 映射（`rx` / `tx`）。
     pub pdo: Option<String>,
+    /// 可选初值（数值字面量；字符串对象需要分段 SDO，暂不支持）。
+    pub value: Option<String>,
 }
 
 /// 证据链条目（manifest `sources:`，R5 必填）。
@@ -497,6 +499,11 @@ impl PluginManifest {
                             data_type: required_scalar(entry, "dtype")?,
                             access: required_scalar(entry, "access")?,
                             pdo: entry.get("pdo").and_then(Yaml::as_str).map(str::to_string),
+                            value: entry
+                                .get("value")
+                                .and_then(Yaml::as_str)
+                                .map(str::to_string)
+                                .filter(|value| !value.is_empty()),
                         })
                     })
                     .collect::<Result<Vec<_>, String>>(),

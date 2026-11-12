@@ -6,6 +6,58 @@
 
 ---
 
+## 2026-11-12 21:25 班（低峰）— B9 完成：声明式插件画像端到端（`--manifest` → SII + 对象字典 → 双主站扫描/OP）
+
+**做了什么**
+- `esc-core::obj_dict`：新增运行时对象字典 `ObjectDictionary` / `RuntimeObject` /
+  `RuntimeEntry`（值 + 数据类型/位长/访问权限/名称/writable）。`ObjectDictionary::simulated()`
+  从既有静态表构造（内置画像逐项不变）；SDO Info 响应构造改为接收原始字段，支持运行时字典。
+- `esc-node`：`Responder` 持有运行时字典（默认内置画像），新增 `with_dictionary()`；
+  SDO 上传/下载/SDO Info 全部走运行时字典（Download 按条目 `writable` 判定）。
+  新增 **`--manifest <plugin.yaml>`**：按 manifest 生成 SII（`sii_gen`）与对象字典
+  （`dict_gen`）后启动，并打印 `MANIFEST id/name/VID/PID`；`esc-node` 增加 `plugin-host`
+  path 依赖（插件只在启动时生成画像，不进实时环）。
+- `plugin-host::dict_gen`：manifest → 运行时字典——身份 `0x1018`、SM 通信类型 `0x1C00`、
+  PDO 分配 `0x1C12/0x1C13`、PDO 映射对象、用户对象（8/16/32 位整数初值；`access: rw`
+  生成可写条目；生成前执行 R2/R5 校验，占位 VID/PID 直接拒绝）。
+- 新增样例 manifest `crates/plugin-host/tests/fixtures/example-8do.yaml`
+  （自有 VID/PID `0x0EC5`/`0xE5D1`、名称带 SIMULATED、8DO、sources 指向公开规范）。
+- 新增验证脚本 `scripts/spikes/manifest-slave-probe.sh`：SOEM 身份/SII-PDO/OP-WKC3/SDO Info
+  + IgH 身份/拓扑。
+
+**验证结果**
+- 本机 Windows：`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets
+  -- -D warnings` exit 0；`cargo test --workspace` **141 passed**
+  （esc-core 75 / esc-node 37 / plugin-host 13 / wire 16）。
+- Linux 验证机：`bash scripts/spikes/manifest-slave-probe.sh` →
+  `OK: 声明式 manifest 画像端到端通过`：
+  - SOEM `slaveinfo`：`Man: 00000ec5 ID: 0000e5d1 Rev: 00010000`、`Output/Input size: 8bits`；
+  - SOEM `slaveinfo -sdo`：`CoE Object Description found, 7 entries.`，含
+    `0x2000 "Sample counter" [UNSIGNED16] 0x1234 / 4660`；
+  - SOEM `simple_ng`：进入 OP、**1055 轮 WKC=3、无 WKC 不符**；
+  - IgH：`0 0:0 PREOP + 0x00000ec5:0x0000e5d1`，拓扑计算无报错。
+- 默认内置画像回归（默认/strict 两种模式 **6/6 EXIT=0**）：`minimal-esc-responder.sh`、
+  `soem-process-data.sh`（1055 轮 WKC=3）、`igh-op-probe.sh`（IgH ecrt OP wc=3）
+  —— 运行时字典重构未改变默认行为。
+
+**卡点**
+- **SOEM `slaveinfo -sdo` 偶发段错误**：它对非 VAR 对象的 subindex 0 用 2 字节缓冲区
+  读取（`slaveinfo.c` 把 UINT8 响应的 1 字节拷进 `uint16`，高字节未初始化），与本模拟器
+  响应无关；脚本用最多 3 次重试规避，⚠️ 需在 SOEM 侧确认（工具夹具缺陷，不是从站行为）。
+- manifest `objects` 初值只支持 8/16/32 位整数（字符串/大对象需分段 SDO，未实现）；
+  FMMU 仍由主站在配置阶段写入（manifest 通过 SII 的 SM/PDO + 对象字典表达布局，
+  不预生成 FMMU 表）；DC 未实现。
+- 本班画像用仓库内样例（自有 VID/PID），不是真实厂商设备——真实设备画像属 B10。
+
+**下次开工第一件事**
+- **B10 首个 P0 设备插件：Beckhoff EL2008 兼容 8DO**——按 DEVICE-PLUGINS R1–R5 用公开资料
+  填 `plugins/<id>/facts.md`（对象索引/PDO 映射/SM 布局 + 来源 URL + 访问日期）、写
+  `plugin.yaml`（自有 VID/PID、名称带 SIMULATED），再用 `ec-sim-esc --manifest` +
+  `manifest-slave-probe.sh` 在 IgH/SOEM 上扫描验证，证据写
+  `docs/plugins/<id>-verification.md`。B10 需联网查公开手册（允许），注意 R1 不入库厂商文件。
+
+---
+
 ## 2026-11-12 21:20 班（低峰）— B9 子项 1：声明式插件 manifest 解析 + SII 生成
 
 **做了什么**
