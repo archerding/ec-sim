@@ -503,6 +503,34 @@ fn serve_live_http(
         } else {
             None
         };
+        let metrics_body = if path_only == "/metrics" {
+            let guard = responders.lock().unwrap();
+            let slaves: Vec<control_plane::MetricsSlave> = guard
+                .iter()
+                .enumerate()
+                .map(|(index, responder)| {
+                    let stats = responder.stats();
+                    control_plane::MetricsSlave {
+                        index,
+                        station_address: responder.station_address(),
+                        al_status: responder.al_status(),
+                        al_status_code: responder.al_status_code(),
+                        frames_in: stats.frames_in,
+                        frames_out: stats.frames_out,
+                        frames_dropped: stats.frames_dropped,
+                        datagrams_hit: stats.datagrams_hit,
+                        mailbox_requests: stats.mailbox_requests,
+                        mailbox_responses: stats.mailbox_responses,
+                        dc_reg_reads: stats.dc_reg_reads,
+                        dc_reg_writes: stats.dc_reg_writes,
+                        dc_time_ns: responder.dc_time_ns(),
+                    }
+                })
+                .collect();
+            Some(control_plane::metrics_text(&slaves))
+        } else {
+            None
+        };
         let pdo_snapshot = if path_only == "/pdo" {
             let guard = responders.lock().unwrap();
             guard.get(slave_index).map(|responder| {
@@ -555,13 +583,20 @@ fn serve_live_http(
                     content_type: "application/json; charset=utf-8",
                     body,
                 },
-                None => match pdo_response {
+                None => match metrics_body {
                     Some(body) => control_plane::HttpResponse {
                         status_line: "HTTP/1.1 200 OK",
-                        content_type: "application/json; charset=utf-8",
+                        content_type: "text/plain; version=0.0.4; charset=utf-8",
                         body,
                     },
-                    None => control_plane::handle_get(path, &state, dict_json.as_deref()),
+                    None => match pdo_response {
+                        Some(body) => control_plane::HttpResponse {
+                            status_line: "HTTP/1.1 200 OK",
+                            content_type: "application/json; charset=utf-8",
+                            body,
+                        },
+                        None => control_plane::handle_get(path, &state, dict_json.as_deref()),
+                    },
                 },
             }
         };

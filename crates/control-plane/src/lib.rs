@@ -589,6 +589,131 @@ pub fn topology_json(slaves: &[TopologyEntry]) -> String {
     out
 }
 
+/// 单从站指标（`/metrics` 文本导出用）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MetricsSlave {
+    /// 链上序号。
+    pub index: usize,
+    /// 配置站地址。
+    pub station_address: u16,
+    /// AL Status。
+    pub al_status: u8,
+    /// AL Status Code。
+    pub al_status_code: u16,
+    /// 收帧数。
+    pub frames_in: u64,
+    /// 发帧数。
+    pub frames_out: u64,
+    /// 丢弃帧数。
+    pub frames_dropped: u64,
+    /// datagram 命中数。
+    pub datagrams_hit: u64,
+    /// 邮箱请求数。
+    pub mailbox_requests: u64,
+    /// 邮箱响应数。
+    pub mailbox_responses: u64,
+    /// DC 寄存器读次数。
+    pub dc_reg_reads: u64,
+    /// DC 寄存器写次数。
+    pub dc_reg_writes: u64,
+    /// 模拟 DC 时间（ns）。
+    pub dc_time_ns: u64,
+}
+
+/// 计数器取值函数。
+type MetricGetter = fn(&MetricsSlave) -> u64;
+
+/// 计数器描述：`(名称, 说明, 取值函数)`。
+type MetricSpec = (&'static str, &'static str, MetricGetter);
+
+/// 生成 Prometheus 文本指标（每站带 `slave` / `station` 标签；只读、无外部依赖）。
+#[must_use]
+pub fn metrics_text(slaves: &[MetricsSlave]) -> String {
+    let labels = |slave: &MetricsSlave| {
+        format!(
+            "slave=\"{}\",station_address=\"0x{:04X}\"",
+            slave.index, slave.station_address
+        )
+    };
+    let mut out = String::new();
+    let counters: [MetricSpec; 9] = [
+        (
+            "ecsim_frames_in_total",
+            "收到的 EtherCAT 帧总数",
+            |slave| slave.frames_in,
+        ),
+        (
+            "ecsim_frames_out_total",
+            "发出的 EtherCAT 帧总数",
+            |slave| slave.frames_out,
+        ),
+        ("ecsim_frames_dropped_total", "丢弃的帧总数", |slave| {
+            slave.frames_dropped
+        }),
+        (
+            "ecsim_datagrams_hit_total",
+            "命中的 datagram 总数",
+            |slave| slave.datagrams_hit,
+        ),
+        (
+            "ecsim_mailbox_requests_total",
+            "邮箱请求总数",
+            |slave| slave.mailbox_requests,
+        ),
+        (
+            "ecsim_mailbox_responses_total",
+            "邮箱响应总数",
+            |slave| slave.mailbox_responses,
+        ),
+        (
+            "ecsim_dc_reg_reads_total",
+            "DC 寄存器读次数",
+            |slave| slave.dc_reg_reads,
+        ),
+        (
+            "ecsim_dc_reg_writes_total",
+            "DC 寄存器写次数",
+            |slave| slave.dc_reg_writes,
+        ),
+        (
+            "ecsim_dc_time_ns",
+            "模拟 DC 系统时间（ns，帧驱动）",
+            |slave| slave.dc_time_ns,
+        ),
+    ];
+    for (name, help, get) in counters {
+        let kind = if name.ends_with("_total") {
+            "counter"
+        } else {
+            "gauge"
+        };
+        let _ = writeln!(out, "# HELP {name} {help}");
+        let _ = writeln!(out, "# TYPE {name} {kind}");
+        for slave in slaves {
+            let _ = writeln!(out, "{name}{{{}}} {}", labels(slave), get(slave));
+        }
+    }
+    let _ = writeln!(out, "# HELP ecsim_al_status 当前 AL 状态（低 4 位）");
+    let _ = writeln!(out, "# TYPE ecsim_al_status gauge");
+    let _ = writeln!(out, "# HELP ecsim_al_status_code AL Status Code");
+    let _ = writeln!(out, "# TYPE ecsim_al_status_code gauge");
+    for slave in slaves {
+        let _ = writeln!(
+            out,
+            "ecsim_al_status{{{}}} {}",
+            labels(slave),
+            slave.al_status
+        );
+        let _ = writeln!(
+            out,
+            "ecsim_al_status_code{{{}}} {}",
+            labels(slave),
+            slave.al_status_code
+        );
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -780,6 +905,38 @@ mod tests {
         assert!(json.contains("\"station_address\": \"0x0003\""));
         assert!(json.contains("\"index\": 2"));
         assert!(json.trim_end().ends_with('}'));
+    }
+
+    #[test]
+    fn metrics_text_has_help_type_and_labels() {
+        let slave = |index: usize, station: u16| MetricsSlave {
+            index,
+            station_address: station,
+            al_status: 0x08,
+            al_status_code: 0,
+            frames_in: 10 + index as u64,
+            frames_out: 9,
+            frames_dropped: 1,
+            datagrams_hit: 20,
+            mailbox_requests: 2,
+            mailbox_responses: 2,
+            dc_reg_reads: 3,
+            dc_reg_writes: 4,
+            dc_time_ns: 1234,
+        };
+        let text = metrics_text(&[slave(0, 1), slave(1, 2)]);
+        assert!(text.contains("# TYPE ecsim_frames_in_total counter"));
+        assert!(text.contains("# HELP ecsim_frames_in_total"));
+        assert!(text.contains("ecsim_frames_in_total{slave=\"0\",station_address=\"0x0001\"} 10"));
+        assert!(text.contains("ecsim_frames_in_total{slave=\"1\",station_address=\"0x0002\"} 11"));
+        assert!(text.contains("ecsim_al_status{slave=\"0\",station_address=\"0x0001\"} 8"));
+        assert!(text.contains("ecsim_dc_time_ns{"));
+        assert_eq!(
+            text.lines()
+                .filter(|line| line.starts_with("ecsim_frames_in_total{"))
+                .count(),
+            2
+        );
     }
 
     #[test]

@@ -1,5 +1,33 @@
 ---
 
+## 2026-11-13 06:25 班（低峰）— **B29：`/metrics` Prometheus 文本指标**
+
+**做了什么**
+- 实时 `--serve` 新增 **`GET /metrics`**（`Content-Type: text/plain; version=0.0.4`）：
+  每站导出 `ecsim_frames_in/out/dropped_total`、`ecsim_datagrams_hit_total`、
+  `ecsim_mailbox_requests/responses_total`、`ecsim_dc_reg_reads/writes_total`、
+  `ecsim_dc_time_ns`、`ecsim_al_status`、`ecsim_al_status_code`，带
+  `slave`/`station_address` 标签；无外部依赖。
+- `control-plane` 新增 `MetricsSlave` + `metrics_text` + 1 个单测（共 13 个）。
+- 新增 `scripts/spikes/metrics-probe.sh`：两站 label、HELP/TYPE 行、发 3 帧后
+  `frames_in` 两站均单调 0→3。
+- 更新 `docs/VERIFICATION.md`、`docs/STATUS.md`、AGENTS（B29 完成、新增 B30 指标筛选 + Web 卡片）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **223 passed**
+  （control-plane 13 / esc-core 86 / esc-node 71 / plugin-host 27+3 / wire 23）。
+- 验证机：重建后 `metrics-probe.sh` **EXIT=0**——`OK: /metrics Prometheus 文本两站计数单调
+  （frames_in {0: 0, 1: 0} -> {0: 3, 1: 3}）`；`slave-select-probe.sh` 仍 **EXIT=0**。
+
+**卡点**
+- `/metrics` 尚无按从站筛选；Web 未展示指标（B30）。
+
+**下次开工第一件事**
+- **B30**：`/metrics?slave=N` 仅导出指定从站；Web 解析 `/metrics` 展示关键计数卡片与 AL 状态色。
+
+---
+---
+
 ## 2026-11-13 06:20 班（低峰）— **B28：逐从站查看（`?slave=N`）+ 拓扑行点击切换**
 
 **做了什么**
