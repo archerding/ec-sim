@@ -32,6 +32,32 @@
 
 ---
 
+## 2026-11-13 03:13 班（低峰）— B11：**PV（轮廓速度，模式 3）Tier0 行为**
+
+**做了什么**
+- `--behavior cia402`：模式 3（PV）复用 CSV 的速度累加语义（11 字节 PDO：控制字/模式/
+  目标位置/目标速度 → 状态字/模式显示/位置/速度）；`Operation enabled` 时位置每周期累加
+  目标速度、速度显示目标速度；禁用后速度归零、位置保持。
+- 新增单测 `cia402_pv_mode_accumulates_velocity`（`0x0221/0x0223/0x0237/0x0240`，
+  位置 0→5→10、速度 5→0）、`uds_master_probe.py --cia402-pv`、脚本
+  `scripts/spikes/cia402-pv-probe.sh`（11 字节 PDO 画像）。
+- 文档：`docs/plugins/cia402-state-machine.md` 增补 PV 小节、`docs/VERIFICATION.md` 索引、
+  AGENTS B11（当前 Tier0 模式：PP/CSP/CSV/PV/CST/HM）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **206 passed**
+  （esc-core 86 / esc-node 69 / plugin-host 27 + 1 集成 / wire 23）。
+- Linux 验证机（重建后）：`cia402-pv-probe.sh` → **EXIT=0**：`BEHAVIOR cia402
+  sm2_out=0x1100/11B sm3_in=0x1110/11B`；五步状态字/模式显示/位置/速度全部符合预期。
+
+**卡点**
+- PV 仅 Tier0：无加减速/单位换算/限幅；与 CSV 行为同构。
+
+**下次开工第一件事**
+- B11：继续找 SV660N 默认 PDO 条目；或评估真实 DC 同步（SYNC0 脉冲）。
+
+---
+
 ## 2026-11-13 03:09 班（低峰）— B11：**PP（轮廓位置，模式 1）Tier0 行为**
 
 **做了什么**

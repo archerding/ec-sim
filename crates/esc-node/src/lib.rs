@@ -372,7 +372,8 @@ impl Responder {
         //   （模拟器把"速度目标"简化成每 tick 的增量，非真实单位/轨迹）；
         // - 其它模式：位置冻结。
         let csp = modes == 8;
-        let csv = modes == 9 && out_bytes.len() >= 11;
+        // CSV（模式 9）与 PV（模式 3，Tier0 复用速度累加语义）都使用 11 字节布局。
+        let csv = (modes == 9 || modes == 3) && out_bytes.len() >= 11;
         let cst = modes == 10 && out_bytes.len() == 5;
         if enabled && csp {
             behavior.position_actual = target;
@@ -3761,6 +3762,83 @@ mod tests {
             (0x0240, 10, 0),
             "禁用后实际转矩归零"
         );
+    }
+
+    #[test]
+    fn cia402_pv_mode_accumulates_velocity() {
+        fn write_rx(
+            responder: &mut Responder,
+            controlword: u16,
+            mode: i8,
+            target: i32,
+            velocity: i32,
+        ) {
+            let mut data = vec![0u8; 11];
+            data[0..2].copy_from_slice(&controlword.to_le_bytes());
+            data[2] = mode as u8;
+            data[3..7].copy_from_slice(&target.to_le_bytes());
+            data[7..11].copy_from_slice(&velocity.to_le_bytes());
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Apwr,
+                1,
+                0,
+                0x1100,
+                data,
+            )]);
+            responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APWR reply");
+        }
+        fn read_tx(responder: &mut Responder) -> (u16, i8, i32, i32) {
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Aprd,
+                1,
+                0,
+                0x1110,
+                vec![0u8; 11],
+            )]);
+            let reply = responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APRD reply");
+            let start = ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10;
+            (
+                u16::from_le_bytes([reply[start], reply[start + 1]]),
+                reply[start + 2] as i8,
+                i32::from_le_bytes([
+                    reply[start + 3],
+                    reply[start + 4],
+                    reply[start + 5],
+                    reply[start + 6],
+                ]),
+                i32::from_le_bytes([
+                    reply[start + 7],
+                    reply[start + 8],
+                    reply[start + 9],
+                    reply[start + 10],
+                ]),
+            )
+        }
+
+        let mut responder = Responder::default().with_cia402_behavior(0x1100, 11, 0x1110, 11);
+        write_rx(&mut responder, 0x0006, 3, 0, 5); // Shutdown → Ready（PV）
+        responder.tick(1);
+        assert_eq!(read_tx(&mut responder), (0x0221, 3, 0, 0));
+        write_rx(&mut responder, 0x0007, 3, 0, 5);
+        responder.tick(2);
+        assert_eq!(read_tx(&mut responder), (0x0223, 3, 0, 0));
+        write_rx(&mut responder, 0x000F, 3, 0, 5);
+        responder.tick(3);
+        assert_eq!(
+            read_tx(&mut responder),
+            (0x0237, 3, 5, 5),
+            "PV：位置 +5/周期"
+        );
+        write_rx(&mut responder, 0x000F, 3, 0, 5);
+        responder.tick(4);
+        assert_eq!(read_tx(&mut responder), (0x0237, 3, 10, 5));
+        write_rx(&mut responder, 0x0000, 3, 0, 5);
+        responder.tick(5);
+        assert_eq!(read_tx(&mut responder), (0x0240, 3, 10, 0));
     }
 
     #[test]

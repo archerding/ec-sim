@@ -372,6 +372,7 @@ user.email = deepseek-harness@users.noreply.github.com
   - 进度（2026-11-13 02:57 班）：**SV660N 画像 IgH ecrt OP+CSP+DC 验证**——`scripts/spikes/igh-sv660n-op-probe.sh` **EXIT=0**：`ethercat slaves` 显示 `OP + 0x00000ec5:0x0000e5f1`；`RESULT al_states=0x08`；`STATUS sw=0x0637 modes_display=8 pos=12345`（启用+Target reached+位置跟随）；应答器 `dc_rd=3 dc_wr=7`。ecrt 夹具为验证机本地文件（不入库）。⚠️ 默认 PDO 仍为 Tier0 通用布局。
   - 进度（2026-11-13 03:05 班）：**HM（回零，模式 6）Tier0 行为**——`Operation enabled` 且控制字 bit4=1 时位置归零并置状态字 bit12（Homing attained），bit4 清除后不再置位；新增单测 `cia402_homing_mode_zeroes_position_and_sets_attained`、UDS 探针 `--cia402-homing`、脚本 `cia402-homing-probe.sh`；验证机 **EXIT=0**。测试 **204 passed**。⚠️ Tier0：不模拟寻零过程/开关信号/回零方式 0x6098。
   - 进度（2026-11-13 03:09 班）：**PP（轮廓位置，模式 1）Tier0 行为**——enabled 且控制字 bit4（new set-point）时位置跳变并置 bit10 Target reached + bit12 Set-point acknowledge；清 bit4 后 ack 清除、位置/到位保持。新增单测 `cia402_pp_mode_applies_new_setpoint`、`--cia402-pp` 探针与 `cia402-pp-probe.sh`；验证机 **EXIT=0**。测试 **205 passed**。⚠️ Tier0：瞬时到位、无轨迹/加速度/限幅。
+  - 进度（2026-11-13 03:13 班）：**PV（轮廓速度，模式 3）Tier0**——11 字节布局复用 CSV 速度累加语义（实际速度显示目标速度、禁用归零）；新增单测 `cia402_pv_mode_accumulates_velocity`、`--cia402-pv` 探针与 `cia402-pv-probe.sh`；验证机 **EXIT=0**。测试 **206 passed**。当前 Tier0 模式：PP/CSP/CSV/PV/CST/HM。⚠️ 均为 Tier0 简化。
 - [ ] **B11 CiA402 行为插件**：以 Inovance SV660N 兼容画像为第一个目标，实现 CSP 状态机（Tier0/内置 profile 起步）。
   - 依赖 B10 已完成（声明式画像 + `--manifest` + 验证脚本可复用）；先 facts.md + 声明式画像，
     行为 WASM 只做 Tier0 状态机骨架。
