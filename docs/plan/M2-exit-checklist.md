@@ -44,6 +44,9 @@
 ## 4. 验证命令（本机 + Linux 验证机）
 
 ```bash
+# 一键预回归（按平台/root 自动选择探针；验证机 14 PASS）
+bash scripts/spikes/run-all-probes.sh
+
 # 单元/集成 + 静态检查
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings

@@ -1,5 +1,31 @@
 ---
 
+## 2026-11-13 07:13 班（低峰）— **B37：一键预回归 `run-all-probes.sh`**
+
+**做了什么**
+- 新增 `scripts/spikes/run-all-probes.sh`：按 host（Linux/其他）与 root 权限自动挑选可跑探针
+  （非 Linux 只跑 doc-check/http-state；TAP 需 root 且 `RUN_TAP` 非 0），`--list` 查看计划；
+  逐项执行并写日志，汇总 `PASS/FAIL/SKIP`、失败名单与退出码（0=无失败，1=有 FAIL）。
+  Windows Git Bash 下自动降级（不使用 Windows 自带 `timeout`）。
+- 更新 `docs/VERIFICATION.md`（run-all 行）、`docs/plan/M2-exit-checklist.md`（验证命令加一键脚本）、
+  AGENTS（B37 完成、新增 B38 M3 范围/ADR）。
+
+**验证结果**
+- 本机（Windows Git Bash）：`run-all-probes.sh` **2 PASS / 0 FAIL / 12 SKIP**（UDS/TAP 按平台跳过）。
+- 验证机（Linux root）：**14 PASS / 0 FAIL / 0 SKIP**（含 `tap-live-state-probe.sh`）；
+  第一次失败是 VM 镜像缺少 `docs/plan/` 与 doc-check 脚本（已按需同步后全绿）。
+- 本机 `cargo fmt --check`、clippy、`cargo test --workspace` **223 passed** 不变。
+
+**卡点**
+- 脚本依赖探针自身的前置（release 二进制、python3、root/TAP 夹具）；缺少时按 SKIP/FAIL 报出。
+
+**下次开工第一件事**
+- **B38**：`docs/plan/M3-scope.md` + ADR（插件宿主/WASM 行为插件边界、SDO 编辑与写路径、
+  鉴权/TLS 范围）——为 M3 定界，避免控制面继续膨胀。
+
+---
+---
+
 ## 2026-11-13 07:11 班（低峰）— **B36：M2 退出清单与路线图对齐**
 
 **做了什么**
