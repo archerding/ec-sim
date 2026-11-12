@@ -24,6 +24,7 @@
 | `cia402-pp-probe.sh` | 7B PDO PP（模式 1）：new set-point 位置跳变 + Target reached + Set-point acknowledge | **EXIT=0** |
 | `cia402-homing-probe.sh` | 7B PDO HM（模式 6）：位置归零 + Homing attained（bit12），bit4 清除后不再置位 | **EXIT=0** |
 | `cia402-fault-probe.sh` | `--fault 0x7500`：Fault bit、控制字 bit7 复位、`0x603F` 回读 | **EXIT=0** |
+| `cia402-modes-probe.sh` | 三个 CiA 402 画像经 SDO 上传的 `0x6502` 与布局一致（0x01C1/0x03CD/0x0410） | **EXIT=0** |
 | `dc-clock-probe.sh` | 模拟 DC 时钟：0x0910 系统时间随帧前进（Tier0 帧驱动） | **EXIT=0** |
 | `cia402-sdo-download-probe.sh` | 20 字节可写配置字符串 `0x2100` 的分段 SDO 下载 + 回读一致 | **EXIT=0** |
 

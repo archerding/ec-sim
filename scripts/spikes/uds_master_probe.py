@@ -323,6 +323,7 @@ def main():
     cia402_tq = False
     cia402_pv = False
     cia402_ip = False
+    expect_6502 = None
     dc_clock = False
     cia402_homing = False
     cia402_pp = False
@@ -368,6 +369,8 @@ def main():
             cia402 = True
         if arg.startswith("--expect-string="):
             expect_string = arg.split("=", 1)[1]
+        if arg.startswith("--expect-6502="):
+            expect_6502 = int(arg.split("=", 1)[1], 0)
 
     master = SyntheticMaster(socket_path, timeout)
     try:
@@ -724,6 +727,17 @@ def main():
                 check(modes_display == mode, f"IP 模式显示 {modes_display} != {mode}")
                 check(position == expected_pos, f"IP 位置 {position} != {expected_pos}")
             print("OK: CiA 402 IP（模式 7，位置跟随）通过")
+
+        # 5q) 可选：通过 SDO 上传读取 0x6502（Supported drive modes）并与期望比较。
+        if expect_6502 is not None:
+            data = sdo_upload_segmented(master, 0x6502, 0)
+            check(len(data) == 4, f"0x6502 长度 {len(data)} != 4")
+            value = struct.unpack("<I", data)[0]
+            check(
+                value == expect_6502,
+                f"0x6502={value:#06x} != 期望 {expect_6502:#06x}",
+            )
+            print(f"OK: 0x6502（Supported drive modes）= {value:#06x} 与期望一致")
 
         # 5c) 可选：CiA 402 状态机行为（完整 7 字节 RxPDO/TxPDO，Tier0）。
         if cia402:

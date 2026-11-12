@@ -32,6 +32,30 @@
 
 ---
 
+## 2026-11-13 03:36 班（低峰）— B11：**`0x6502` 经 SDO 上传验证（三个画像）**
+
+**做了什么**
+- `uds_master_probe.py` 新增 `--expect-6502=<hex>`：用已有 SDO 上传路径读取对象
+  `0x6502`（Supported drive modes），断言 UINT32 值与期望一致。
+- 新增 `scripts/spikes/cia402-modes-probe.sh`：依次启动三个 CiA 402 画像（7B/11B/5B），
+  通过 SDO 上传验证 `0x6502` 分别为 **0x01C1 / 0x03CD / 0x0410**（与 03:32 班修正的
+  manifest 值一致）。
+- `docs/VERIFICATION.md` 增加脚本索引；AGENTS B11 记录。
+
+**验证结果**
+- 本机：`cargo fmt --check` 通过；`cargo test --workspace` **208 passed** 基线不变
+  （未改 Rust 代码）。
+- Linux 验证机（同步脚本 + manifest 后）：`cia402-modes-probe.sh` → **EXIT=0**：
+  `0x6502 = 0x01c1 / 0x03cd / 0x0410 与期望一致`（三个画像各一次完整 UDS/SDO 会话）。
+
+**卡点**
+- 只验证了字典/SDO 暴露路径；SOEM/IgH 侧的 SDO 读取仍受环境限制（见 STATUS 差距表）。
+
+**下次开工第一件事**
+- B11：继续找 SV660N 默认 PDO 条目；或评估真实 DC 同步（SYNC0 脉冲）。
+
+---
+
 ## 2026-11-13 03:34 班（低峰）— CI：**rustdoc 警告视为错误 + 文档链接修复**
 
 **做了什么**
