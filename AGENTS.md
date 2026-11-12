@@ -107,7 +107,7 @@ user.email = deepseek-harness@users.noreply.github.com
   - 进度（2026-11-13 00:56 班）：**补 6 个边界单测**——13 命令的 WKC 规则（读/写/读写）、
     自增 ADP 前进与 u16 回绕、More 位后无后续 datagram 拒绝、非法帧类型（frame_type=2）
     拒绝、frame_type=1 才是 EtherCAT command、命令码 0x00–0x0E 往返 + 未知码拒绝；测试 **22 个**。
-- [ ] **B5 `esc-core` 最小 ESC**：寄存器阵列 + SM/FMMU + AL 状态机 INIT/PREOP 握手 + EEPROM 接口状态机（Busy/8 字节能力位）。
+- [x] ~~**B5 `esc-core` 最小 ESC**~~ ✅ **2026-11-13 完成**：寄存器阵列 + SM/FMMU 寄存器块与逻辑寻址 + AL 状态机（INIT↔PREOP↔SAFEOP↔OP + INIT→BOOT 拒绝/错误 ACK）+ EEPROM 接口状态机；并扩展了 ESM 前置条件（0x0015/0x0017/0x0018/0x0019/0x0024/0x0025/0x002B/SM 布局）、SM watchdog（0x001B）与 0x0410 读写语义。证据见下方各班进度、`WORKLOG.md` 与 `docs/VERIFICATION.md`。已知限制：无独立硬件定时器（帧驱动时钟）；PDI watchdog 超时不模拟；BOOT 状态仅拒绝。
   - 进度（2026-11-12 19:02 班）：寄存器阵列/AL 状态机/EEPROM 接口已完成；**SM（0x0800–0x083F）
     与 FMMU（0x0600–0x067F）寄存器块已实现**（解码/编码、Status/PDI Control/Type/保留字节只读语义、
     主站整块写后回读；+8 条单测 +2 条 datagram 路径集成测试）。
@@ -159,7 +159,7 @@ user.email = deepseek-harness@users.noreply.github.com
     ⚠️ 仍未校验映射字里的对象/子索引是否真实存在（需字典双向校验）。
   - 待做：映射字对象存在性/子索引范围校验；SM 配置合法性校验（地址越界/区间重叠/类型方向）；
     无独立硬件定时器（帧驱动时钟）；0x0410 PDI watchdog 仅保留读写语义。
-- [ ] **B6 SII 生成器**：ESI XML → SII 镜像（含固定区 CRC-8（**word 0x0007**，覆盖 0x0000–0x0006，已实现）、category 链 0x0029/0x0032/0x0033、0xFFFF 终止）。
+- [x] ~~**B6 SII 生成器**~~ ✅ **2026-11-13 完成**：ESI XML / manifest → SII 镜像（固定区 CRC-8 word 0x0007、字符串/通用/SM/FMMU/TxPDO/RxPDO/**DC** 类别链、0xFFFF 终止）；`--esi`/`--manifest`/组合路径均经 SOEM/IgH 扫描验证。已知限制：FMMU 类别按 4 通道示例生成；DC 类别生成能力已就绪但**无 profile 声明**（模拟器未实现 DC 同步，开启前需先做 DC 仿真）。
   - 进度（2026-11-13 01:51 班）：**FMMU 类别 0x0028 已实现**——内容 4 字节用途码
     `[0x03,0x01,0x02,0xFF]`（邮箱读/过程数据输出/输入/未使用），长度字=2；依据公开 CSDN
     资料（只读参考，2026-11-13 访问）；新增测试并更新类别链期望。验证机 soem-process-data/
@@ -201,7 +201,7 @@ user.email = deepseek-harness@users.noreply.github.com
   - 待做：组合画像接入行为插件（B11 Tier0 骨架）、IgH OP（复用作 ecrt 夹具）、
     FMMU 类别 0x0028、DC 类别（需 ESC Sec.II / IEC 61158 原文）。
   ⚠️ 旧文档把 CRC 写成 word 0x003F，经 SOEM `eepromtool`/IgH `tool/sii_crc.cpp` 复核已更正（0x003F 是 SII 版本 = 1）。
-- [ ] **B7 CoE 最小闭环**：加速 SDO 上传/下载 + 0x1C12/0x1C13/0x1600/0x1A00 + Abort 码；
+- [x] ~~**B7 CoE 最小闭环**~~ ✅ **2026-11-13 完成**：expedited/segmented SDO 上传/下载、0x1C12/0x1C13/0x1600/0x1A00 配置对象、Abort 码（含 0x05030000/0x06070010/0x06010002/0x06020000/0x05040000）、SDO Info、Complete Access（上传/单帧+分段下载/重发容错/超长 Abort）。已知限制：CA 部分写/子索引顺序语义未实现；IgH 侧 SDO 上传/下载在验证机受 ecrt ioctl 阻塞（环境问题，⚠️ 待验证）；SOEM `slaveinfo -sdo` 有已知偶发段错误（探针已重试规避）。
   **SDO Info 已实现**（SII 通用类别 CoE details = `0x0F`，声明 SDO/Info/PDO assign/config）；
   仍**不做** Complete Access（SII 对应位保持 0，CA 未实现）。
   - 进度（2026-11-12 19:36 班）：**邮箱数据链路已通**——SII 声明 CoE mailbox（固定区 0x0014–0x001C，

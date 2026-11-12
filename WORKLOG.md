@@ -32,6 +32,35 @@
 
 ---
 
+## 2026-11-13 02:06 班（低峰）— 计划簿记：**B5/B6/B7 标记完成**
+
+**做了什么**
+- 按 §6 "完成即移入已完成" 的约定，核对后将三项标记为完成（保留全部进度子条目与证据链接）：
+  - **B5 `esc-core` 最小 ESC** ✅：寄存器阵列/SM/FMMU/AL 状态机/EEPROM 接口已满足，并扩展了
+    ESM 前置条件（0x0015/0x0017/0x0018/0x0019/0x0024/0x0025/0x002B/SM 布局）、SM watchdog
+    与 0x0410 读写语义。已知限制：帧驱动时钟（无独立定时器）、PDI watchdog 超时不模拟、
+    BOOT 仅拒绝。
+  - **B6 SII 生成器** ✅：ESI/manifest→SII（CRC-8、字符串/通用/SM/**FMMU**/TxPDO/RxPDO/
+    **DC** 类别链、0xFFFF 终止），`--esi`/`--manifest`/组合路径均经 SOEM/IgH 扫描验证。
+    已知限制：FMMU 类别按 4 通道示例；DC 类别生成就绪但无 profile 声明（缺 DC 同步仿真）。
+  - **B7 CoE 最小闭环** ✅：expedited/segmented SDO 读写、配置对象、Abort 码、SDO Info、
+    Complete Access（上传/单帧+分段下载/重发容错/超长 Abort）。已知限制：CA 部分写/顺序
+    语义未实现；IgH SDO 在验证机受 ecrt ioctl 阻塞（环境问题）。
+- 当前 §6 仅剩 **B11 CiA402 行为插件**未完成（Tier0 已具备：CSP/CSV 行为、故障注入、
+  通用/CiA402/CSV/SV660N 画像、IgH/SOEM 验证；剩余：SV660N 默认 PDO 条目、CST 语义等）。
+
+**验证结果**
+- 纯文档（AGENTS §6 三行标题）改动；`git diff` 核对仅改 3 行状态标记并保留证据。
+- 本班未改代码：测试基线 **198 passed** 不变。
+
+**卡点**
+- B11 的 SV660N 默认 PDO 具体条目仍无公开文本来源；CST（转矩）语义未实现。
+
+**下次开工第一件事**
+- B11：继续找 SV660N 默认 PDO（公开镜像/HTML），或实现 CST（模式 10/11 字节 PDO）Tier0 行为。
+
+---
+
 ## 2026-11-13 02:02 班（低峰）— B7：**分段下载数据超长 → Abort 0x06070010**
 
 **做了什么**
