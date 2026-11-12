@@ -1,5 +1,36 @@
 ---
 
+## 2026-11-13 05:12 班（低峰）— **B16：M1 性能瓶颈定位 + ADR（模拟器侧仅 ~0.5µs/帧）**
+
+**做了什么**
+- 新增 `crates/esc-node/examples/chain_latency.rs`：`cargo run --release -p esc-node
+  --example chain_latency -- 20000` 测量 `handle_frame_chain` 在 1/2/4/8 从站链上的
+  单帧处理耗时（手工构造 BRD 帧：以太网头 + EtherCAT 头 + datagram）。
+- 新增 **ADR 0001**（`docs/adr/0001-m1-1khz-p99-limits.md`）：汇总功能/性能证据并给出决策
+  ——**不宣称** M1 的 8 从站 @1kHz、p99<100µs 已达成；瓶颈定位：
+  - 模拟器 8 从站链处理 **≈0.48 µs/帧**（验证机；本机 ≈0.76 µs）→ 仅占 1 ms 周期约 0.05%；
+  - TAP + SOEM `simple_ng` ≈425 Hz（≈2.35 ms/轮，RT/绑核无改善）→ 瓶颈在 SOEM TAP
+    收包线程/VM 调度，不是 ESC 处理；
+  - UDS shim p99≈172–196 µs → 主要由 UDS syscall + Python 探测 + 调度构成。
+- 更新 M1 退出清单（第 2/3 项改为功能达成/性能待测并链接 ADR）、VERIFICATION（微基准行）、
+  AGENTS（B16 完成、新增 B17 原生主站/延迟基准）。
+
+**验证结果**
+- 本机：`cargo run --release -p esc-node --example chain_latency -- 20000`
+  → `1/2/4/8` 从站 = **130.6 / 212.3 / 393.9 / 756.5 ns/帧**；
+  `cargo fmt --check`、clippy 通过；`cargo test --workspace` **210 passed** 不变。
+- 验证机（`isolcpus=2,3`）：同一微基准 `1/2/4/8` 从站 = **75.7 / 155.5 / 256.1 / 483.5 ns/帧**。
+
+**卡点**
+- M1 性能指标受测量工具（SOEM TAP 收包、Python 探测）限制；需要 B17 原生基准复核。
+
+**下次开工第一件事**
+- **B17**：用 C/Rust 直接收发 EtherCAT 帧的原生基准测 shim/TAP 往返与 p99（分离开测量工具
+  开销），评估 SOEM TAP 收包线程参数，按 ADR 0001 复测或记录止损。
+
+---
+---
+
 ## 2026-11-13 05:01 班（低峰）— **B15：隔离 CPU 下 1kHz/p99 复测（未达标，记录限制）**
 
 **做了什么**
