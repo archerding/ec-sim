@@ -1,5 +1,32 @@
 ---
 
+## 2026-11-13 05:59 班（低峰）— **B24：TAP 实时 `--serve`（共享 Responder + HTTP 线程）**
+
+**做了什么**
+- 实时共享状态模式扩展到 **TAP 线缆层**：`--tap <if> --serve <addr>` 不再报错；TAP 主循环与
+  HTTP 线程共享 `Arc<Mutex<Vec<Responder>>>`（每帧加锁处理，请求时加锁读取），
+  `/state`（含 live）与 `/pdo` 对 TAP 同样可用；无 `--uds/--tap` 时仍为启动时静态快照服务。
+- 新增 `scripts/spikes/tap-live-state-probe.sh`（root）：创建 TAP + 启动
+  `--tap --esm-lax --serve`；未修改 SOEM `simple_ng` 推入 OP；轮询 `/state` 断言
+  `live.al_status` 低 4 位 = 0x08 且 `frames_in > 0`；`/pdo` 返回 pdo-v1。
+- 更新 `docs/VERIFICATION.md`、AGENTS（B24 完成、新增 B25 `/pdo` 历史缓冲 + Web 波形）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **217 passed** 不变。
+- 验证机：重建后 `tap-live-state-probe.sh` **EXIT=0**——`OK: TAP 实时 /state AL=0xc8（OP）、
+  frames_in=187；/pdo schema=ec-sim/pdo-v1`；此前的 UDS `live-state-probe.sh` 与
+  `pdo-live-probe.sh` 路径未改动（行为不变）。
+
+**卡点**
+- `/pdo` 仍是当前值快照，无历史缓冲/波形（B25）；TAP 实时需要 root。
+
+**下次开工第一件事**
+- **B25**：`--serve` 维护 `/pdo` 最近 N 帧环形缓冲 + `/pdo?history=1`，`web/` 用 Canvas
+  画 SM2/SM3 时间序列；探针校验历史长度与最新值一致。
+
+---
+---
+
 ## 2026-11-13 05:53 班（低峰）— **B23：`--serve` 实时 PDO 快照（/pdo）+ Web PDO 视图**
 
 **做了什么**

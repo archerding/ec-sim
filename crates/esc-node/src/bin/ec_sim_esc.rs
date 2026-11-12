@@ -613,11 +613,8 @@ fn main() -> std::process::ExitCode {
 
     let mut live_serve: Option<String> = None;
     if let Some(addr) = serve_addr.as_deref() {
-        if uds_path.is_some() {
+        if uds_path.is_some() || tap_name.is_some() {
             live_serve = Some(addr.to_string());
-        } else if tap_name.is_some() {
-            eprintln!("ec-sim-esc: 实时 --serve 仅支持 --uds（TAP 暂不支持）");
-            return std::process::ExitCode::from(2);
         } else {
             return serve_http(manifest_path.as_deref(), esi_path.as_deref(), addr);
         }
@@ -714,6 +711,7 @@ fn main() -> std::process::ExitCode {
             behavior,
             fault,
             slave_count,
+            live_serve,
         ),
         (None, None) => run(
             "ecsim0",
@@ -724,6 +722,7 @@ fn main() -> std::process::ExitCode {
             behavior,
             fault,
             slave_count,
+            live_serve,
         ),
     }
 }
@@ -962,6 +961,7 @@ fn run(
     behavior: Option<String>,
     fault: Option<u16>,
     slave_count: usize,
+    serve: Option<String>,
 ) -> std::process::ExitCode {
     use esc_node::DEFAULT_SIM_MAC;
     use std::io::Write;
@@ -980,7 +980,9 @@ fn run(
     );
     let _ = std::io::stdout().flush();
 
-    let mut responders = match build_responders(
+    let http_manifest = manifest.clone();
+    let http_esi = esi.clone();
+    let responders = match build_responders(
         manifest.as_ref(),
         esi.as_ref(),
         behavior.as_deref(),
@@ -994,6 +996,11 @@ fn run(
             return std::process::ExitCode::from(7);
         }
     };
+    let responders = std::sync::Arc::new(std::sync::Mutex::new(responders));
+    if let Some(addr) = serve {
+        let shared = std::sync::Arc::clone(&responders);
+        std::thread::spawn(move || serve_live_http(addr, http_manifest, http_esi, shared));
+    }
     let mut buf = [0u8; 2048];
     loop {
         let len = match tap.recv(&mut buf) {
@@ -1005,17 +1012,24 @@ fn run(
                 return std::process::ExitCode::from(5);
             }
         };
-        for responder in &mut responders {
-            responder.tick(now_ms());
-        }
-        let Some(reply) = esc_node::handle_frame_chain(&mut responders, &buf[..len], mac) else {
+        let reply = {
+            let mut guard = responders.lock().unwrap();
+            for responder in guard.iter_mut() {
+                responder.tick(now_ms());
+            }
+            esc_node::handle_frame_chain(&mut guard, &buf[..len], mac)
+        };
+        let Some(reply) = reply else {
             continue;
         };
         if let Err(err) = tap.send(&reply) {
             eprintln!("ec-sim-esc: 写回 TAP 失败: {err}");
             return std::process::ExitCode::from(6);
         }
-        maybe_print_stats(&responders[0], verbose);
+        {
+            let guard = responders.lock().unwrap();
+            maybe_print_stats(&guard[0], verbose);
+        }
         let _ = DEFAULT_SIM_MAC;
     }
 }
@@ -1031,6 +1045,7 @@ fn run(
     _behavior: Option<String>,
     _fault: Option<u16>,
     _slave_count: usize,
+    _serve: Option<String>,
 ) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)

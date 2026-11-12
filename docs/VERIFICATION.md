@@ -52,6 +52,7 @@
 | `igh-cia402-op-probe.sh` | IgH ecrt 7B CiA402：OP + 状态字/模式/位置 | **EXIT=0** |
 | `igh-cia402-csv-op-probe.sh` | IgH ecrt 11B CSV：OP + 速度模式位置累加/速度显示 | **EXIT=0** |
 | `uds-multi-slave-probe.sh` | `--slaves 8` 多从站链：广播 WKC=8、逐站地址分配、配置地址寻址 | **EXIT=0** |
+| `tap-live-state-probe.sh` | TAP 实时 `--serve`：SOEM `simple_ng` 推入 OP 后 `/state.live` AL 低 4 位=0x08、`frames_in>0`，`/pdo` 返回 pdo-v1（root，验证机） | **EXIT=0** |
 | `pdo-live-probe.sh` | `--serve` 实时 `/pdo`：初始 SM2/SM3 全 0、AL=0x01；UDS APWR 写 0x1100=0xBEEF/0x1110=0x1234 后 `/pdo` 实时反映 `beef`/`1234` | **EXIT=0** |
 | `live-state-probe.sh` | `--serve` 实时模式（UDS+HTTP 同进程）：`/state.live.al_status` INIT→PREOP（0x01→0x02）、`stats.frames_in>=1` | **EXIT=0** |
 | `http-state-probe.sh` | `--serve` 只读 HTTP API：`/state`/`/dict`/`/health` 200（CORS、Content-Type、no-store）、未知路径 404；无 manifest 时 `/dict` 404 | **EXIT=0** |
