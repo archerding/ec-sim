@@ -32,6 +32,32 @@
 
 ---
 
+## 2026-11-13 03:17 班（低峰）— B11：**TQ（转矩，模式 4）Tier0 行为**
+
+**做了什么**
+- `--behavior cia402`：模式 4（TQ）复用 CST 的转矩镜像语义（5 字节 PDO：控制字/模式/
+  目标转矩 → 状态字/模式显示/实际转矩）；`Operation enabled` 时实际转矩镜像目标转矩，
+  禁用后归零。⚠️ Tier0：无转矩环/限幅/单位换算。
+- 新增单测 `cia402_tq_mode_mirrors_target_torque`（`0x0221/0x0223/0x0237/0x0240`、
+  转矩 0/0/250/0）、`uds_master_probe.py --cia402-tq`、脚本
+  `scripts/spikes/cia402-tq-probe.sh`（5 字节 PDO 画像）。
+- 文档：`docs/plugins/cia402-state-machine.md` 增补 TQ 小节、`docs/VERIFICATION.md` 索引、
+  AGENTS B11（Tier0 模式覆盖：PP/PV/TQ/CSP/CSV/CST/HM，均简化）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **207 passed**
+  （esc-core 86 / esc-node 70 / plugin-host 27 + 1 集成 / wire 23）。
+- Linux 验证机（重建后）：`cia402-tq-probe.sh` → **EXIT=0**：`BEHAVIOR cia402
+  sm2_out=0x1100/5B sm3_in=0x1110/5B`；四步状态字/模式显示/实际转矩全部符合预期。
+
+**卡点**
+- TQ 仅 Tier0：无转矩环/限幅/单位换算；与 CST 行为同构。
+
+**下次开工第一件事**
+- B11：继续找 SV660N 默认 PDO 条目；或评估真实 DC 同步（SYNC0 脉冲）。
+
+---
+
 ## 2026-11-13 03:13 班（低峰）— B11：**PV（轮廓速度，模式 3）Tier0 行为**
 
 **做了什么**

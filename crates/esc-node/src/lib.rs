@@ -374,7 +374,8 @@ impl Responder {
         let csp = modes == 8;
         // CSV（模式 9）与 PV（模式 3，Tier0 复用速度累加语义）都使用 11 字节布局。
         let csv = (modes == 9 || modes == 3) && out_bytes.len() >= 11;
-        let cst = modes == 10 && out_bytes.len() == 5;
+        // CST（模式 10）与 TQ（模式 4，Tier0 复用转矩镜像语义）都使用 5 字节布局。
+        let cst = (modes == 10 || modes == 4) && out_bytes.len() == 5;
         if enabled && csp {
             behavior.position_actual = target;
         } else if enabled && csv {
@@ -3701,6 +3702,66 @@ mod tests {
             al_status_byte(&mut responder) & 0x0F,
             0x04,
             "状态保持 SAFEOP"
+        );
+    }
+
+    #[test]
+    fn cia402_tq_mode_mirrors_target_torque() {
+        fn write_rx(responder: &mut Responder, controlword: u16, mode: i8, torque: i16) {
+            let mut data = vec![0u8; 5];
+            data[0..2].copy_from_slice(&controlword.to_le_bytes());
+            data[2] = mode as u8;
+            data[3..5].copy_from_slice(&torque.to_le_bytes());
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Apwr,
+                1,
+                0,
+                0x1100,
+                data,
+            )]);
+            responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APWR reply");
+        }
+        fn read_tx(responder: &mut Responder) -> (u16, i8, i16) {
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Aprd,
+                1,
+                0,
+                0x1110,
+                vec![0u8; 5],
+            )]);
+            let reply = responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APRD reply");
+            let start = ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10;
+            (
+                u16::from_le_bytes([reply[start], reply[start + 1]]),
+                reply[start + 2] as i8,
+                i16::from_le_bytes([reply[start + 3], reply[start + 4]]),
+            )
+        }
+
+        let mut responder = Responder::default().with_cia402_behavior(0x1100, 5, 0x1110, 5);
+        write_rx(&mut responder, 0x0006, 4, 250);
+        responder.tick(1);
+        assert_eq!(read_tx(&mut responder), (0x0221, 4, 0));
+        write_rx(&mut responder, 0x0007, 4, 250);
+        responder.tick(2);
+        assert_eq!(read_tx(&mut responder), (0x0223, 4, 0));
+        write_rx(&mut responder, 0x000F, 4, 250);
+        responder.tick(3);
+        assert_eq!(
+            read_tx(&mut responder),
+            (0x0237, 4, 250),
+            "TQ：实际转矩=目标转矩"
+        );
+        write_rx(&mut responder, 0x0000, 4, 250);
+        responder.tick(4);
+        assert_eq!(
+            read_tx(&mut responder),
+            (0x0240, 4, 0),
+            "禁用后实际转矩归零"
         );
     }
 
