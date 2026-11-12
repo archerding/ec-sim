@@ -32,6 +32,34 @@
 
 ---
 
+## 2026-11-13 03:32 班（低峰）— B11：**`0x6502`（Supported drive modes）与各画像布局一致**
+
+**做了什么**
+- 按各画像**实际可支持的 Tier0 模式**修正/补充 `0x6502`：
+  - `generic-cia402-servo`（7 字节）：pp(1)/hm(6)/ip(7)/csp(8) → **0x01C1**；
+  - `generic-cia402-csv-servo`（11 字节）：pp(1)/vl(2)/pv(3)/hm(6)/ip(7)/csp(8)/csv(9) → **0x03CD**；
+  - `generic-cia402-cst-servo`（5 字节）：tq(4)/cst(10) → **0x0410**（原为通用 0x3AD）；
+  - `inovance-sv660n` 保留**公开实测值 0x03AD**（厂商默认支持模式，不随本仓库布局变化）。
+- 新增守卫测试 `cia402_profiles_declare_supported_modes_matching_layout`：遍历上述 4 个
+  manifest，断言生成字典的 `0x6502` 与期望值一致（并检查 UINT32 长度）。
+- 文档：`docs/plugins/cia402-state-machine.md`（0x6502 与布局一致表）、`docs/STATUS.md`
+  CiA 402 能力行、AGENTS B11。
+- 修复过程中发现并修正 manifest 写法问题：PowerShell 单引号字符串里的 `` `n `` 被当字面量
+  写进 YAML（0x6502 行与注释粘连导致对象未生效）；已改用 `edit` 工具修正。
+
+**验证结果**
+- 本机：`cargo fmt --check`、clippy 通过；`cargo test --workspace` **208 passed**
+  （esc-core 86 / esc-node 70 / plugin-host 27 + 2 集成 / wire 23）。
+- 本班未占用验证机（只改对象字典值 + 守卫测试，SII/PDO 行为不变）。
+
+**卡点**
+- `0x6502` 现在描述的是**本仓库 Tier0 实际能力**，不是厂商真实支持列表（SV660N 除外）。
+
+**下次开工第一件事**
+- B11：继续找 SV660N 默认 PDO 条目；或评估真实 DC 同步（SYNC0 脉冲）。
+
+---
+
 ## 2026-11-13 03:28 班（低峰）— B11：**IP（插补位置，模式 7）Tier0 — 常用模式全覆盖**
 
 **做了什么**

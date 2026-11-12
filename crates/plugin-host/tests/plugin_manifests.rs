@@ -107,3 +107,36 @@ fn repository_plugin_manifests_are_valid_and_generate_profiles() {
         }
     }
 }
+
+/// CiA 402 画像的 `0x6502`（Supported drive modes）必须与它实际可支持的 Tier0 模式一致：
+/// - 7 字节布局：pp(1)/hm(6)/ip(7)/csp(8) → 0x01C1；
+/// - 11 字节布局：pp(1)/vl(2)/pv(3)/hm(6)/ip(7)/csp(8)/csv(9) → 0x03CD；
+/// - 5 字节布局：tq(4)/cst(10) → 0x0410；
+/// - SV660N 兼容画像使用公开实测值 0x03AD（厂商默认支持模式，不随本仓库 PDO 布局变化）。
+#[test]
+fn cia402_profiles_declare_supported_modes_matching_layout() {
+    let cases = [
+        ("generic-cia402-servo", 0x01C1u32),
+        ("generic-cia402-csv-servo", 0x03CD),
+        ("generic-cia402-cst-servo", 0x0410),
+        ("inovance-sv660n", 0x03AD),
+    ];
+    for (id, expected) in cases {
+        let path = repo_root().join("plugins").join(id).join("plugin.yaml");
+        let manifest = PluginManifest::load(path.to_str().expect("utf8 path"))
+            .unwrap_or_else(|error| panic!("加载 {id} 失败：{error}"));
+        let dict = dictionary_from_manifest(&manifest)
+            .unwrap_or_else(|error| panic!("{id} 生成对象字典失败：{error}"));
+        let entry = dict
+            .entry(0x6502, 0)
+            .unwrap_or_else(|| panic!("{id} 缺少 0x6502"));
+        assert_eq!(entry.value.len(), 4, "{id} 的 0x6502 应为 UINT32");
+        let value = u32::from_le_bytes([
+            entry.value[0],
+            entry.value[1],
+            entry.value[2],
+            entry.value[3],
+        ]);
+        assert_eq!(value, expected, "{id} 的 0x6502 与布局不一致");
+    }
+}

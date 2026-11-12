@@ -376,6 +376,7 @@ user.email = deepseek-harness@users.noreply.github.com
   - 进度（2026-11-13 03:17 班）：**TQ（转矩，模式 4）Tier0**——5 字节布局复用 CST 转矩镜像语义（禁用归零）；新增单测 `cia402_tq_mode_mirrors_target_torque`、`--cia402-tq` 探针与 `cia402-tq-probe.sh`；验证机 **EXIT=0**。测试 **207 passed**。Tier0 模式覆盖：PP/PV/TQ/CSP/CSV/CST/HM（均简化）。
   - 进度（2026-11-13 03:21 班）：**VL（速度，模式 2）Tier0**（与 PV 同构，速度累加语义）；并**修复可复现性缺口**——此前 `uds_master_probe.py` 的 PV/TQ 探针块/参数因脚本写法问题未真正进入 git（验证机用的是手工同步副本），本轮重新写入并验证 PV/VL、TQ 探针均 **EXIT=0**。新增单测循环覆盖 PV=3/VL=2。测试 **207 passed**。
   - 进度（2026-11-13 03:28 班）：**IP（插补位置，模式 7）Tier0**——7 字节布局复用 CSP 位置跟随语义；新增 `--cia402-ip` 探针与 `cia402-ip-probe.sh`；验证机 **EXIT=0**。至此 **CiA 402 常用模式全覆盖（Tier0 简化）**：PP(1)/PV(3)/VL(2)/TQ(4)/IP(7)/CSP(8)/CSV(9)/CST(10)/HM(6)。测试 **207 passed**。
+  - 进度（2026-11-13 03:32 班）：**`0x6502` 与各画像 PDO 布局一致**——7 字节 `0x01C1`（pp/hm/ip/csp）、11 字节 `0x03CD`（pp/vl/pv/hm/ip/csp/csv）、5 字节 `0x0410`（tq/cst）、SV660N 保留公开实测 `0x03AD`；新增守卫测试遍历 4 个画像。测试 **208 passed**。
 - [ ] **B11 CiA402 行为插件**：以 Inovance SV660N 兼容画像为第一个目标，实现 CSP 状态机（Tier0/内置 profile 起步）。
   - 依赖 B10 已完成（声明式画像 + `--manifest` + 验证脚本可复用）；先 facts.md + 声明式画像，
     行为 WASM 只做 Tier0 状态机骨架。
