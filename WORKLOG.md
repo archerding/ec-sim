@@ -32,6 +32,35 @@
 
 ---
 
+## 2026-11-13 01:45 班（低峰）— B7：**CA 下载改为 all-or-nothing（修复部分写）**
+
+**做了什么**
+- 修复 `esc-node::write_complete_access` 的**部分写缺陷**：此前按子索引边校验边写入，
+  若后面的子索引只读/长度不符，会在 Abort 前把前面的子索引写入 `object_writes`，留下
+  部分状态。现在改为**两遍**：
+  1. 第一遍只校验——所有子索引存在、可写、各子索引字节长度之和等于数据长度；
+  2. 第二遍在校验全部通过后才写入。
+- 新增单测 `complete_access_download_is_all_or_nothing`：0x3000 数组（子0 1B 可写、
+  子1 2B 可写、子2 2B 只读），CA 下载 5 字节 → Abort `0x06010002`（子索引 2）、
+  `object_writes` 保持**空**（无部分写）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **192 passed**（esc-core 82 / esc-node 61 / plugin-host 25 + 1 集成 / wire 23）。
+- Linux 验证机（重建后）：`sdo-ca-probe.sh` **EXIT=0**（CA 上传/单帧/分段/重发容错）、
+  `cia402-sdo-download-probe.sh` **EXIT=0**（20 字节对象分段下载并回读一致）→ 合法
+  CA/分段写路径无回归。
+
+**卡点**
+- CA 的"子索引顺序"语义仍按 ETG 常见顺序（sub0→max）实现；不校验主站是否按顺序发送
+  （CA 数据本身就是按顺序拼好的字节串，无法从字节流反推）。
+- IgH 侧仍无法直接验证 CA（公共 API 不下发 CA 位）。
+
+**下次开工第一件事**
+- 继续 B11 SV660N 默认 PDO 条目查找（HTML 在线手册）或 B6 FMMU/DC 类别（需原文）。
+
+---
+
 ## 2026-11-13 01:42 班（低峰）— B11：**SV660N 公开事实核对（第三方实测文档）**
 
 **做了什么**

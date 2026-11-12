@@ -992,6 +992,33 @@ impl Responder {
         let Some(object) = self.dict.object(index) else {
             return mailbox::sdo_abort_payload(index, 0x00, mailbox::SDO_ABORT_OBJECT_NOT_EXIST);
         };
+        // 第一遍：只校验（所有子索引存在、可写、长度和与数据一致），避免"部分写后 Abort"。
+        let mut total = 0usize;
+        for sub in 0..=object.max_subindex {
+            let Some(entry) = self.dict.entry(index, sub) else {
+                return mailbox::sdo_abort_payload(
+                    index,
+                    0x00,
+                    mailbox::SDO_ABORT_OBJECT_NOT_EXIST,
+                );
+            };
+            let len = usize::from(entry.bit_length.saturating_add(7)) / 8;
+            if len == 0 || total + len > data.len() {
+                return mailbox::sdo_abort_payload(
+                    index,
+                    0x00,
+                    mailbox::SDO_ABORT_PROTOCOL_TIMEOUT,
+                );
+            }
+            if !entry.writable {
+                return mailbox::sdo_abort_payload(index, sub, mailbox::SDO_ABORT_READ_ONLY);
+            }
+            total += len;
+        }
+        if total != data.len() {
+            return mailbox::sdo_abort_payload(index, 0x00, mailbox::SDO_ABORT_PROTOCOL_TIMEOUT);
+        }
+        // 第二遍：全部校验通过后才写入。
         let mut offset = 0usize;
         for sub in 0..=object.max_subindex {
             let Some(entry) = self.dict.entry(index, sub) else {
@@ -1002,22 +1029,9 @@ impl Responder {
                 );
             };
             let len = usize::from(entry.bit_length.saturating_add(7)) / 8;
-            if len == 0 || offset + len > data.len() {
-                return mailbox::sdo_abort_payload(
-                    index,
-                    0x00,
-                    mailbox::SDO_ABORT_PROTOCOL_TIMEOUT,
-                );
-            }
-            if !entry.writable {
-                return mailbox::sdo_abort_payload(index, sub, mailbox::SDO_ABORT_READ_ONLY);
-            }
             self.object_writes
                 .insert((index, sub), data[offset..offset + len].to_vec());
             offset += len;
-        }
-        if offset != data.len() {
-            return mailbox::sdo_abort_payload(index, 0x00, mailbox::SDO_ABORT_PROTOCOL_TIMEOUT);
         }
         mailbox::sdo_download_ok_service(index, 0)
     }
@@ -2363,6 +2377,80 @@ mod tests {
             responder.object_writes.get(&(0x2000, 0)),
             Some(&payload),
             "重发容错后仍应写入完整数据"
+        );
+    }
+
+    #[test]
+    fn complete_access_download_is_all_or_nothing() {
+        use esc_core::obj_dict::{RuntimeEntry, RuntimeObject};
+
+        fn entry(index: u16, subindex: u8, value: &[u8], writable: bool) -> RuntimeEntry {
+            RuntimeEntry {
+                index,
+                subindex,
+                value: value.to_vec(),
+                data_type: esc_core::obj_dict::data_type::UNSIGNED16,
+                bit_length: (value.len() * 8) as u16,
+                access: if writable {
+                    esc_core::obj_dict::access::READ_WRITE_PREOP
+                } else {
+                    esc_core::obj_dict::access::READ_ONLY
+                },
+                value_info: 0,
+                name: String::new(),
+                writable,
+            }
+        }
+
+        // 0x3000 数组：子 0（1B 可写）、子 1（2B 可写）、子 2（2B 只读）。
+        let dict = ObjectDictionary::new(
+            vec![RuntimeObject {
+                index: 0x3000,
+                max_subindex: 2,
+                object_code: esc_core::obj_dict::object_code::ARRAY,
+                data_type: esc_core::obj_dict::data_type::UNSIGNED16,
+                name: "CA array".to_string(),
+            }],
+            vec![
+                entry(0x3000, 0, &[0x02], true),
+                entry(0x3000, 1, &[0x11, 0x11], true),
+                entry(0x3000, 2, &[0x22, 0x22], false),
+            ],
+        );
+        let mut responder = Responder::default().with_dictionary(dict);
+
+        // CA 下载 5 字节（1+2+2）：子 2 只读 → Abort 0x06010002，且**不得**写入子 0/1。
+        let mut payload = vec![0u8; mailbox::MAILBOX_SIZE];
+        payload[0..2].copy_from_slice(&15u16.to_le_bytes());
+        payload[2..4].copy_from_slice(&0x1001u16.to_le_bytes());
+        payload[5] = mailbox::MAILBOX_TYPE_COE;
+        payload[6..8].copy_from_slice(&(mailbox::COE_COMMAND_SDO_REQUEST << 12).to_le_bytes());
+        payload[8] = 0x31;
+        payload[9..11].copy_from_slice(&0x3000u16.to_le_bytes());
+        payload[11] = 0x00;
+        payload[12..16].copy_from_slice(&5u32.to_le_bytes());
+        payload[16..21].copy_from_slice(&[0x02, 0xAA, 0xAA, 0xBB, 0xBB]);
+        let write = request(&[DatagramData::auto_increment(
+            Command::Apwr,
+            1,
+            0,
+            mailbox::MAILBOX_RX_OFFSET,
+            payload,
+        )]);
+        responder
+            .handle_frame(&write, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let response = read_tx_mailbox(&mut responder);
+        assert_eq!(response[8], 0x80, "只读子索引应回 Abort");
+        assert_eq!(response[11], 0x02, "Abort 的子索引应为 2");
+        assert_eq!(
+            u32::from_le_bytes([response[12], response[13], response[14], response[15]]),
+            mailbox::SDO_ABORT_READ_ONLY
+        );
+        assert!(
+            responder.object_writes.is_empty(),
+            "校验失败时不得产生部分写：{:?}",
+            responder.object_writes
         );
     }
 
