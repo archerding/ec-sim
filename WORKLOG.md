@@ -32,6 +32,37 @@
 
 ---
 
+## 2026-11-13 01:21 班（低峰）— B7：**分段传输重发容错（toggle 幂等）**
+
+**做了什么**
+- 分段上传：`SegmentedUpload` 记录最近一次 `(toggle, 响应服务数据)`；主站**重发上一段**
+  （同一 toggle、响应丢失场景）时幂等返回相同响应、不推进 offset；真正乱序的 toggle
+  仍回 Abort `0x05030000`。
+- 分段下载：`SegmentedDownload` 记录最近处理的 segment toggle；主站重发上一段时幂等应答
+  （`0x20|toggle<<4`）、**不重复追加数据**；真正乱序仍 Abort `0x05030000`。
+- 新增单测 `segment_retransmission_is_idempotent`：上传重发首段 → 响应逐字节相同且
+  offset 不变；下载重发首段 → 数据不重复，随后正确下一段仍能完整写入 20 字节。
+- 前班 `out_of_order_segment_toggle_is_aborted` 仍通过（无历史响应/数据时的错误 toggle
+  依旧 Abort）。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **187 passed**（esc-core 80 / esc-node 59 / plugin-host 25 + 1 集成 / wire 22）。
+- Linux 验证机（重建后）：`sdo-ca-probe.sh` **EXIT=0**（CA 上传/单帧/分段下载多段序列）、
+  `uds-loopback.sh` **EXIT=0**（三轮；52 字节 segmented 上传）、`soem-process-data.sh`
+  **EXIT=0**（SOEM OP、1055 轮 WKC=3）→ 正确序列无回归。
+
+**卡点**
+- 幂等仅在"一段"粒度：主站若重发更早的段（跨 2 段以上）仍 Abort；只缓存最近一段响应/
+  toggle，未实现完整段历史窗口。
+- 未用真实主站重传（丢包模拟）验证顺序容错——仅合成主站/单测覆盖，⚠️ 待验证。
+
+**下次开工第一件事**
+- 可选：用合成主站模拟"响应丢失 + 重发"端到端用例；或继续 B11 SV660N 手册核对
+  （HTML 在线文档）与 B6 FMMU/DC 类别。
+
+---
+
 ## 2026-11-13 01:16 班（低峰）— B7：**分段传输 toggle 校验**（Abort 0x05030000）
 
 **做了什么**

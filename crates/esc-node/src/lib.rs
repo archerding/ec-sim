@@ -123,6 +123,8 @@ struct SegmentedUpload {
     offset: usize,
     /// 下一段请求期望的 toggle 位（0/1；CiA 301 要求主站每段交替）。
     toggle: u8,
+    /// 最近一次发出的 segment 响应（toggle + 服务数据），用于主站重发上一段时幂等重发。
+    last_response: Option<(u8, Vec<u8>)>,
 }
 
 /// 进行中的分段 SDO 下载（值 > 4 字节时使用，CiA 301 segmented download）。
@@ -140,6 +142,8 @@ struct SegmentedDownload {
     data: Vec<u8>,
     /// 是否为 Complete Access 下载（完成时按子索引长度拆分写入）。
     complete_access: bool,
+    /// 最近一次已处理的 segment toggle（用于识别主站重发上一段并幂等应答）。
+    last_toggle: Option<u8>,
 }
 
 /// CiA 402 状态机行为：每个帧周期读 SM2 的控制字，写 SM3 的状态字（Tier0 骨架）。
@@ -872,6 +876,7 @@ impl Responder {
                 complete_access: false,
                 data,
                 toggle: 0,
+                last_toggle: None,
             });
         }
         mailbox::sdo_download_ok_service(initiate.index, initiate.subindex)
@@ -883,6 +888,11 @@ impl Responder {
             return mailbox::sdo_abort_payload(0x0000, 0x00, mailbox::SDO_ABORT_PROTOCOL_TIMEOUT);
         };
         if segment.toggle != state.toggle {
+            // 主站重发上一段（响应丢失）：幂等应答，不重复追加数据。
+            if state.last_toggle == Some(segment.toggle) {
+                self.download = Some(state);
+                return mailbox::sdo_download_segment_ok_service(segment.toggle);
+            }
             return mailbox::sdo_abort_payload(
                 state.index,
                 state.subindex,
@@ -911,6 +921,7 @@ impl Responder {
             return response;
         } else {
             state.toggle ^= 1;
+            state.last_toggle = Some(segment.toggle);
             self.download = Some(state);
         }
         mailbox::sdo_download_segment_ok_service(segment.toggle)
@@ -943,6 +954,7 @@ impl Responder {
                 data: value,
                 offset: first,
                 toggle: 0,
+                last_response: None,
             });
         }
         Some(service)
@@ -970,6 +982,7 @@ impl Responder {
             complete_access: true,
             data,
             toggle: 0,
+            last_toggle: None,
         });
         mailbox::sdo_download_ok_service(index, 0)
     }
@@ -1031,6 +1044,7 @@ impl Responder {
                 data,
                 offset: first,
                 toggle: 0,
+                last_response: None,
             });
         }
         Some(service)
@@ -1046,6 +1060,14 @@ impl Responder {
             return None;
         }
         if request.toggle != state.toggle {
+            // 主站重发上一段（响应丢失）：幂等重发相同响应，不推进状态。
+            if let Some((last_toggle, last_service)) = &state.last_response {
+                if *last_toggle == request.toggle {
+                    let response = last_service.clone();
+                    self.upload = Some(state);
+                    return Some(response);
+                }
+            }
             return Some(mailbox::sdo_abort_payload(
                 state.index,
                 state.subindex,
@@ -1059,6 +1081,7 @@ impl Responder {
         if !last {
             state.offset += take;
             state.toggle ^= 1;
+            state.last_response = Some((request.toggle, service.clone()));
             self.upload = Some(state);
         }
         Some(service)
@@ -2237,6 +2260,110 @@ mod tests {
         assert!(!mailbox::mailbox_full(read_sm1_status(&mut responder)));
         assert_eq!(responder.stats().mailbox_requests, 1);
         assert_eq!(responder.stats().mailbox_responses, 1);
+    }
+
+    #[test]
+    fn segment_retransmission_is_idempotent() {
+        use esc_core::obj_dict::{RuntimeEntry, RuntimeObject};
+
+        fn write_mailbox(responder: &mut Responder, service: &[u8]) {
+            let mut payload = vec![0u8; mailbox::MAILBOX_SIZE];
+            payload[0..2].copy_from_slice(&(service.len() as u16).to_le_bytes());
+            payload[2..4].copy_from_slice(&0x1001u16.to_le_bytes());
+            payload[5] = mailbox::MAILBOX_TYPE_COE;
+            payload[6..6 + service.len()].copy_from_slice(service);
+            let write = request(&[DatagramData::auto_increment(
+                Command::Apwr,
+                1,
+                0,
+                mailbox::MAILBOX_RX_OFFSET,
+                payload,
+            )]);
+            responder
+                .handle_frame(&write, DEFAULT_SIM_MAC)
+                .expect("reply");
+        }
+        fn coe_request(command: u8, index: u16, subindex: u8, tail: &[u8]) -> Vec<u8> {
+            let mut service = vec![0u8; 6];
+            service[0..2].copy_from_slice(&(mailbox::COE_COMMAND_SDO_REQUEST << 12).to_le_bytes());
+            service[2] = command;
+            service[3..5].copy_from_slice(&index.to_le_bytes());
+            service[5] = subindex;
+            service.extend_from_slice(tail);
+            service
+        }
+
+        let value = vec![b'Q'; 130];
+        let dict = ObjectDictionary::new(
+            vec![RuntimeObject {
+                index: 0x2000,
+                max_subindex: 0,
+                object_code: esc_core::obj_dict::object_code::VAR,
+                data_type: esc_core::obj_dict::data_type::VISIBLE_STRING,
+                name: "Blob".to_string(),
+            }],
+            vec![RuntimeEntry {
+                index: 0x2000,
+                subindex: 0,
+                value: value.clone(),
+                data_type: esc_core::obj_dict::data_type::VISIBLE_STRING,
+                bit_length: 130 * 8,
+                access: esc_core::obj_dict::access::READ_WRITE_PREOP,
+                value_info: 0,
+                name: "Blob".to_string(),
+                writable: true,
+            }],
+        );
+        let mut responder = Responder::default().with_dictionary(dict);
+
+        // 上传：首段请求重发（同一 toggle）应返回**相同**响应且不推进 offset。
+        write_mailbox(&mut responder, &coe_request(0x40, 0x2000, 0, &[]));
+        let first_request = coe_request(0x60, 0x2000, 0, &[]);
+        write_mailbox(&mut responder, &first_request);
+        let first_response = read_tx_mailbox(&mut responder);
+        let offset_after_first = responder.upload.as_ref().expect("upload state").offset;
+        write_mailbox(&mut responder, &first_request);
+        let retransmitted = read_tx_mailbox(&mut responder);
+        assert_eq!(first_response, retransmitted, "重发段请求应得到相同响应");
+        assert_eq!(
+            responder.upload.as_ref().expect("upload state").offset,
+            offset_after_first,
+            "重发不应推进上传 offset"
+        );
+
+        // 下载：首段重发（同一 toggle）应幂等应答且不重复追加数据。
+        let payload: Vec<u8> = (0u8..20).collect();
+        let mut initiate = coe_request(0x21, 0x2000, 0, &[]);
+        initiate.extend_from_slice(&20u32.to_le_bytes());
+        initiate.extend_from_slice(&payload[..8]);
+        write_mailbox(&mut responder, &initiate);
+        assert!(responder.download.is_some(), "应进入分段下载");
+        // 第一段：toggle=0，7 字节。
+        let mut segment0 = coe_request(0x20, 0x2000, 0, &[]);
+        segment0.truncate(3);
+        segment0.extend_from_slice(&payload[8..15]);
+        write_mailbox(&mut responder, &segment0);
+        let data_after_first = responder.download.as_ref().expect("download").data.len();
+        assert_eq!(data_after_first, 15);
+        // 重发同一段：toggle 仍是 0（期望现在是 1）→ 幂等应答，数据不重复。
+        write_mailbox(&mut responder, &segment0);
+        assert_eq!(
+            responder.download.as_ref().expect("download").data.len(),
+            data_after_first,
+            "重发段不应重复追加数据"
+        );
+        // 正确下一段（toggle=1，剩余 5 字节，last）。
+        let mut segment1 = coe_request(0x20, 0x2000, 0, &[]);
+        segment1.truncate(3);
+        segment1[2] = 0x20 | (1 << 4) | ((7 - 5) << 1) | 1;
+        segment1.extend_from_slice(&payload[15..20]);
+        write_mailbox(&mut responder, &segment1);
+        assert!(responder.download.is_none());
+        assert_eq!(
+            responder.object_writes.get(&(0x2000, 0)),
+            Some(&payload),
+            "重发容错后仍应写入完整数据"
+        );
     }
 
     #[test]

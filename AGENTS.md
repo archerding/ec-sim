@@ -242,7 +242,7 @@ user.email = deepseek-harness@users.noreply.github.com
     `0x05030000` 并清状态；修复非末段未推进 toggle 的缺陷；新增单测
     `out_of_order_segment_toggle_is_aborted`。验证机 `sdo-ca-probe.sh`/`uds-loopback.sh`/
     `soem-process-data.sh` 全部 EXIT=0（正确 toggle 序列无回归）。测试 **186 passed**。
-    ⚠️ 未支持"主站重发上一段"的容错（当前按 Abort 处理）。
+    ⚠️ 已支持"重发上一段"的幂等（2026-11-13 01:21 班：缓存最近一段响应/toggle；更早的段仍 Abort）。
   - 进度（2026-11-13 00:50 班）：**CA 分段下载端到端验证通过**——UDS 合成主站新增
     `--sdo-ca-download-multi`（140 字节对象：0x31 首帧 112 + 0x20|toggle|last 4 段，
     再用 CA 分段上传回读比对）；`sdo-ca-probe.sh` 第三个模式用
