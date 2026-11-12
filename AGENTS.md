@@ -238,6 +238,7 @@ user.email = deepseek-harness@users.noreply.github.com
     `--sdo-segmented-download`（initiate `0x21` + 7B/5B 分段 + 分段上传回读比对），
     验证机 `scripts/spikes/cia402-sdo-download-probe.sh` **EXIT=0**。IgH 侧 SDO
     （上传/下载）在该验证机上仍**阻塞**（ecrt ioctl，已复现两次）→ ⚠️ 待验证。
+  - 进度（2026-11-13 01:32 班）：**CiA402 画像启用 CA 能力位**——通用 CiA402 与 CSV 画像的 `coe.complete_access` 改为 true（SII CoE details bit5），插件守卫测试新增 CoE details 位一致性断言；`sdo-info-probe.sh` 对 SOEM 已知偶发段错误加 3 次重试。验证机 generic-cia402/sdo-ca/sdo-info 均 EXIT=0。测试 **190 passed**。⚠️ CA 部分写/顺序语义未实现，声明略高于实际严格度。
   - 待做：CA 部分写/顺序语义细化（IgH 侧仍无法验证 CA）。
   - 进度（2026-11-13 01:16 班）：**分段传输 toggle 校验**——`SegmentedUpload`/`SegmentedDownload`
     增加期望 toggle（initiate 后 0，每成功一段取反），请求 toggle 不符回 Abort

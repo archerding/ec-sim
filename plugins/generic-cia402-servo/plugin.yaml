@@ -28,7 +28,7 @@ identity:
 
 profile: cia402
 mailbox:
-  coe: {sdo: true, sdo_info: true, complete_access: false}
+  coe: {sdo: true, sdo_info: true, complete_access: true}
 
 # 典型 CiA 402 伺服：SM0/SM1 = CoE 邮箱，SM2 = RxPDO（主站→从站 7 字节），
 # SM3 = TxPDO（从站→主站 7 字节）。

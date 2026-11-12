@@ -38,8 +38,17 @@ ip link set "$TAP" up
 sleep 0.3
 
 # `-sdo` 触发 SOEM 的 SDO Info 服务（Get OD List / Get OD / Get Entry Description）。
-timeout 60 "$SOEM_SLAVEINFO" "$TAP" -sdo >"$OUT" 2>&1 || true
-tr '\r' '\n' <"$OUT" >"$OUT.lines"
+# ⚠️ SOEM slaveinfo 对数组对象（UINT8 子索引 0 被当 2 字节读）偶发段错误，
+#    这是 SOEM 工具夹具的已知缺陷（见 docs/spikes/spike-4 §6），因此最多重试 3 次。
+for attempt in 1 2 3; do
+  timeout 60 "$SOEM_SLAVEINFO" "$TAP" -sdo >"$OUT" 2>&1 || true
+  tr '\r' '\n' <"$OUT" >"$OUT.lines"
+  if grep -q "CoE Object Description found, 6 entries." "$OUT.lines"; then
+    break
+  fi
+  echo "WARN: SOEM slaveinfo -sdo 第 $attempt 次未返回完整对象列表（已知偶发段错误），重试…"
+  sleep 0.5
+done
 
 grep -q "CoE Object Description found, 6 entries." "$OUT.lines" \
   || { echo "FAIL: SOEM 未读到 6 个对象（SDO Info 响应不完整）"; grep -E "CoE|SDO" "$OUT.lines" || true; exit 1; }

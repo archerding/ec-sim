@@ -32,6 +32,35 @@
 
 ---
 
+## 2026-11-13 01:32 班（低峰）— B7：**在 CiA402 画像中启用 CA 能力位** + SDO Info 探针重试
+
+**做了什么**
+- `plugins/generic-cia402-servo/` 与 `plugins/generic-cia402-csv-servo/` 的
+  `mailbox.coe.complete_access` 由 `false` 改为 **`true`**（CA 上传/下载已实现并验证，
+  SII 通用类别 CoE details bit5 现在声明 Complete Access）。
+- 插件守卫测试增加 **CoE details 位一致性断言**：manifest 的 `sdo`/`sdo_info`/
+  `complete_access` 必须分别映射到 SII `coe_details` bit0/bit1/bit5。
+- `scripts/spikes/sdo-info-probe.sh`：SOEM `slaveinfo -sdo` 对数组对象偶发段错误（已知
+  SOEM 工具缺陷），改为**最多重试 3 次**并打印 WARN；本次验证机第一次段错误、第二次成功。
+
+**验证结果**
+- 本机：`cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **190 passed**（esc-core 82 / esc-node 59 / plugin-host 25 + 1 集成 / wire 23）。
+- Linux 验证机：
+  - `generic-cia402-probe.sh` **EXIT=0**（SOEM 56/56 bits、OP WKC 3；IgH PREOP+身份）；
+  - `sdo-ca-probe.sh` **EXIT=0**（CA 上传/单帧/分段下载/重发容错，CSV 画像已带 CA 位）；
+  - `sdo-info-probe.sh` 首次 SOEM 段错误（已知工具缺陷）→ **重试后 EXIT=0**（6 个对象）。
+
+**卡点**
+- CA 能力位只对已实现并验证的 4 类操作成立（CA 上传、单帧/分段下载、重发容错）；CA 的
+  "部分写/子索引顺序"语义仍未实现，SII 声明会略高于实际严格度（⚠️ 已在 AGENTS 记录）。
+- SOEM `slaveinfo -sdo` 段错误是工具缺陷，重试只是规避；未改 SOEM 源码（GPL 边界）。
+
+**下次开工第一件事**
+- 继续 B11 SV660N 手册核对（HTML 在线文档）或 B6 FMMU/DC 类别；B7 可补 CA 部分写语义。
+
+---
+
 ## 2026-11-13 01:30 班（低峰）— 文档：**验证脚本索引（docs/VERIFICATION.md）**
 
 **做了什么**

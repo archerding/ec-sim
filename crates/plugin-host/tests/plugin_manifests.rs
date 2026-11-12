@@ -68,6 +68,26 @@ fn repository_plugin_manifests_are_valid_and_generate_profiles() {
 
         let spec = sii_spec_from_manifest(&manifest)
             .unwrap_or_else(|error| panic!("{name} 生成 SII 规格失败：{error}"));
+        if let Some(coe) = manifest.coe {
+            let expected_enable = u8::from(coe.sdo);
+            assert_eq!(
+                spec.coe_details & 0x01,
+                expected_enable,
+                "{name} 的 CoE details bit0（enable SDO）与 manifest 不一致"
+            );
+            let expected_info = u8::from(coe.sdo_info) << 1;
+            assert_eq!(
+                spec.coe_details & 0x02,
+                expected_info,
+                "{name} 的 CoE details bit1（SDO Info）与 manifest 不一致"
+            );
+            let expected_ca = u8::from(coe.complete_access) << 5;
+            assert_eq!(
+                spec.coe_details & 0x20,
+                expected_ca,
+                "{name} 的 CoE details bit5（Complete Access）与 manifest 不一致"
+            );
+        }
         let sii = SiiImage::from_spec(&spec);
         assert!(sii.verify_checksum(), "{name} 生成的 SII CRC 不一致");
         assert_eq!(

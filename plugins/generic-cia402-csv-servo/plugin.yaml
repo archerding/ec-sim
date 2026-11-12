@@ -29,7 +29,7 @@ identity:
 
 profile: cia402
 mailbox:
-  coe: {sdo: true, sdo_info: true, complete_access: false}
+  coe: {sdo: true, sdo_info: true, complete_access: true}
 
 sm:
   - {index: 0, dir: mbox-in,  start: 0x1000, len: 128}
