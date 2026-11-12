@@ -77,6 +77,7 @@ user.email = deepseek-harness@users.noreply.github.com
 
 ## 6. 当前 Backlog（按优先级，顶部先做）
 
+- 质量（2026-11-13 01:49 班）：**rustdoc 0 警告**——修复 `esc-core::mailbox` 的 `#[must_use]` 文档行、`esc-core::sii` 的 `data[0x0B]/[0x0C]` 误当链接、`esc-node` 文档链接私有项 3 类警告；`cargo doc --workspace --no-deps` 无警告，测试 192 passed 不变。
 - [x] ~~**B1 Rust workspace 骨架**~~ ✅ **2026-11-12 完成**：6 个成员 crate 骨架（`esc-core`/`wire`/`coe`/`plugin-host`/`control-plane`/`cli`）+ 三平台 CI 全绿。证据：commit `93a2fbf`，CI run `43158276907`（ubuntu/macos/windows 的 `fmt --check`/`clippy -D warnings`/`test` 均 success）。
 - [x] ~~**B2b 最小 ESC 应答器（Python/Rust 原型均可，先验证协议）**~~ ✅ **2026-11-12 完成**：
   `crates/esc-node`（`ec-sim-esc`）+ `esc-core` 的 `sii`/`eeprom`：TAP 上应答 BRD/APRD/APWR/FPRD/FPWR，

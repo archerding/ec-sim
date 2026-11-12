@@ -32,6 +32,33 @@
 
 ---
 
+## 2026-11-13 01:49 班（低峰）— 质量：**修复 rustdoc 警告（0 警告）**
+
+**做了什么**
+- `cargo doc --workspace --no-deps` 此前有 7 条警告，全部修复：
+  - `esc-core::mailbox`：`#[must_use]` 被误接在文档行尾（导致 `[must_use]` 被当作链接）；
+    拆分为独立行。
+  - `esc-core::sii`：文档中的 `data[0x0B]`/`data[0x0C]` 被 rustdoc 当作链接（以及替换后
+    残留的 `data[11]`/`data[12]`）——改为代码span `data[11]`/`data[12]`；同时修正
+    `general_category()` 里被误改成代码span的赋值语句 `data[11] = general_flags;`。
+  - `esc-node` crate 文档链接到私有项 `Responder::process_logical` /
+    `Responder::handle_mailbox_request`——改为普通代码引用。
+- 结果：`cargo doc --workspace --no-deps` **0 警告**。
+
+**验证结果**
+- `cargo doc --workspace --no-deps`：无 warning/error。
+- `cargo fmt --check`、`clippy -D warnings` exit 0；`cargo test --workspace`
+  **192 passed**（esc-core 82 / esc-node 61 / plugin-host 25 + 1 集成 / wire 23）。
+- 纯注释/文档改动，无运行时行为变化（未占用验证机）。
+
+**卡点**
+- 本次只消除文档警告；crate 文档完整度（示例、模块级说明）仍可继续补。
+
+**下次开工第一件事**
+- 继续 B11 SV660N 默认 PDO 条目查找（HTML 在线手册）或 B6 FMMU/DC 类别（需原文）。
+
+---
+
 ## 2026-11-13 01:45 班（低峰）— B7：**CA 下载改为 all-or-nothing（修复部分写）**
 
 **做了什么**

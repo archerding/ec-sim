@@ -12,12 +12,12 @@
 //! - `FPRD/FPWR/FPRW`：配置站地址或站别名匹配才命中；
 //! - `LRD/LWR/LRW`：按已激活的 FMMU 命中（[`esc_core::fmmu::Fmmu::translate`]），在
 //!   逻辑地址与 DL 用户内存（0x1000–0xFFFF）之间搬运字节；WKC 按两家主站一致的规则累加
-//!   （LRD 读 +1、LWR 写 +1、LRW 读 +1 / 写 +2，见 [`Responder::process_logical`] 与
+//!   （LRD 读 +1、LWR 写 +1、LRW 读 +1 / 写 +2，见 `Responder::process_logical` 与
 //!   `handle_frame` 中的注释）。
 //! - **邮箱（B7 子项 1）**：FPRD/FPWR 到 DL 用户内存（≥ 0x1000）按物理地址读写；主站写
 //!   SM0 邮箱缓冲（0x1000）即解析邮箱头，对 CoE SDO 请求在 SM1 缓冲（0x1080）回
 //!   SDO Abort（0x06020000），并用 SM1 Status（0x080D）bit3 = mailbox full 通知主站；
-//!   主站读走 SM1 缓冲后清除该位，见 [`esc_core::mailbox`] 与 [`Responder::handle_mailbox_request`]。
+//!   主站读走 SM1 缓冲后清除该位，见 [`esc_core::mailbox`] 与 `Responder::handle_mailbox_request`。
 //!
 //! 命中后按命令的读/写属性回填数据并累加 WKC；未命中的 datagram 原样保留（WKC 不变）。
 

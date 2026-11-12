@@ -666,7 +666,8 @@ pub fn build_sdo_info_error(abort_code: u32) -> Vec<u8> {
     service
 }
 
-/// 把服务数据封装成完整邮箱报文（头 + 数据）；超过 [`MAILBOX_SIZE`] 返回 [`None`]。#[must_use]
+/// 把服务数据封装成完整邮箱报文（头 + 数据）；超过 [`MAILBOX_SIZE`] 返回 [`None`]。
+#[must_use]
 pub fn build_mailbox(header: MailboxHeader, service: &[u8]) -> Option<Vec<u8>> {
     if MAILBOX_HEADER_LEN + service.len() > MAILBOX_SIZE {
         return None;

@@ -385,9 +385,9 @@ pub struct SiiSpec {
     /// 通用类别 CoE details 字节（bit0 SDO、bit1 SDO Info、bit2 PDO assign、
     /// bit3 PDO configuration、bit5 Complete Access）。
     pub coe_details: u8,
-    /// 通用类别 general flags（data[0x0B]，bit0 enable SAFEOP、bit1 enable not-LRW）。
+    /// 通用类别 general flags（`data[11]`，bit0 enable SAFEOP、bit1 enable not-LRW）。
     pub general_flags: u8,
-    /// Ebus 电流（mA，通用类别 data[0x0C]）。
+    /// Ebus 电流（mA，通用类别 `data[12]`）。
     pub ebus_current: i16,
 }
 
@@ -637,12 +637,12 @@ fn strings_category<S: AsRef<str>>(strings: &[S]) -> Vec<u8> {
     data
 }
 
-/// 通用类别（0x001E）的 32 字节数据：CoE details（data[5]）、general flags（data[0x0B]）、
+/// 通用类别（0x001E）的 32 字节数据：CoE details（data[5]）、general flags（`data[11]`）、
 /// Ebus 电流（data[0x0C..0x0E]）。布局依据 IgH `slave.c: ec_slave_fetch_sii_general()`。
 fn general_category(coe_details: u8, general_flags: u8, ebus_current: i16) -> Vec<u8> {
     let mut data = vec![0u8; 32];
     data[5] = coe_details;
-    data[0x0B] = general_flags;
+    data[11] = general_flags;
     data[0x0C..0x0E].copy_from_slice(&ebus_current.to_le_bytes());
     data
 }
