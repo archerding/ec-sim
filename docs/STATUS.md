@@ -64,6 +64,8 @@ SOEM 2.0.0 与 IgH 1.6.13** 可发现从站并进入 OP（IgH 无应用时到 PR
 
 ```bash
 cargo build --release -p esc-node
+cargo run -q -p esc-node --bin ec-sim-esc -- --version          # 版本
+cargo run -q -p esc-node --bin ec-sim-esc -- --dump-sii --manifest plugins/generic-cia402-cst-servo/plugin.yaml
 bash scripts/spikes/uds-loopback.sh        # UDS 合成主站基础闭环
 bash scripts/spikes/cia402-cst-probe.sh    # CST Tier0 行为
 cargo test --workspace

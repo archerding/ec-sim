@@ -32,6 +32,36 @@
 
 ---
 
+## 2026-11-13 03:00 班（低峰）— 工具：**`ec-sim-esc --dump-sii` / `--version`**
+
+**为什么要做这个**：B11 顶部子项（SV660N 默认 PDO 具体条目）仍缺公开文本来源（web 搜索
+未果），本轮先做**不影响产品行为、可立即验证**的调试工具补齐，并在下轮继续找 PDO 来源。
+
+**做了什么**
+- `ec-sim-esc` 新增：
+  - `--version` / `-V`：打印 `ec-sim-esc <CARGO_PKG_VERSION>`；
+  - `--dump-sii [--manifest <yaml>] [--esi <xml>]`：按指定输入（内置 / manifest / ESI /
+    ESI+manifest 组合）生成 SII 镜像后，打印身份字段、逐 word hex dump 与类别链
+    （类别类型/长度/终止字），然后退出——用于核对 SII 生成结果（PDO/SM/FMMU/DC 类别）。
+- 更新 `--help` 文本与文件头用法说明；`docs/STATUS.md` 快速开始加入两条命令示例。
+
+**验证结果**
+- 本机（Windows）：`cargo fmt --check`、`cargo build -p esc-node` 通过；
+  - `--version` → `ec-sim-esc 0.0.1`；
+  - `--dump-sii --manifest plugins/generic-cia402-cst-servo/plugin.yaml` →
+    `vendor=0x00000ec5 product=0x0000e5e2 words=166`，hex dump 与类别链正常；
+  - `--dump-sii --esi crates/plugin-host/tests/fixtures/sample.esi.xml` →
+    `product=0x0000e5d3 words=143`（ESI 路径正常）。
+- `cargo test --workspace` **202 passed** 基线不变（未改库代码）。
+
+**卡点**
+- `--dump-sii` 目前只做输出，没有格式化/过滤选项；非 Linux 也能用（在传输层之前退出）。
+
+**下次开工第一件事**
+- B11：继续找 SV660N 默认 PDO 条目（换搜索入口）；或评估真实 DC 同步（SYNC0 脉冲）。
+
+---
+
 ## 2026-11-13 02:57 班（低峰）— B11：**SV660N 画像 IgH ecrt OP + CSP + DC 验证**
 
 **做了什么**

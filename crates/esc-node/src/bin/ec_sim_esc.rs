@@ -5,6 +5,8 @@
 //! ec-sim-esc --tap escsim0 [--verbose] [--esm-lax] [--manifest plugins/<id>/plugin.yaml]
 //! ec-sim-esc --uds /tmp/ecsim.sock [--verbose] [--esm-lax] [--manifest ...]
 //! ec-sim-esc --tap escsim0 [--esi <file.esi.xml>]   # B6：ESI XML → SII
+//! ec-sim-esc --dump-sii [--manifest ... | --esi ...]  # 打印 SII hex/类别链后退出
+//! ec-sim-esc --version                                # 打印版本
 //!
 //! ESM 状态迁移前置条件检查默认**开启**（SM 未配置时拒绝进入 PREOP/SAFEOP 并给
 //! AL Status Code 0x0015/0x0017）；`--esm-lax` 关闭该检查（兼容/负向对照用）。
@@ -24,6 +26,76 @@
 //!
 //! 仅 Linux 提供两种线缆层；其他平台编译为可执行但直接报错退出（单元测试仍全平台可跑）。
 
+/// `--dump-sii`：把（manifest/ESI/内置）画像生成的 SII 镜像以 hex + 类别链形式打印后退出。
+fn dump_sii_and_exit(
+    manifest_path: Option<&str>,
+    esi_path: Option<&str>,
+) -> std::process::ExitCode {
+    use esc_core::sii::{category, simulated_spec, SiiImage, SiiSpec};
+
+    let spec: Result<SiiSpec, String> = match (esi_path, manifest_path) {
+        (Some(esi), Some(manifest)) => {
+            let device = plugin_host::esi::parse_esi(&match std::fs::read_to_string(esi) {
+                Ok(text) => text,
+                Err(err) => {
+                    eprintln!("ec-sim-esc: 读取 ESI 失败：{err}");
+                    return std::process::ExitCode::from(2);
+                }
+            })
+            .and_then(|device| {
+                plugin_host::manifest::PluginManifest::load(manifest)
+                    .map(|manifest| (device, manifest))
+            })
+            .map_err(|err| format!("ESI/manifest 解析失败：{err}"));
+            device.and_then(|(device, manifest)| {
+                plugin_host::esi::sii_spec_from_esi_and_manifest(&device, &manifest)
+            })
+        }
+        (Some(esi), None) => match std::fs::read_to_string(esi) {
+            Ok(text) => plugin_host::esi::parse_esi(&text)
+                .and_then(|device| plugin_host::esi::sii_spec_from_esi(&device)),
+            Err(err) => Err(format!("读取 ESI 失败：{err}")),
+        },
+        (None, Some(manifest)) => plugin_host::manifest::PluginManifest::load(manifest)
+            .and_then(|manifest| plugin_host::sii_gen::sii_spec_from_manifest(&manifest)),
+        (None, None) => Ok(simulated_spec()),
+    };
+    let spec = match spec {
+        Ok(spec) => spec,
+        Err(err) => {
+            eprintln!("ec-sim-esc: {err}");
+            return std::process::ExitCode::from(2);
+        }
+    };
+    let sii = SiiImage::from_spec(&spec);
+    println!(
+        "ec-sim-esc SII dump: vendor=0x{:08x} product=0x{:08x} revision=0x{:08x} words={}",
+        spec.vendor_id,
+        spec.product_code,
+        spec.revision,
+        sii.len_words()
+    );
+    for (line, chunk) in sii.words().chunks(8).enumerate() {
+        let mut text = String::new();
+        for word in chunk {
+            text.push_str(&format!("{word:04x} "));
+        }
+        println!("{:04x}: {text}", line * 8);
+    }
+    let mut word = 0x0040usize;
+    let words = sii.words();
+    while word < words.len() {
+        let cat_type = words[word];
+        if cat_type == category::TERMINATOR {
+            println!("{word:04x}: 0xffff (end)");
+            break;
+        }
+        let words_len = usize::from(words[word + 1]);
+        println!("{word:04x}: category 0x{cat_type:04x}, {words_len} words");
+        word += 2 + words_len;
+    }
+    std::process::ExitCode::SUCCESS
+}
 fn main() -> std::process::ExitCode {
     let mut args = std::env::args().skip(1);
     let mut tap_name: Option<String> = None;
@@ -34,6 +106,7 @@ fn main() -> std::process::ExitCode {
     let mut verbose = false;
     let mut esm_preconditions = true;
     let mut fault: Option<u16> = None;
+    let mut dump_sii = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--tap" => match args.next() {
@@ -94,13 +167,20 @@ fn main() -> std::process::ExitCode {
                 }
             },
             "--verbose" | "-v" => verbose = true,
+            "--dump-sii" => dump_sii = true,
+            "--version" | "-V" => {
+                println!("ec-sim-esc {}", env!("CARGO_PKG_VERSION"));
+                return std::process::ExitCode::SUCCESS;
+            }
             "--esm-lax" => esm_preconditions = false,
             // 兼容旧参数名：前置条件已是默认行为。
             "--esm-strict" => esm_preconditions = true,
             "--help" | "-h" => {
                 println!(
                     "用法: ec-sim-esc [--tap <name> | --uds <path>] [--verbose] [--esm-lax] \
-                     [--manifest <plugin.yaml>] [--esi <file.esi.xml>] [--behavior cia402]`n                     [--fault <hex>（需 --behavior cia402）]"
+                     [--manifest <plugin.yaml>] [--esi <file.esi.xml>] [--behavior cia402]`n                     [--fault <hex>（需 --behavior cia402）]
+                     调试：--dump-sii [--manifest <yaml>] [--esi <xml>] 打印 SII 镜像 hex/类别链后退出；
+                     --version 打印版本。"
                 );
                 return std::process::ExitCode::SUCCESS;
             }
@@ -109,6 +189,10 @@ fn main() -> std::process::ExitCode {
                 return std::process::ExitCode::from(2);
             }
         }
+    }
+
+    if dump_sii {
+        return dump_sii_and_exit(manifest_path.as_deref(), esi_path.as_deref());
     }
 
     if tap_name.is_some() && uds_path.is_some() {
