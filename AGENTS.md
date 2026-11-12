@@ -310,7 +310,13 @@ user.email = deepseek-harness@users.noreply.github.com
     （11 字节序列 + UDS 原套件），`uds-loopback.sh` 三轮 EXIT=0；测试 **170 passed**。
     ⚠️ CSV 为 Tier0（无真实轨迹/加减速/模式时序）；映射一致性检查在 SM 长度≠SII 声明时
     跳过（合成主站特例放宽）。
-  - 待做：IgH 侧 CSV 画像 OP/行为夹具；逐项核对 SV660N 公开手册 PDO/扩展对象；B6 FMMU/DC 原文核实。
+  - 进度（2026-11-13 00:20 班）：**IgH 侧 CSV 画像已进 OP 并验证 11 字节 PDO 行为**——
+    `scripts/spikes/igh-cia402-csv-op-probe.sh`（验证机本地 ecrt 夹具，源码不入库）：
+    应用运行中 `ethercat slaves` = **OP** + `0x00000ec5:0x0000e5e1`，
+    `RESULT al_states=0x08`，`STATUS sw=0x0237 modes_display=9 pos=2995 vel_actual=5`。
+    证据：`docs/plugins/generic-cia402-csv-verification.md`。
+  - 待做：逐项核对 SV660N 公开手册 PDO/扩展对象；B6 FMMU/DC 原文核实；
+    IgH SDO 环境阻塞（上传/下载，与 CSV 无关）。
 - [x] ~~**B8 双主站冒烟**~~ ✅ **2026-11-12 19:56 班完成（单从站 8 位 I/O 画像）**：
   **未修改的 SOEM 与 IgH 都在本模拟器上看到从站进入 OP**，输出可复现脚本见
   [spike-4](docs/spikes/spike-4-dual-master-op.md)：

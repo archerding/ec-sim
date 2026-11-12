@@ -31,8 +31,24 @@ OK: CiA 402 CSV（11 字节 PDO）行为在合成主站下通过
   均由行为正确驱动；UDS 原套件（含 SM watchdog 与 ESM 前置条件）继续通过。
 - 单测覆盖：`cia402_csv_mode_accumulates_velocity`（直接 datagram 序列）。
 
+## IgH 侧 OP + 运行时行为（ecrt 应用夹具，验证机本地、源码不入库）
+
+脚本：`scripts/spikes/igh-cia402-csv-op-probe.sh`（应用按 `0x0006→0x0007→0x000F`、
+mode=9、target velocity=5 写 11 字节 RxPDO）：
+
+```
+0  0:0  OP  +  0x00000ec5:0x0000e5e1
+RESULT al_states=0x08 slaves_responding=1
+STATUS sw=0x0237 modes_display=9 pos=2995 vel_actual=5
+OK: IgH 零补丁把 CSV 画像推入 OP，且 11 字节 TxPDO（状态字/模式/位置/速度）由行为驱动（0x0237, pos=2995）
+```
+
+即未修改 IgH 的 ecrt 应用把 CSV 画像推入 **OP**，读回的 TxPDO 中状态字含
+Operation enabled、模式显示 9、位置按速度累加（Tier0 每周期 +5）、实际速度 = 5。
+
 ## ⚠️ 限制（详见 facts.md）
 
 - CSV 仅 Tier0 简化：位置按"每 tick 累加目标速度"模拟，**不是**真实单位/轨迹/加减速/限幅。
 - 无模式切换时序（Ti=0/1）、编码器/限位/Homing、DC、厂商专有对象。
+- 夹具源码在验证机本地（不入库，符合 GPL 边界）；脚本依赖该本地夹具存在。
 - 本记录只证明模拟器行为与协议路径，不构成一致性测试结论（R3）。

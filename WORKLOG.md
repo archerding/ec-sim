@@ -6,6 +6,37 @@
 
 ---
 
+## 2026-11-13 00:20 班（低峰）— B11 验证：**IgH 侧 CSV 画像 OP + 11 字节 PDO 运行时行为**
+
+**做了什么**
+- 新增验证脚本 `scripts/spikes/igh-cia402-csv-op-probe.sh`：用未修改 IgH 的 ecrt 应用
+  （验证机本地夹具 `ecrt-cia402-csv-op.c`，**源码不入库**）配置 11 字节 RxPDO/TxPDO，
+  应用按 `0x0006→0x0007→0x000F`、mode=9（CSV）、target velocity=5 写 RxPDO，并读回
+  `0x6041`/`0x6061`/`0x6064`/`0x606C`。
+- 断言：应用运行中 `ethercat slaves` = **OP** + 身份 `0x00000ec5:0x0000e5e1`；
+  `RESULT al_states=0x08`；`STATUS sw` 含 Operation enabled(bit2)、`modes_display=9`、
+  `pos > 100`（速度累加）、`vel_actual=5`；应答器侧 `al=0x08`。
+- `docs/plugins/generic-cia402-csv-verification.md` 增加 IgH OP/行为证据与夹具限制。
+
+**验证结果**
+- 本机：`bash -n` 通过；Rust 代码未改，`cargo test --workspace` **170 passed** 基线不变。
+- Linux 验证机：`bash scripts/spikes/igh-cia402-csv-op-probe.sh` → **EXIT=0**：
+  - 应用运行中：`0  0:0  OP  +  0x00000ec5:0x0000e5e1`；
+  - `RESULT al_states=0x08 slaves_responding=1`；
+  - `STATUS sw=0x0237 modes_display=9 pos=2995 vel_actual=5`；
+  → 未修改 IgH 零补丁进入 OP，且 11 字节 TxPDO（状态字/模式/位置/速度）由 Tier0 行为驱动。
+
+**卡点**
+- 夹具源码在验证机本地（不入库）；脚本依赖该本地夹具存在。
+- 本班只补 IgH 侧验证证据、未改代码；CSV 行为仍为 Tier0（无真实轨迹/加减速/模式时序）。
+- IgH SDO（上传/下载）在该验证机上仍阻塞，与本项无关（未使用 SDO）。
+
+**下次开工第一件事**
+- 逐项核对 SV660N 公开手册的默认 PDO/扩展对象并更新 manifest；或处理 B6 FMMU/DC
+  原文核实（需获取 ESC Sec.2 / ETG 文本）。
+
+---
+
 ## 2026-11-13 00:11 班（低峰）— B11：**CiA 402 CSV（速度模式，11 字节 PDO）画像 + Tier0 行为**
 
 **做了什么**
