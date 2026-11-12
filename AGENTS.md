@@ -398,6 +398,13 @@ user.email = deepseek-harness@users.noreply.github.com
     （Fault 0x0208 → 复位 0x0240、`0x603F=0x7500`）；顺带修复 `--manifest`+`--esi` 组合分支
     unreachable pattern，VM 构建 0 warning。测试 **185 passed**。
     ⚠️ 故障码清除时序仍 Tier0 简化、仅启动时注入，未做 IgH/SOEM 侧注入。
+  - 进度（2026-11-13 01:42 班）：**SV660N 公开事实核对（第三方实测文档）**——经 linuxcnc-ethercat
+    `documentation/inovance.md`（公开只读参考）确认：SV660N 每方向仅 0x1600/0x1A00、
+    0x1C13 可写 0x1A00 或固定映射 0x1B01..0x1B04、无 0x1A01；PDO 上限 10 条、子 0x0B
+    写以 0x06090011 中止；**设备不支持 SDO Info**；DC 默认开（assignActivate 0x300）；
+    `0x6502=0x3AD`；H 参数映射 Hgg-pp = 0x2000+0xgg / sub 0xpp+1。画像更新为
+    `sdo_info: false` + 新增 `0x6502` 对象；默认 PDO **具体条目**仍未知（保持 Tier0 7B 并标注）。
+    验证机 `generic-cia402-probe.sh`（SV660N manifest，PID 0xE5F1）**EXIT=0**（SOEM 56/56、OP、WKC 3；IgH PREOP+身份）。
   - 待做：逐项核对 SV660N 公开手册 PDO/扩展对象；B6 FMMU/DC 原文核实；
     IgH SDO 环境阻塞（上传/下载，与 CSV 无关）。
 - [x] ~~**B8 双主站冒烟**~~ ✅ **2026-11-12 19:56 班完成（单从站 8 位 I/O 画像）**：

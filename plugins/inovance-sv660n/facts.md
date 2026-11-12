@@ -11,6 +11,7 @@
 | Inovance SV660N Servo Communication Guide（公开手册） | EtherCAT 通讯/对象字典/PDO 结构的公开入口（**未入库**，仅引用） | https://idea-tech.in/wp-content/uploads/2024/04/INOVANCE-SV660N-SERVO-COMMUNICATION-GUIDE-ENGLISH-PAGE-292-06-04-2024.pdf |
 | SV660N Commissioning Guide（公开手册） | 同上（**未入库**，仅引用） | https://documents.mrosupply.com/product_documents/64/86/6486865/SV660N_Commissioning_Guide_EN_C00_19011433_r3R1eXs.pdf |
 | CiA 402（公开规范摘要） | DS402 对象索引/控制字/状态字/模式语义 | https://www.can-cia.org/cia-402 |
+| linuxcnc-ethercat `documentation/inovance.md`（公开文档，**只读参考**） | SV660N（SV660 EtherCAT 变体）的身份/PDO 上限/PDO 分配/SDO Info/DC 默认值实测事实 | https://github.com/linuxcnc-ethercat/linuxcnc-ethercat/blob/master/documentation/inovance.md |
 
 > **R1**：以上厂商 PDF 只作为阅读入口记录 URL，**没有**把 ESI/PDF/固件/示例代码复制进仓库。
 > **R2**：设备身份使用我方自有 Vendor ID `0x00000EC5` / Product Code `0x0000E5F1`，不使用
@@ -24,11 +25,32 @@
 - RxPDO `0x1600` = controlword + modes + target position；TxPDO `0x1A00` =
   statusword + modes display + position actual（Tier0 通用布局）。
 
+## 公开实测事实（来源：linuxcnc-ethercat `documentation/inovance.md`，访问 2026-11-13；只读参考、未复制代码）
+
+> ⚠️ 这些是第三方公开文档中的**实测/记录事实**，用于提高画像真实性；仍**不是**厂商手册原文。
+> 我方设备身份仍使用自有 VID/PID（R2），不冒用下面列出的厂商身份。
+
+- **身份**：SV660 的 EtherCAT 变体即 SV660N，产品码 `0x000c010d`；Inovance 各驱动系列
+  共用 Vendor ID `0x00100000`（IS620N `0x000c0108`，与 SV660 仅末字节不同）。
+- **PDO 分配**：每方向只有 **一个** PDO——RxPDO `0x1600`、TxPDO `0x1A00`；
+  `0x1C13:01` 可写 `0x1A00`（可变映射）或固定映射 `0x1B01..0x1B04`；
+  **没有 `0x1A01`**（写它会 SDO 报错且从站无法进 OP）。
+- **PDO 上限**：`0x1600`/`0x1A00` 最多 **10 个映射条目**（`rxpdolimit`/`txpdolimit` = 10）；
+  子索引 `0x0B` 写入以 `0x06090011` 中止（"subindex does not exist"）。
+- **SDO Info**：该设备**不响应 SDO Information 服务**（主站显示 `Enable SDO Info: no`），
+  `ethercat sdos` 无输出；读取当前条目数以上的子索引以 `0x06090011` 中止——`0x1600:00`/
+  `0x1A00:00` 的计数是唯一可直接读到的信息。本画像因此设置 `coe.sdo_info: false`。
+- **DC**：设备默认启用 DC（`assignActivate 0x300`，SYNC0 跟随应用周期）；参考时钟在链上
+  **第一个支持 DC 的从站**。
+- **支持的模式**：`0x6502 = 0x3AD`（pp, pv, tq, hm, csp, csv, cst）；本画像已加该对象。
+- **厂商参数映射**：手册 "Hgg-pp" 参数 = CoE 索引 `0x2000 + 0xgg`、子索引 `0xpp + 1`
+  （例：H02-01 = `0x2002:02`）；本画像暂不声明具体厂商对象。
+
 ## ⚠️ 待核实（不要当成厂商事实）
 
-1. **SV660N 默认 PDO 映射**：公开手册里的默认 RxPDO/TxPDO 的索引、长度与条目顺序
-   可能不同（例如包含 target velocity `0x60FF`、更长的 9 字节布局等）；本画像暂用
-   通用 7 字节布局，**未逐项确认**。
+1. **SV660N 默认 PDO 映射的具体条目**：已确认每方向仅 `0x1600`/`0x1A00` 且上限 10 条
+   （见上），但**默认映射里具体包含哪些对象/顺序/位长**仍未知（第三方文档未列出），
+   本画像暂用通用 7 字节布局，**未逐项确认**。
 2. **厂商扩展对象**（如 `0x2000` 段参数）：未收录，需要按公开手册核对后补充。
 3. **DC 参数**：SV660N 通常启用 DC；本画像 `dc.supported=false`，DC 参数未核实。
 4. **错误码语义**（`0x603F` 具体故障码表）与状态机时序（Ti=0/1）：未实现。

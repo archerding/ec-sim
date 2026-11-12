@@ -32,6 +32,41 @@
 
 ---
 
+## 2026-11-13 01:42 班（低峰）— B11：**SV660N 公开事实核对（第三方实测文档）**
+
+**做了什么**
+- 通过 `ghproxy.net` 镜像取得 [linuxcnc-ethercat `documentation/inovance.md`](https://github.com/linuxcnc-ethercat/linuxcnc-ethercat/blob/master/documentation/inovance.md)
+  （公开只读参考，未复制代码/文件），核对 SV660N（SV660 EtherCAT 变体）公开事实：
+  - 每方向仅 **一个** PDO：RxPDO `0x1600` / TxPDO `0x1A00`；`0x1C13:01` 可写 `0x1A00`
+    或固定映射 `0x1B01..0x1B04`；**无 `0x1A01`**（写它会 SDO 报错且无法进 OP）；
+  - `0x1600`/`0x1A00` 最多 **10** 个映射条目，子索引 `0x0B` 写入以 `0x06090011` 中止；
+  - 设备**不响应 SDO Info**（`Enable SDO Info: no`）；
+  - DC 默认开启（`assignActivate 0x300`，SYNC0 跟应用周期）；
+  - `0x6502 = 0x3AD`（pp/pv/tq/hm/csp/csv/cst）；
+  - 厂商 H 参数映射：Hgg-pp = CoE `0x2000+0xgg`、子索引 `0xpp+1`。
+- 更新 `plugins/inovance-sv660n/`：`coe.sdo_info` 改 **false**（与设备一致）；新增
+  `0x6502` 对象（UINT32 ro = 0x3AD）；`facts.md` 增加公开实测事实与来源行；
+  `docs/plugins/inovance-sv660n-verification.md` 增补该节与验证命令。
+- 默认 PDO 的**具体条目/顺序/位长**第三方文档未列出 → 画像继续用 Tier0 通用 7 字节布局，
+  并在 facts.md 标注"仍未逐项确认"（未凭空编造）。
+
+**验证结果**
+- 本机：`cargo test -p plugin-host` 通过（manifest 校验/字典生成/SII 生成与守卫断言）；
+  `cargo test --workspace` **191 passed** 基线不变。
+- Linux 验证机：`MANIFEST=plugins/inovance-sv660n/plugin.yaml EXPECT_PID=0000e5f1 …
+  bash scripts/spikes/generic-cia402-probe.sh` → **EXIT=0**：SOEM 扫描身份
+  `00000ec5:0000e5f1`、56/56 bits、`mapped 7O+7I`、OP、WKC 3；IgH PREOP + 身份。
+
+**卡点**
+- **默认 PDO 具体条目**仍未核实（这是 B11 剩余关键事实）；厂商对象/错误码表未收录。
+- 设备默认启用 DC，模拟器仍未实现 DC（`dc.supported=false`），⚠️ 能力缺口。
+- 厂商手册 PDF 仍无法经 `web_fetch` 提取（只拿到第三方实测文档）。
+
+**下次开工第一件事**
+- 继续找 SV660N 默认 PDO 条目（HTML 在线手册/镜像），或转 B6 FMMU/DC 类别（需原文）。
+
+---
+
 ## 2026-11-13 01:40 班（低峰）— B5：**0x0410（PDI watchdog）语义明确化**
 
 **做了什么**

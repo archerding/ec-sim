@@ -63,3 +63,33 @@ Iteration    1:    99 usec  WKC 3  O: 00 00 00 00 00 00 00  I: 00 00 00 00 00 00
   尚未逐项核实**（公开手册未入库，仅记录 URL）。不要把它当作厂商等价物。
 - 行为无运动环/编码器/模式切换/Ti 时序；厂商故障码表未实现。
 - 本记录只证明画像/SII/双主站扫描与 OP 闭环，不构成任何一致性测试结论（R3）。
+
+## 公开实测事实补充（2026-11-13）
+
+来源：[linuxcnc-ethercat `documentation/inovance.md`](https://github.com/linuxcnc-ethercat/linuxcnc-ethercat/blob/master/documentation/inovance.md)
+（公开文档，只读参考；通过镜像取得文本，未复制代码/文件）。据此把以下事实写入
+`plugins/inovance-sv660n/facts.md` 并更新 manifest：
+
+- SV660N（SV660 EtherCAT 变体）产品码 `0x000c010d`，厂商 Vendor ID `0x00100000`
+  （**我方画像仍用自有 VID/PID**，R2）。
+- 每方向只有 **一个** PDO：RxPDO `0x1600` / TxPDO `0x1A00`；`0x1C13:01` 可写
+  `0x1A00` 或固定映射 `0x1B01..0x1B04`；无 `0x1A01`。
+- `0x1600`/`0x1A00` 最多 **10** 个映射条目；子索引 `0x0B` 写入以 `0x06090011` 中止。
+- 设备**不支持 SDO Info**（`Enable SDO Info: no`）→ 画像改为 `coe.sdo_info: false`。
+- DC 默认开启（`assignActivate 0x300`，SYNC0 跟应用周期）——模拟器仍未实现 DC，
+  `dc.supported=false` 保持不变（⚠️ 能力缺口）。
+- `0x6502 = 0x3AD`（pp/pv/tq/hm/csp/csv/cst）→ 画像新增该对象。
+
+## 验证命令（更新后）
+
+```bash
+MANIFEST=plugins/inovance-sv660n/plugin.yaml \
+EXPECT_VID=00000ec5 EXPECT_PID=0000e5f1 \
+EXPECT_OUTPUT_BITS=56 EXPECT_INPUT_BITS=56 EXPECT_MAPPED=7O+7I \
+bash scripts/spikes/generic-cia402-probe.sh
+```
+
+- 预期：SOEM 扫描身份 `00000ec5:0000e5f1`、56/56 bits、`mapped 7O+7I` 进 OP、WKC 3；
+  IgH PREOP + 身份 `0x00000ec5:0x0000e5f1`。
+- ⚠️ 默认 PDO 的**具体条目/顺序**仍未知（第三方文档只给出上限与分配），画像继续使用
+  Tier0 通用 7 字节布局并标注待核实。
