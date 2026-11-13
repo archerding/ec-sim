@@ -9,6 +9,8 @@
 const app = document.getElementById("app");
 // DOD-09：动态文案翻译（无 i18n.js 时回退中文）。
 const tr = (key, fallback) => (window.ECSIM_I18N ? window.ECSIM_I18N.t(key) : fallback);
+// DOD-09：动态文案的"中文源串→英文"翻译（无 i18n.js 时回退中文）。
+const tz = (zh) => (window.ECSIM_I18N && window.ECSIM_I18N.text ? window.ECSIM_I18N.text(zh) : zh);
 const message = document.getElementById("message");
 
 let currentState = null;
@@ -183,18 +185,18 @@ function updateShellContext() {
   const profile = document.querySelector('[data-testid="shell-context-profile"]');
   const live = currentState && currentState.live;
   if (address) {
-    address.textContent = `站地址：${live && live.station_address ? live.station_address : "-"}`;
+    address.textContent = `${tr("ctx.address", "站地址：")}${live && live.station_address ? live.station_address : "-"}`;
   }
   if (alChipNode) {
     alChipNode.replaceChildren();
     if (live) {
-      alChipNode.append("AL：", alChip(live.al_status));
+      alChipNode.append(tr("ctx.al", "AL："), alChip(live.al_status));
     } else {
-      alChipNode.textContent = "AL：-";
+      alChipNode.textContent = `${tr("ctx.al", "AL：")}-`;
     }
   }
   if (profile) {
-    profile.textContent = `画像：${
+    profile.textContent = `${tr("ctx.profile", "画像：")}${
       currentState && currentState.profile ? currentState.profile.id : currentState ? "内置" : "-"
     }`;
   }
@@ -245,7 +247,7 @@ function updateConnUi() {
       text = tr("banner.paused", "已暂停：页面停止发请求，显示最后一次数据与时间戳；点“继续”会立即拉取一次。");
       level = "info";
     } else if (conn.mode === "RECONNECTING") {
-      text = tr("banner.reconnecting", "正在重连：已发起一次探测请求…");
+      text = tr("banner.reconnecting", tr("banner.reconnecting", "正在重连：已发起一次探测请求…"));
       level = "info";
     }
     banner.setAttribute("data-testid", `shell-banner-${level}`);
@@ -370,8 +372,8 @@ function renderState(state) {
         ["Product Code", identity.product_code || "-"],
         ["Revision", identity.revision || "-"],
         ["Serial", identity.serial || "-"],
-        ["画像", state.profile ? `${state.profile.id}` : "内置"],
-        ["字典对象数", state.dict_objects == null ? "-" : state.dict_objects],
+        [tz("画像"), state.profile ? `${state.profile.id}` : "内置"],
+        [tz("字典对象数"), state.dict_objects == null ? "-" : state.dict_objects],
       ]),
       el(
         "p",
@@ -388,9 +390,9 @@ function renderState(state) {
       el(
         "p",
         {},
-        el("button", { type: "button", "data-testid": "slave-goto-pdo" }, "查看 PDO 映射"),
+        el("button", { type: "button", "data-testid": "slave-goto-pdo" }, tz("查看 PDO 映射")),
         " ",
-        el("button", { type: "button", "data-testid": "slave-copy-identity" }, "复制身份"),
+        el("button", { type: "button", "data-testid": "slave-copy-identity" }, tz("复制身份")),
       ),
       el(
         "p",
@@ -417,12 +419,12 @@ function renderState(state) {
         "slave-live",
         tr("section.slaveLive", "实时状态（--serve 实时模式）"),
         kvGrid([
-          ["站地址", live.station_address],
-          ["AL 状态", `${live.al_status}${live.al_status_code !== "0x0000" ? ` / ${live.al_status_code}` : ""}`],
+          [tz("站地址"), live.station_address],
+          [tz("AL 状态"), `${live.al_status}${live.al_status_code !== "0x0000" ? ` / ${live.al_status_code}` : ""}`],
           ["DC 模拟时间", `${live.dc_time_ns} ns`],
-          ["收/发帧", `${live.stats.frames_in} / ${live.stats.frames_out}`],
-          ["丢弃帧", live.stats.frames_dropped],
-          ["datagram 命中", live.stats.datagrams_hit],
+          [tz("收/发帧"), `${live.stats.frames_in} / ${live.stats.frames_out}`],
+          [tz("丢弃帧"), live.stats.frames_dropped],
+          [tz("datagram 命中"), live.stats.datagrams_hit],
           ["邮箱请求/响应", `${live.stats.mailbox_requests} / ${live.stats.mailbox_responses}`],
           ["DC 寄存器读/写", `${live.stats.dc_reg_reads} / ${live.stats.dc_reg_writes}`],
         ]),
@@ -450,8 +452,8 @@ function renderState(state) {
   app.append(sectionT("slave-sm-table", tr("section.sm", "Sync Manager"), table(["#", "起始地址", "长度", "Control", "Status", "Enable"], smRows)));
 
   for (const [label, key] of [
-    ["RxPDO（主站 → 从站）", "pdo_rx"],
-    ["TxPDO（从站 → 主站）", "pdo_tx"],
+    [tr("section.rx", "RxPDO（主站 → 从站）"), "pdo_rx"],
+    [tr("section.tx", "TxPDO（从站 → 主站）"), "pdo_tx"],
   ]) {
     const rows = [];
     for (const pdo of state[key] || []) {
@@ -460,7 +462,7 @@ function renderState(state) {
         .join(", ");
       rows.push([pdo.index, pdo.sync_manager, String((pdo.entries || []).length), entries]);
     }
-    app.append(sectionT(key === "pdo_rx" ? "slave-pdo-rx" : "slave-pdo-tx", label, table(["PDO", "SM", "条目数", "映射"], rows)));
+    app.append(sectionT(key === "pdo_rx" ? "slave-pdo-rx" : "slave-pdo-tx", label, table(["PDO", "SM", tz("条目数"), tz("映射")], rows)));
   }
 
   if (state.dc) {
@@ -548,7 +550,7 @@ function renderDict(dict) {
       placeholder: "搜索索引/名称（/ 聚焦）",
       value: dictFilters.search,
     }),
-    filterButton("dict-filter-access", `访问=全部`, dictFilters.access === "all", () => {
+    filterButton("dict-filter-access", tz("访问=全部"), dictFilters.access === "all", () => {
       dictFilters.access = "all";
       renderAll();
     }),
@@ -560,11 +562,11 @@ function renderDict(dict) {
       dictFilters.access = "rw";
       renderAll();
     }),
-    filterButton("dict-filter-value", `有值`, dictFilters.value === "with", () => {
+    filterButton("dict-filter-value", tz("有值"), dictFilters.value === "with", () => {
       dictFilters.value = dictFilters.value === "with" ? "all" : "with";
       renderAll();
     }),
-    filterButton("dict-filter-value", `无值`, dictFilters.value === "without", () => {
+    filterButton("dict-filter-value", tz("无值"), dictFilters.value === "without", () => {
       dictFilters.value = dictFilters.value === "without" ? "all" : "without";
       renderAll();
     }),
@@ -588,10 +590,10 @@ function renderDict(dict) {
             type: "button",
             "data-testid": "dict-drawer-goto-sdo",
           },
-          "用 SDO 读取该对象",
+          tz("用 SDO 读取该对象"),
         ),
         " ",
-        el("button", { type: "button", "id": "dict-drawer-close" }, "关闭（Esc）"),
+        el("button", { type: "button", "id": "dict-drawer-close" }, tz("关闭（Esc）")),
       )
     : null;
   app.append(
@@ -614,11 +616,11 @@ function renderDict(dict) {
             el(
               "button",
               { type: "button", id: "dict-clear-filters" },
-              "清空筛选",
+              tz("清空筛选"),
             ),
           )
         : tableWithTestidRows(
-            ["索引", "子索引", "名称", "类型", "位长", "访问", "值"],
+            [tz("索引"), tz("子索引"), tz("名称"), tz("类型"), tz("位长"), tz("访问"), "值"],
             rows,
             (row) => `dict-row-${String(row[0] || "").replace(/^0x/i, "")}-${String(row[1]).padStart(2, "0")}`,
             (row) => {
@@ -675,13 +677,13 @@ function renderPdo(pdo) {
         { class: "sub" },
         `站地址 ${pdo.station_address} / AL ${pdo.al_status}；hex 为小端原始字节，右侧为按 u16 小端解码。`,
       ),
-      table(["方向", "地址", "字节数", "hex", "u16 解码"], rows),
+      table([tz("方向"), tz("地址"), tz("字节数"), "hex", tz("u16 解码")], rows),
       el(
         "p",
         {},
-        el("button", { type: "button", "data-testid": "pdo-copy-hex", id: "pdo-copy-hex" }, "复制 SM2/SM3 hex"),
+        el("button", { type: "button", "data-testid": "pdo-copy-hex", id: "pdo-copy-hex" }, tz("复制 SM2/SM3 hex")),
         " ",
-        el("button", { type: "button", "data-testid": "pdo-pause-toggle" }, "暂停/继续"),
+        el("button", { type: "button", "data-testid": "pdo-pause-toggle" }, tz("暂停/继续")),
       ),
     ),
   );
@@ -703,7 +705,7 @@ function renderPdo(pdo) {
           { class: "sub" },
           "依据 state 的 PDO 映射与 dict-v1 的对象名/类型解码；有符号类型按符号扩展。",
         ),
-        table(["方向", "索引", "子索引", "名称", "位长", "值"], decodedRows),
+        table([tz("方向"), tz("索引"), tz("子索引"), tz("名称"), tz("位长"), "值"], decodedRows),
       ),
     );
   }
@@ -868,7 +870,7 @@ function renderTopology(topology) {
         "div",
         { "data-testid": "overview-slaves-table" },
         tableWithTestidRows(
-          ["#", "站地址", "AL 状态", "AL 状态码", "收/发帧", "SM2（地址 hex）", "SM3（地址 hex）"],
+          ["#", tz("站地址"), tz("AL 状态"), tz("AL 状态码"), tz("收/发帧"), tz("SM2（地址 hex）"), tz("SM3（地址 hex）")],
           rows,
           "overview-slaves-row-",
           (row) => {
@@ -882,7 +884,7 @@ function renderTopology(topology) {
         {},
         el("button", { type: "button", "data-testid": "overview-copy-summary" }, "复制拓扑摘要"),
         " ",
-        el("button", { type: "button", "data-testid": "overview-pause-toggle" }, "暂停/继续"),
+        el("button", { type: "button", "data-testid": "overview-pause-toggle" }, tz("暂停/继续")),
       ),
     ),
   );
@@ -905,22 +907,22 @@ function renderMetrics(metrics) {
   const al = metrics.ecsim_al_status;
   const alClass = al === 8 || al === 4 || al === 2 ? "ok" : "warn";
   const cards = [
-    ["收帧", "frames-in", value("ecsim_frames_in_total")],
-    ["发帧", "frames-out", value("ecsim_frames_out_total")],
-    ["丢弃帧", "frames-dropped", value("ecsim_frames_dropped_total")],
-    ["datagram 命中", "datagrams-hit", value("ecsim_datagrams_hit_total")],
-    ["邮箱请求", "mailbox-requests", value("ecsim_mailbox_requests_total")],
-    ["邮箱响应", "mailbox-responses", value("ecsim_mailbox_responses_total")],
-    ["DC 寄存器读", "dc-reg-reads", value("ecsim_dc_reg_reads_total")],
-    ["DC 寄存器写", "dc-reg-writes", value("ecsim_dc_reg_writes_total")],
-    ["DC 模拟时间（ns）", "dc-time-ns", value("ecsim_dc_time_ns")],
-    ["AL 状态", "al-status", al == null ? "-" : String(al)],
-    ["AL 状态码", "al-status-code", value("ecsim_al_status_code")],
+    [tz("收帧"), "frames-in", value("ecsim_frames_in_total")],
+    [tz("发帧"), "frames-out", value("ecsim_frames_out_total")],
+    [tz("丢弃帧"), "frames-dropped", value("ecsim_frames_dropped_total")],
+    [tz("datagram 命中"), "datagrams-hit", value("ecsim_datagrams_hit_total")],
+    [tz("邮箱请求"), "mailbox-requests", value("ecsim_mailbox_requests_total")],
+    [tz("邮箱响应"), "mailbox-responses", value("ecsim_mailbox_responses_total")],
+    [tz("DC 寄存器读"), "dc-reg-reads", value("ecsim_dc_reg_reads_total")],
+    [tz("DC 寄存器写"), "dc-reg-writes", value("ecsim_dc_reg_writes_total")],
+    [tz("DC 模拟时间（ns）"), "dc-time-ns", value("ecsim_dc_time_ns")],
+    [tz("AL 状态"), "al-status", al == null ? "-" : String(al)],
+    [tz("AL 状态码"), "al-status-code", value("ecsim_al_status_code")],
   ];
   app.append(
     section(
       tr("section.metrics", "指标（/metrics）"),
-      el("p", { class: "sub" }, `AL 状态色：${alClass === "ok" ? "正常（PREOP/SAFEOP/OP）" : "异常或 INIT"}`),
+      el("p", { class: "sub" }, `${tz("AL 状态色：")}${alClass === "ok" ? tz("正常（PREOP/SAFEOP/OP）") : tz("异常或 INIT")}`),
       el(
         "div",
         { class: "grid" },
@@ -968,14 +970,14 @@ function renderOverview(topology) {
         : el(
             "div",
             { "data-testid": "overview-problems-table" },
-            table(["#", "AL 状态", "异常位", "AL 状态码"], problemRows),
+            table(["#", tz("AL 状态"), "异常位", tz("AL 状态码")], problemRows),
           ),
       el(
         "p",
         {},
-        el("button", { type: "button", "data-testid": "overview-copy-summary" }, "复制总览摘要"),
+        el("button", { type: "button", "data-testid": "overview-copy-summary" }, tz("复制总览摘要")),
         " ",
-        el("button", { type: "button", "data-testid": "overview-pause-toggle" }, "暂停/继续"),
+        el("button", { type: "button", "data-testid": "overview-pause-toggle" }, tz("暂停/继续")),
       ),
     ),
   );
@@ -1078,7 +1080,7 @@ function renderEvidence() {
       el(
         "details",
         { open: "open" },
-        el("summary", {}, "导出预览（Markdown）"),
+        el("summary", {}, tz("导出预览（Markdown）")),
         el(
           "pre",
           { "data-testid": "evidence-preview", style: "white-space:pre-wrap;max-height:260px;overflow:auto;background:#0f1115;padding:10px;border-radius:8px" },
@@ -1088,11 +1090,11 @@ function renderEvidence() {
       el(
         "p",
         {},
-        el("button", { type: "button", "data-testid": "evidence-copy" }, "复制 Markdown"),
+        el("button", { type: "button", "data-testid": "evidence-copy" }, tz("复制 Markdown")),
         " ",
-        el("button", { type: "button", "data-testid": "evidence-download-md" }, "下载 .md"),
+        el("button", { type: "button", "data-testid": "evidence-download-md" }, tz("下载 .md")),
         " ",
-        el("button", { type: "button", "data-testid": "evidence-download-json" }, "下载 .json"),
+        el("button", { type: "button", "data-testid": "evidence-download-json" }, tz("下载 .json")),
       ),
       el(
         "p",
@@ -1144,7 +1146,7 @@ function renderAbout() {
       el(
         "p",
         {},
-        el("button", { type: "button", "data-testid": "about-copy-version" }, "复制版本信息"),
+        el("button", { type: "button", "data-testid": "about-copy-version" }, tz("复制版本信息")),
       ),
     ),
   );
@@ -1283,7 +1285,7 @@ function renderAudit() {
   ]);
   container.append(
     tableWithTestidRows(
-      ["时间", "站（0-based）", "索引", "子索引", "旧值（小端 hex）", "新值（小端 hex）"],
+      [tz("时间"), tz("站（0-based）"), tz("索引"), tz("子索引"), tz("旧值（小端 hex）"), tz("新值（小端 hex）")],
       rows,
       "sdo-audit-row-",
     ),
@@ -1321,7 +1323,7 @@ async function loadAudit() {
 
 function loadMetrics(text, source) {
   currentMetrics = parseMetrics(text);
-  message.textContent = `已载入：${source}`;
+  message.textContent = `${tz("已载入：")}${source}`;
   renderAll();
 }
 
@@ -1334,10 +1336,10 @@ function loadJson(text, source) {
     else if (data.schema === "ec-sim/pdo-history-v1") currentPdoHistory = data;
     else if (data.schema === "ec-sim/topology-v1") currentTopology = data;
     else throw new Error(`未知 schema：${data.schema}`);
-    message.textContent = `已载入：${source}`;
+    message.textContent = `${tz("已载入：")}${source}`;
     renderAll();
   } catch (error) {
-    message.textContent = `解析失败：${error.message}`;
+    message.textContent = `${tz("解析失败：")}${error.message}`;
   }
 }
 
@@ -1408,7 +1410,7 @@ async function pollOnce(reason) {
     } else {
       setConnMode("STALE");
     }
-    message.textContent = `实时请求失败（${conn.failures}/${conn.maxFailures}）：${error.message}`;
+    message.textContent = `${tz("实时请求失败")} (${conn.failures}/${conn.maxFailures}): ${error.message}`;
   }
 }
 
@@ -1451,7 +1453,7 @@ function connectSse() {
       const data = JSON.parse(event.data);
       if (data.schema === "ec-sim/state-v1") {
         currentState = data;
-        message.textContent = `SSE：${liveBase}/events?slave=${slave}`;
+        message.textContent = `SSE: ${liveBase}/events?slave=${slave}`;
         noteData();
         if (conn.mode !== "LIVE_SSE") setConnMode("LIVE_SSE");
         renderAll();
@@ -1713,12 +1715,12 @@ function renderSdoResult(data) {
     return;
   }
   const rows = [
-    ["索引", `${data.index}（子索引 ${String(data.sub).padStart(2, "0")}）`],
+    [tz("索引"), `${data.index}（子索引 ${String(data.sub).padStart(2, "0")}）`],
     ["对象名", data.object_name || "-"],
     ["条目名", data.name || "-"],
-    ["类型", data.type],
-    ["位长", `${data.bits} 位`],
-    ["访问", data.access],
+    [tz("类型"), data.type],
+    [tz("位长"), `${data.bits} 位`],
+    [tz("访问"), data.access],
     [
       "值（大端显示）",
       el(
@@ -1729,10 +1731,10 @@ function renderSdoResult(data) {
     ],
     [
       "复制",
-      el("button", { type: "button", "data-testid": "sdo-value-copy", id: "sdo-value-copy" }, "复制旧值 hex"),
+      el("button", { type: "button", "data-testid": "sdo-value-copy", id: "sdo-value-copy" }, tz("复制旧值 hex")),
     ],
   ];
-  container.append(table(["字段", "值"], rows));
+  container.append(table([tz("字段"), "值"], rows));
 }
 
 async function sdoFailureHint(response) {
@@ -1782,11 +1784,11 @@ async function readSdo() {
     lastSdoRead = data;
     setSdoMessage(
       "sdo-status",
-      `已读取站 ${parsed.slave} 的 ${data.index}:${String(data.sub).padStart(2, "0")} ${data.name || ""}`.trim(),
+      `Read slave ${parsed.slave}: ${data.index}:${String(data.sub).padStart(2, "0")} ${data.name || ""}`.trim(),
       false,
     );
   } catch (error) {
-    setSdoMessage("sdo-status", `读取失败：${error.message}`, true);
+    setSdoMessage("sdo-status", `${tz("读取失败：")}${error.message}`, true);
   }
 }
 
@@ -1845,7 +1847,7 @@ async function writeSdo() {
       (staleWarning ? `\n⚠️ ${staleWarning}` : ""),
   );
   if (!confirmed) {
-    setSdoMessage("sdo-write-status", "已取消写入。", false);
+    setSdoMessage("sdo-write-status", tz("已取消写入。"), false);
     return;
   }
   await performSdoWrite(parsed, bytes);
@@ -1889,7 +1891,7 @@ function closeSdoConfirm() {
 
 async function performSdoWrite(parsed, bytes) {
   const base = sdoApiBase();
-  setSdoMessage("sdo-write-status", "写入中…", false);
+  setSdoMessage("sdo-write-status", tz("写入中…"), false);
   try {
     const response = await fetch(`${base}/sdo${parsed.query}`, {
       method: "POST",
@@ -1903,7 +1905,7 @@ async function performSdoWrite(parsed, bytes) {
     const data = JSON.parse(await response.text());
     setSdoMessage(
       "sdo-write-status",
-      `写入成功（站 ${parsed.slave}）：${data.old_hex || "-"} → ${data.written_hex}（审计见 GET /sdo-audit）`,
+      `${tz("写入成功（站 ")}${parsed.slave}): ${data.old_hex || "-"} → ${data.written_hex} (audit: GET /sdo-audit)`,
       false,
     );
     lastSdoRead = null; // 旧值已变化，下次 confirm 前重新读取

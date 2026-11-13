@@ -28,7 +28,7 @@ APP = ROOT / "web" / "app.js"
 I18N = ROOT / "web" / "i18n.js"
 
 # 允许保留（暂时未引用）的键前缀；新增键需有引用。
-ALLOWED_UNUSED = set()
+ALLOWED_UNUSED = {"topbar.lang"}
 ALLOWED_HTML_TAGS = {"code", "strong", "b", "em", "span", "br"}
 LEN_RATIO = 1.3
 
@@ -108,7 +108,7 @@ def main():
                 problems.append(f"zh 键 {key} 含非白名单标签：{sorted(bad)}")
 
     # 未使用键：键未出现在 index.html/app.js 的字符串中（app.js 动态使用 t("key")）。
-    combined = index + "\n" + app + "\n" + i18n
+    combined = index + "\n" + app
     for key in sorted(set(zh) & set(en)):
         if key in ALLOWED_UNUSED:
             continue
