@@ -5520,3 +5520,29 @@
 
 **自动化**
 - 已创建低峰期自动开工定时任务，按 `AGENTS.md` §5 协议执行。
+
+---
+
+## 2026-11-13 团队班 — **task-44/H2（进行中）：契约/testid 校验 + 写作边界**
+
+> 仅改 EC-Sim `web/` + `scripts/spikes/` + 文档；发布仍冻结；H1 走查由 sim-ux 进行中。
+
+**已完成**
+- **DOD-01**：新增 `scripts/spikes/web-contract-check.py`（16 冻结 `#id` + 87 固定 testid + 9 参数化模板 +
+  4 通用态槽位；唯一性/命名/冻结 id 检查；`--list` 逐项缺口）→ **EXIT=0**。为承载钩子补齐：外壳
+  topbar/上下文条/导航/toast/页脚；V-01 总览（health/异常空态/拓扑节点/从站表行/指标卡）；V-02 从站
+  （身份/SII/实时/SM/RxPDO/TxPDO/DC/动作）；V-03 PDO（当前表 `pdo-hex-<key>`/解码/波形 canvas+摘要+采样表）；
+  V-04 字典（搜索 `/`、访问/有值过滤、行模板、L1 抽屉、空态）；V-05 SDO（字段错误态、**L2 确认对话框**
+  `sdo-confirm-*`，Esc/默认焦点取消，`window.confirm` 保留为回退、审计行模板/空态）；V-06 证据导出
+  （勾选/元信息/预览/复制/下载 md/json/边界）；V-07 关于（版本/健康/支持矩阵/边界/token/复制）。
+- **DOD-10**：新增 `scripts/spikes/writing-boundary-check.py`（14 类禁用词行级扫描 + 否定白名单 + 页脚常驻
+  边界 + 导出模板边界/脱敏）→ **EXIT=0**。
+- 兼容检查：`node --check`、`web-sdo-panel-check.py`（DOD-11 断言全保留）、静态同源 smoke 全 **EXIT=0**。
+
+**未完成（⚠️ 不记 PASS）**
+- DOD-07 性能预算 / DOD-08 分辨率缩放截图：需浏览器窗口（EC-Sim VM 正被 sim-ux H1 走查占用）。
+- DOD-09 i18n：未实现（中文硬编码）；下一批抽键 + 切换 + 键完整性检查。
+- 证据：`docs/verification/2026-11-13-hmi-h2-web.md`。
+
+**下次开工**
+- 等 sim-ux H1 走查结果先修 H1 缺口；VM 空闲后采 DOD-07/08 证据；实现 DOD-09 后 task-44 再收口。

@@ -82,3 +82,13 @@ schema 与字段说明见 **[docs/CONTROL-PLANE.md](../docs/CONTROL-PLANE.md)**�
 > ⚠️ 静态检查（
 ode --check + web-sdo-panel-check.py）≠ 交互验收；DOD-03 的 T-SSE-01..06、
 > DOD-06 的 DOM 实测 44px、审计/confirm 的真实浏览器行为由 **sim-ux** 走查判定（本页不写"降级 PASS"）。
+
+## H2（task-44 / GO-B DOD-01/07/08/09/10）— 契约/testid + 写作边界（进行中）
+
+- **DOD-01 契约**：16 个冻结 `#id` + 87 个固定 `data-testid` + 9 个参数化模板 + 4 个通用态槽位，已落
+  `index.html`/`app.js`；校验脚本 `python3 scripts/spikes/web-contract-check.py`（`--list` 看逐项）。
+- **DOD-10 写作边界**：`python3 scripts/spikes/writing-boundary-check.py`（禁用词/页脚/导出边界/脱敏）。
+- **H2 新增交互**：7 视图锚点导航、字典搜索/过滤/L1 抽屉（`/` 聚焦）、SDO **L2 确认对话框**
+  （Esc/默认焦点取消；无对话框宿主时回退 `window.confirm`）、证据导出（Markdown/JSON 下载）、关于页。
+- ⚠️ **DOD-07 性能 / DOD-08 分辨率缩放 / DOD-09 i18n 未完成**（需浏览器窗口/实现），不得写 PASS；
+  状态与下一步见 `docs/verification/2026-11-13-hmi-h2-web.md`。

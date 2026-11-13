@@ -39,6 +39,24 @@ const conn = {
 };
 const MAX_DELTA_MS = 2 * 1000; // 2× 刷新间隔无新数据 → STALE
 
+// V-04：对象字典筛选/L1 抽屉状态。
+const dictFilters = { search: "", access: "all", value: "all", selected: null };
+
+// V-06/V-07：证据导出与关于页状态。
+const evidenceState = {
+  selected: {
+    identity: true,
+    al: true,
+    pdo: true,
+    history: true,
+    topology: true,
+    metrics: true,
+    dict: true,
+    audit: true,
+  },
+};
+let aboutHealth = null;
+
 function el(tag, attrs, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs || {})) {
@@ -52,12 +70,18 @@ function el(tag, attrs, ...children) {
 }
 
 function table(headers, rows, onRowClick) {
+  return tableWithTestidRows(headers, rows, null, onRowClick);
+}
+
+// DOD-01：带行级 `data-testid="<prefix><index>"` 的表格（参数化 testid 模板）。
+function tableWithTestidRows(headers, rows, rowTestidPrefix, onRowClick) {
   const thead = el("thead", {}, el("tr", {}, ...headers.map((h) => el("th", {}, h))));
   const tbody = el(
     "tbody",
     {},
-    ...rows.map((row) => {
+    ...rows.map((row, index) => {
       const tr = el("tr", {}, ...row.map((cell) => el("td", {}, cell)));
+      if (rowTestidPrefix) tr.setAttribute("data-testid", `${rowTestidPrefix}${index}`);
       if (onRowClick) {
         tr.style.cursor = "pointer";
         tr.addEventListener("click", () => onRowClick(row));
@@ -135,6 +159,43 @@ function ageText() {
   return age < 1000 ? `${age} ms 前` : `${(age / 1000).toFixed(1)} s 前`;
 }
 
+function updateShellContext() {
+  const source = document.getElementById("api-source");
+  if (source) {
+    // 脱敏：只显示 scheme://host:port（不含 token/凭据/路径）。
+    let display = "未连接";
+    if (liveBase) {
+      try {
+        const url = new URL(liveBase);
+        display = `${url.protocol}//${url.host}`;
+      } catch (error) {
+        display = "已连接（地址无法解析）";
+      }
+    }
+    source.textContent = display;
+  }
+  const address = document.querySelector('[data-testid="shell-context-address"]');
+  const alChipNode = document.querySelector('[data-testid="shell-context-al-chip"]');
+  const profile = document.querySelector('[data-testid="shell-context-profile"]');
+  const live = currentState && currentState.live;
+  if (address) {
+    address.textContent = `站地址：${live && live.station_address ? live.station_address : "-"}`;
+  }
+  if (alChipNode) {
+    alChipNode.replaceChildren();
+    if (live) {
+      alChipNode.append("AL：", alChip(live.al_status));
+    } else {
+      alChipNode.textContent = "AL：-";
+    }
+  }
+  if (profile) {
+    profile.textContent = `画像：${
+      currentState && currentState.profile ? currentState.profile.id : currentState ? "内置" : "-"
+    }`;
+  }
+}
+
 function updateConnUi() {
   const badge = document.getElementById("conn-badge");
   const dataTime = document.getElementById("data-time");
@@ -162,22 +223,29 @@ function updateConnUi() {
   const banner = document.getElementById("conn-banner");
   if (banner) {
     let text = "";
+    let level = "error";
     if (conn.mode === "LIVE_POLL") {
       text =
         "E-10：SSE 推送已中断，页面已降级为轮询（LIVE · 轮询）；数据可能落后 1 个刷新周期。恢复后自动回到 LIVE · SSE。";
+      level = "warn";
     } else if (conn.mode === "STOPPED") {
       text =
         "E-10：连续 3 次请求失败，已停止自动刷新（未连接）。请确认服务已启动后点“重新连接”；当前显示的是最后一次数据，可能已过期。";
     } else if (conn.mode === "STALE") {
       text = "数据陈旧（STALE）：超过 2 个刷新周期没有新数据；以下所有数值都带陈旧标记，请勿当作实时值。";
+      level = "warn";
     } else if (conn.mode === "PAUSED") {
       text = "已暂停：页面停止发请求，显示最后一次数据与时间戳；点“继续”会立即拉取一次。";
+      level = "info";
     } else if (conn.mode === "RECONNECTING") {
       text = "正在重连：已发起一次探测请求…";
+      level = "info";
     }
+    banner.setAttribute("data-testid", `shell-banner-${level}`);
     banner.textContent = text;
     banner.classList.toggle("visible", text !== "");
   }
+  updateShellContext();
   // 陈旧标记覆盖所有依赖值（PDO/AL/拓扑/指标/数据时间）。
   document.body.classList.toggle("stale", conn.mode === "STALE");
 }
@@ -217,6 +285,63 @@ function section(title, ...children) {
   return el("section", {}, el("h2", {}, title), ...children);
 }
 
+// DOD-01：带 data-testid 的 section（契约钩子，不改变显示）。
+function sectionT(testid, title, ...children) {
+  return el("section", { "data-testid": testid }, el("h2", {}, title), ...children);
+}
+
+function toast(text) {
+  const node = document.getElementById("toast");
+  if (!node) return;
+  node.textContent = text;
+  node.classList.add("visible");
+  if (node._toastTimer) clearTimeout(node._toastTimer);
+  node._toastTimer = setTimeout(() => node.classList.remove("visible"), 2500);
+}
+
+function copyText(text, label) {
+  const done = () => toast(`${label || "已复制"}：${String(text).slice(0, 60)}`);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(String(text)).then(done, () => toast("复制失败（权限/非安全上下文）"));
+  } else {
+    toast("复制不可用（浏览器未提供 clipboard）");
+  }
+}
+
+function summaryText() {
+  const live = currentState && currentState.live;
+  const parts = [
+    `EC-Sim 摘要 ${new Date().toISOString()}`,
+    `站=${selectedSlave()} 模式=${connBadgeText(conn.mode)} 数据=${ageText()}`,
+    `API=${liveBase || "-"}`,
+  ];
+  if (live) {
+    const derived = deriveAl(live.al_status);
+    parts.push(`AL=${derived.stateName} error=${derived.error} code=${live.al_status_code}`);
+  }
+  if (currentState && currentState.identity) {
+    parts.push(`VID=${currentState.identity.vendor_id} PID=${currentState.identity.product_code}`);
+  }
+  return parts.join(" | ");
+}
+
+function currentExport() {
+  return {
+    schema: "ecsim-web-export-v1",
+    generated_at: new Date().toISOString(),
+    mode: connBadgeText(conn.mode),
+    api: liveBase || null,
+    slave: selectedSlave(),
+    state: currentState,
+    pdo: currentPdo,
+    topology: currentTopology,
+    metrics: currentMetrics,
+    dict: currentDict,
+    audit: currentAudit,
+    boundaries: ["快照语义，非实时 SLA", "不宣称一致性/CTT/认证", "0x18 维持 NOT-JUDGED（BL-20 v1.x）"],
+  };
+}
+
 function kvGrid(pairs) {
   return el(
     "div",
@@ -231,7 +356,8 @@ function renderState(state) {
   if (state.schema !== "ec-sim/state-v1") return;
   const identity = state.identity || {};
   app.append(
-    section(
+    sectionT(
+      "slave-identity",
       "身份与画像",
       kvGrid([
         ["Vendor ID", identity.vendor_id || "-"],
@@ -241,7 +367,25 @@ function renderState(state) {
         ["画像", state.profile ? `${state.profile.id}` : "内置"],
         ["字典对象数", state.dict_objects == null ? "-" : state.dict_objects],
       ]),
-      el("p", { class: "sub" }, "名称：", (state.names || []).join(" / ")),
+      el(
+        "p",
+        { class: "sub", "data-testid": "slave-sii" },
+        "名称：",
+        (state.names || []).join(" / "),
+        " · 画像：",
+        el(
+          "span",
+          { "data-testid": "slave-profile" },
+          state.profile ? `${state.profile.id}` : "内置",
+        ),
+      ),
+      el(
+        "p",
+        {},
+        el("button", { type: "button", "data-testid": "slave-goto-pdo" }, "查看 PDO 映射"),
+        " ",
+        el("button", { type: "button", "data-testid": "slave-copy-identity" }, "复制身份"),
+      ),
       el(
         "p",
         {},
@@ -263,7 +407,8 @@ function renderState(state) {
   if (state.live) {
     const live = state.live;
     app.append(
-      section(
+      sectionT(
+        "slave-live",
         "实时状态（--serve 实时模式）",
         kvGrid([
           ["站地址", live.station_address],
@@ -296,7 +441,7 @@ function renderState(state) {
     sm.status,
     sm.enable,
   ]);
-  app.append(section("Sync Manager", table(["#", "起始地址", "长度", "Control", "Status", "Enable"], smRows)));
+  app.append(sectionT("slave-sm-table", "Sync Manager", table(["#", "起始地址", "长度", "Control", "Status", "Enable"], smRows)));
 
   for (const [label, key] of [
     ["RxPDO（主站 → 从站）", "pdo_rx"],
@@ -309,13 +454,14 @@ function renderState(state) {
         .join(", ");
       rows.push([pdo.index, pdo.sync_manager, String((pdo.entries || []).length), entries]);
     }
-    app.append(section(label, table(["PDO", "SM", "条目数", "映射"], rows)));
+    app.append(sectionT(key === "pdo_rx" ? "slave-pdo-rx" : "slave-pdo-tx", label, table(["PDO", "SM", "条目数", "映射"], rows)));
   }
 
   if (state.dc) {
     const dc = state.dc;
     app.append(
-      section(
+      sectionT(
+        "slave-dc",
         "分布式时钟（DC）",
         kvGrid([
           ["cycleTime0", `${dc.cycle_time0_ns} ns`],
@@ -339,13 +485,30 @@ function hexToBigEndian(hex) {
 
 function renderDict(dict) {
   if (dict.schema !== "ec-sim/dict-v1") return;
+  // V-04：搜索 / 访问过滤 / 有值过滤 / L1 抽屉（H2 实现；DOM 交互仍由浏览器走查判定）。
+  const search = (dictFilters.search || "").trim().toLowerCase();
+  const matches = (object, entry) => {
+    const index = (entry && entry.index) || object.index;
+    const name = ((entry && (entry.name || object.name)) || "").toLowerCase();
+    if (search && !`${index} ${name}`.toLowerCase().includes(search)) return false;
+    const access = entry ? entry.access : "";
+    if (dictFilters.access === "ro" && access !== "ro") return false;
+    if (dictFilters.access === "rw" && access !== "rw") return false;
+    const hasValue = Boolean(entry && entry.value_hex);
+    if (dictFilters.value === "with" && !hasValue) return false;
+    if (dictFilters.value === "without" && hasValue) return false;
+    return true;
+  };
   const rows = [];
   for (const object of dict.objects || []) {
     if (!object.entries || object.entries.length === 0) {
-      rows.push([object.index, "-", object.name, "", "", "", ""]);
+      if (matches(object, null)) {
+        rows.push([object.index, "-", object.name, "", "", "", ""]);
+      }
       continue;
     }
     for (const entry of object.entries) {
+      if (!matches(object, entry)) continue;
       rows.push([
         entry.sub === 0 ? object.index : "",
         String(entry.sub).padStart(2, "0"),
@@ -357,15 +520,116 @@ function renderDict(dict) {
       ]);
     }
   }
+  const filterButton = (testid, label, active, onClick) =>
+    el(
+      "button",
+      {
+        type: "button",
+        "data-testid": testid,
+        "aria-pressed": active ? "true" : "false",
+        style: active ? "background:#2c3a58" : "",
+      },
+      label,
+      {},
+    );
+  const toolbar = el(
+    "div",
+    { class: "row", style: "margin-bottom:8px" },
+    el("input", {
+      id: "dict-search",
+      "data-testid": "dict-search",
+      type: "text",
+      placeholder: "搜索索引/名称（/ 聚焦）",
+      value: dictFilters.search,
+    }),
+    filterButton("dict-filter-access", `访问=全部`, dictFilters.access === "all", () => {
+      dictFilters.access = "all";
+      renderAll();
+    }),
+    filterButton("dict-filter-access", `ro`, dictFilters.access === "ro", () => {
+      dictFilters.access = "ro";
+      renderAll();
+    }),
+    filterButton("dict-filter-access", `rw`, dictFilters.access === "rw", () => {
+      dictFilters.access = "rw";
+      renderAll();
+    }),
+    filterButton("dict-filter-value", `有值`, dictFilters.value === "with", () => {
+      dictFilters.value = dictFilters.value === "with" ? "all" : "with";
+      renderAll();
+    }),
+    filterButton("dict-filter-value", `无值`, dictFilters.value === "without", () => {
+      dictFilters.value = dictFilters.value === "without" ? "all" : "without";
+      renderAll();
+    }),
+  );
+  const drawer = dictFilters.selected
+    ? el(
+        "div",
+        {
+          "data-testid": "dict-drawer",
+          class: "kv",
+          style: "margin-top:10px",
+          role: "dialog",
+          "aria-label": "对象详情",
+        },
+        el("b", {}, `${dictFilters.selected.index}:${String(dictFilters.selected.sub).padStart(2, "0")}`),
+        el("span", {}, ` ${dictFilters.selected.name || ""}（${dictFilters.selected.bits} 位 / ${dictFilters.selected.access}）`),
+        " ",
+        el(
+          "button",
+          {
+            type: "button",
+            "data-testid": "dict-drawer-goto-sdo",
+          },
+          "用 SDO 读取该对象",
+        ),
+        " ",
+        el("button", { type: "button", "id": "dict-drawer-close" }, "关闭（Esc）"),
+      )
+    : null;
   app.append(
-    section(
+    sectionT(
+      "dict-table",
       "对象字典",
       el(
         "p",
-        { class: "sub" },
-        `对象 ${dict.object_count} 个 / 条目 ${dict.entry_count} 个（值按小端存储，显示为 0x 大端十六进制）。`,
+        { class: "sub", "data-testid": "dict-meta" },
+        `对象 ${dict.object_count} 个 / 条目 ${dict.entry_count} 个（值按小端存储，显示为 0x 大端十六进制）。` +
+          `当前筛选命中 ${rows.length} 行。`,
       ),
-      table(["索引", "子索引", "名称", "类型", "位长", "访问", "值"], rows),
+      toolbar,
+      rows.length === 0
+        ? el(
+            "p",
+            { class: "sub", "data-testid": "dict-empty" },
+            "无结果：空字典或筛选条件过严。",
+            " ",
+            el(
+              "button",
+              { type: "button", id: "dict-clear-filters" },
+              "清空筛选",
+            ),
+          )
+        : tableWithTestidRows(
+            ["索引", "子索引", "名称", "类型", "位长", "访问", "值"],
+            rows,
+            (row) => `dict-row-${String(row[0] || "").replace(/^0x/i, "")}-${String(row[1]).padStart(2, "0")}`,
+            (row) => {
+            const object = (dict.objects || []).find((item) => item.index === row[0]) ||
+              (dict.objects || []).find((item) => (item.entries || []).some((entry) => entry.sub === Number(row[1])));
+            const entry = object && (object.entries || []).find((item) => item.sub === Number(row[1]));
+            dictFilters.selected = {
+              index: row[0] || (object && object.index) || "",
+              sub: Number(row[1]) || 0,
+              name: (entry && entry.name) || row[2],
+              bits: (entry && entry.bits) || 0,
+              access: (entry && entry.access) || "",
+            };
+            renderAll();
+            },
+          ),
+      drawer,
     ),
   );
 }
@@ -388,10 +652,17 @@ function renderPdo(pdo) {
     ["SM3（TxPDO / 输入）", "sm3"],
   ]) {
     const item = pdo[key];
-    rows.push([label, item.address, String(item.bytes), item.hex || "-", decodeU16(item.hex)]);
+    rows.push([
+      label,
+      item.address,
+      String(item.bytes),
+      el("span", { "data-testid": `pdo-hex-${key}` }, item.hex || "-"),
+      decodeU16(item.hex),
+    ]);
   }
   app.append(
-    section(
+    sectionT(
+      "pdo-current-table",
       "过程数据（PDO，只读快照）",
       el(
         "p",
@@ -399,6 +670,13 @@ function renderPdo(pdo) {
         `站地址 ${pdo.station_address} / AL ${pdo.al_status}；hex 为小端原始字节，右侧为按 u16 小端解码。`,
       ),
       table(["方向", "地址", "字节数", "hex", "u16 解码"], rows),
+      el(
+        "p",
+        {},
+        el("button", { type: "button", "data-testid": "pdo-copy-hex", id: "pdo-copy-hex" }, "复制 SM2/SM3 hex"),
+        " ",
+        el("button", { type: "button", "data-testid": "pdo-pause-toggle" }, "暂停/继续"),
+      ),
     ),
   );
   if (Array.isArray(pdo.decoded) && pdo.decoded.length > 0) {
@@ -411,7 +689,8 @@ function renderPdo(pdo) {
       String(entry.value),
     ]);
     app.append(
-      section(
+      sectionT(
+        "pdo-decoded-table",
         "PDO 具名解码（按映射顺序）",
         el(
           "p",
@@ -429,6 +708,9 @@ function renderPdoHistory(history) {
   if (history.schema !== "ec-sim/pdo-history-v1") return;
   const samples = history.samples || [];
   const canvas = document.createElement("canvas");
+  canvas.setAttribute("data-testid", "pdo-waveform-canvas");
+  canvas.setAttribute("role", "img");
+  canvas.setAttribute("aria-label", `PDO 历史波形：${samples.length} 个采样，SM2/SM3 前 2 字节`);
   canvas.width = 760;
   canvas.height = 140;
   canvas.style.width = "100%";
@@ -461,14 +743,29 @@ function renderPdoHistory(history) {
   draw(sm2, "#6ea8fe");
   draw(sm3, "#8fe3a8");
   app.append(
-    section(
+    sectionT(
+      "pdo-waveform-summary",
       "PDO 历史（最近 " + samples.length + " 个变化采样）",
       el(
         "p",
-        { class: "sub" },
-        "蓝线 = SM2 前 2 字节（u16 小端）；绿线 = SM3 前 2 字节；纵轴按两者最大值归一化。",
+        { class: "sub", "data-testid": "pdo-sample-info" },
+        `样本 ${samples.length} 个（按 PDO 变化去重）；蓝线 = SM2 前 2 字节（u16 小端）；绿线 = SM3 前 2 字节；纵轴按两者最大值归一化。`,
       ),
       canvas,
+      el(
+        "details",
+        { "data-testid": "pdo-waveform-table" },
+        el("summary", {}, `展开前 20 条采样（共 ${samples.length} 条）`),
+        table(
+          ["#", "SM2 hex", "SM3 hex", "AL"],
+          samples.slice(0, 20).map((sample, index) => [
+            String(index),
+            sample.sm2_hex || "-",
+            sample.sm3_hex || "-",
+            sample.al_status || "-",
+          ]),
+        ),
+      ),
     ),
   );
 }
@@ -513,12 +810,15 @@ function renderTopologyGraph(topology) {
       line.setAttribute("y1", "60");
       line.setAttribute("x2", String(cx - 18));
       line.setAttribute("y2", "60");
-      line.setAttribute("stroke", "#3a4254");
+      line.setAttribute("stroke", "#6b7790"); // WCAG-CHK-02：拓扑链线用 muted（≥3:1）
       line.setAttribute("stroke-width", "2");
       svg.append(line);
     }
     const circle = document.createElementNS(svgNs, "circle");
+    circle.setAttribute("data-testid", `overview-topology-node-${slave.index}`);
     circle.setAttribute("cx", String(cx));
+    circle.setAttribute("role", "button");
+    circle.setAttribute("aria-label", `从站 ${slave.index}，AL ${slave.al_status}，点击切换`);
     circle.setAttribute("cy", "60");
     circle.setAttribute("r", "18");
     circle.setAttribute("fill", color);
@@ -549,7 +849,8 @@ function renderTopology(topology) {
     slave.sm3.address + " " + (slave.sm3.hex || "-"),
   ]);
   app.append(
-    section(
+    sectionT(
+      "overview-topology",
       "总线拓扑（" + String(topology.count) + " 个从站，实时摘要）",
       el(
         "p",
@@ -557,13 +858,25 @@ function renderTopology(topology) {
         "节点色 = AL 状态（INIT 橙 / PREOP 蓝 / SAFEOP 紫 / OP 绿），点击节点切换到该从站；站地址未配置显示 0x0000。",
       ),
       renderTopologyGraph(topology),
-      table(
-        ["#", "站地址", "AL 状态", "AL 状态码", "收/发帧", "SM2（地址 hex）", "SM3（地址 hex）"],
-        rows,
-        (row) => {
-          document.getElementById("slave-index").value = row[0];
-          document.getElementById("load-api").click();
-        },
+      el(
+        "div",
+        { "data-testid": "overview-slaves-table" },
+        tableWithTestidRows(
+          ["#", "站地址", "AL 状态", "AL 状态码", "收/发帧", "SM2（地址 hex）", "SM3（地址 hex）"],
+          rows,
+          "overview-slaves-row-",
+          (row) => {
+            document.getElementById("slave-index").value = row[0];
+            document.getElementById("load-api").click();
+          },
+        ),
+      ),
+      el(
+        "p",
+        {},
+        el("button", { type: "button", "data-testid": "overview-copy-summary" }, "复制拓扑摘要"),
+        " ",
+        el("button", { type: "button", "data-testid": "overview-pause-toggle" }, "暂停/继续"),
       ),
     ),
   );
@@ -586,17 +899,17 @@ function renderMetrics(metrics) {
   const al = metrics.ecsim_al_status;
   const alClass = al === 8 || al === 4 || al === 2 ? "ok" : "warn";
   const cards = [
-    ["收帧", value("ecsim_frames_in_total")],
-    ["发帧", value("ecsim_frames_out_total")],
-    ["丢弃帧", value("ecsim_frames_dropped_total")],
-    ["datagram 命中", value("ecsim_datagrams_hit_total")],
-    ["邮箱请求", value("ecsim_mailbox_requests_total")],
-    ["邮箱响应", value("ecsim_mailbox_responses_total")],
-    ["DC 寄存器读", value("ecsim_dc_reg_reads_total")],
-    ["DC 寄存器写", value("ecsim_dc_reg_writes_total")],
-    ["DC 模拟时间（ns）", value("ecsim_dc_time_ns")],
-    ["AL 状态", al == null ? "-" : String(al)],
-    ["AL 状态码", value("ecsim_al_status_code")],
+    ["收帧", "frames-in", value("ecsim_frames_in_total")],
+    ["发帧", "frames-out", value("ecsim_frames_out_total")],
+    ["丢弃帧", "frames-dropped", value("ecsim_frames_dropped_total")],
+    ["datagram 命中", "datagrams-hit", value("ecsim_datagrams_hit_total")],
+    ["邮箱请求", "mailbox-requests", value("ecsim_mailbox_requests_total")],
+    ["邮箱响应", "mailbox-responses", value("ecsim_mailbox_responses_total")],
+    ["DC 寄存器读", "dc-reg-reads", value("ecsim_dc_reg_reads_total")],
+    ["DC 寄存器写", "dc-reg-writes", value("ecsim_dc_reg_writes_total")],
+    ["DC 模拟时间（ns）", "dc-time-ns", value("ecsim_dc_time_ns")],
+    ["AL 状态", "al-status", al == null ? "-" : String(al)],
+    ["AL 状态码", "al-status-code", value("ecsim_al_status_code")],
   ];
   app.append(
     section(
@@ -605,12 +918,247 @@ function renderMetrics(metrics) {
       el(
         "div",
         { class: "grid" },
-        ...cards.map(([label, text]) =>
-          el("div", { class: "kv" }, el("b", {}, label), el("span", { class: alClass }, text)),
+        ...cards.map(([label, slug, text]) =>
+          el(
+            "div",
+            { class: "kv", "data-testid": `overview-metric-${slug}` },
+            el("b", {}, label),
+            el("span", { class: alClass }, text),
+          ),
         ),
       ),
     ),
   );
+}
+
+function renderOverview(topology) {
+  const slaves = topology.slaves || [];
+  const derived = slaves.map((slave) => deriveAl(slave.al_status));
+  const problemSlaves = slaves.filter(
+    (slave, index) => derived[index].error || derived[index].idRequest || derived[index].state !== 8,
+  );
+  const opCount = slaves.filter((_slave, index) => derived[index].state === 8).length;
+  const health = `${slaves.length} 站 / OP ${opCount} / 异常 ${problemSlaves.length}`;
+  const problemRows = problemSlaves.map((slave) => {
+    const info = deriveAl(slave.al_status);
+    return [
+      String(slave.index),
+      info.stateName,
+      info.error ? "error" : info.idRequest ? "id-req" : "-",
+      slave.al_status_code,
+    ];
+  });
+  app.append(
+    sectionT(
+      "overview-health",
+      "总线总览（health）",
+      el("p", { class: "sub" }, `${health}（AL 派生：state & 0x0F，bit4=error，bit5=ID 请求）`),
+      problemRows.length === 0
+        ? el(
+            "p",
+            { class: "sub", "data-testid": "overview-problems-empty" },
+            "无异常从站（全部 OP 且无 error/ID 请求）。",
+          )
+        : el(
+            "div",
+            { "data-testid": "overview-problems-table" },
+            table(["#", "AL 状态", "异常位", "AL 状态码"], problemRows),
+          ),
+      el(
+        "p",
+        {},
+        el("button", { type: "button", "data-testid": "overview-copy-summary" }, "复制总览摘要"),
+        " ",
+        el("button", { type: "button", "data-testid": "overview-pause-toggle" }, "暂停/继续"),
+      ),
+    ),
+  );
+}
+
+function buildEvidenceMarkdown() {
+  const lines = [];
+  lines.push(`# EC-Sim 证据导出（ecsim-evidence-v1）`);
+  lines.push("");
+  lines.push(`- 生成时间：${new Date().toISOString()}`);
+  lines.push(`- 模式：${connBadgeText(conn.mode)}；站：${selectedSlave()}（0-based）；API：${liveBase || "-"}`);
+  lines.push(`- 数据年龄：${ageText()}`);
+  lines.push("");
+  lines.push("## 边界（必读）");
+  lines.push("");
+  lines.push("- 快照语义，非实时 SLA；数值为读取时刻近似值。");
+  lines.push("- 不宣称 EtherCAT 一致性 / CTT / LinuxCNC 或任何认证。");
+  lines.push("- ⚠️ 未验证项：DOD-13b `OP|error=0x18`（NOT-JUDGED，BL-20 v1.x）；DC 仅 Tier0 模拟时钟。");
+  lines.push("");
+  const pick = (key, label, data, format) => {
+    if (!evidenceState.selected[key] || data == null) return;
+    lines.push(`## ${label}`);
+    lines.push("");
+    lines.push("```json");
+    lines.push(JSON.stringify(format ? format(data) : data, null, 2).slice(0, 8000));
+    lines.push("```");
+    lines.push("");
+  };
+  const live = currentState && currentState.live;
+  pick("identity", "身份与画像", currentState && currentState.identity);
+  pick(
+    "al",
+    "AL / 实时",
+    live
+      ? {
+          al_status: live.al_status,
+          al_status_code: live.al_status_code,
+          derived: deriveAl(live.al_status),
+          dc_time_ns: live.dc_time_ns,
+        }
+      : null,
+  );
+  pick("pdo", "PDO 当前", currentPdo);
+  pick("history", "PDO 历史", currentPdoHistory);
+  pick("topology", "拓扑", currentTopology);
+  pick("metrics", "指标", currentMetrics);
+  pick("dict", "对象字典（元信息）", currentDict && {
+    object_count: currentDict.object_count,
+    entry_count: currentDict.entry_count,
+  });
+  pick("audit", "SDO 写审计", currentAudit);
+  return lines.join("\n");
+}
+
+function downloadText(filename, text, mime) {
+  const blob = new Blob([text], { type: mime || "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast(`已下载：${filename}`);
+}
+
+function renderEvidence() {
+  if (!currentState && !currentPdo && !currentTopology) return;
+  const checklist = Object.entries({
+    identity: "身份/画像",
+    al: "AL / 实时",
+    pdo: "PDO 当前",
+    history: "PDO 历史",
+    topology: "拓扑",
+    metrics: "指标",
+    dict: "对象字典",
+    audit: "SDO 审计",
+  }).map(([key, label]) =>
+    el(
+      "label",
+      { "data-testid": `evidence-item-${key}`, style: "display:inline-flex;min-height:44px;align-items:center;gap:6px;margin-right:12px" },
+      el("input", {
+        type: "checkbox",
+        checked: evidenceState.selected[key] ? "checked" : undefined,
+        "data-evidence-key": key,
+      }),
+      label,
+    ),
+  );
+  app.append(
+    sectionT(
+      "evidence-boundaries",
+      "证据导出（只读；S-11 / V-06）",
+      el(
+        "p",
+        { class: "sub", "data-testid": "evidence-meta" },
+        `版本：ecsim-evidence-v1 · 模式：${connBadgeText(conn.mode)} · 来源：${liveBase || "本地 JSON"} · ` +
+          `时间：${new Date().toLocaleString()} · 站：${selectedSlave()}（0-based）`,
+      ),
+      el("div", { class: "row", "data-testid": "evidence-checklist" }, ...checklist),
+      el(
+        "details",
+        { open: "open" },
+        el("summary", {}, "导出预览（Markdown）"),
+        el(
+          "pre",
+          { "data-testid": "evidence-preview", style: "white-space:pre-wrap;max-height:260px;overflow:auto;background:#0f1115;padding:10px;border-radius:8px" },
+          buildEvidenceMarkdown(),
+        ),
+      ),
+      el(
+        "p",
+        {},
+        el("button", { type: "button", "data-testid": "evidence-copy" }, "复制 Markdown"),
+        " ",
+        el("button", { type: "button", "data-testid": "evidence-download-md" }, "下载 .md"),
+        " ",
+        el("button", { type: "button", "data-testid": "evidence-download-json" }, "下载 .json"),
+      ),
+      el(
+        "p",
+        { class: "sub", "data-testid": "evidence-boundaries" },
+        "⚠️ 边界：快照语义（非实时 SLA）；不宣称一致性/CTT/认证；未验证项标 ⚠️ 并给方法；不含 token/绝对路径。",
+      ),
+    ),
+  );
+}
+
+function renderAbout() {
+  app.append(
+    sectionT(
+      "about-boundaries",
+      "关于 / 边界（V-07）",
+      el(
+        "p",
+        { class: "sub", "data-testid": "about-version" },
+        "EC-Sim 只读状态视图 · 版本：ec-sim-web（与 ec-sim-esc 同仓发布）",
+      ),
+      el(
+        "p",
+        { class: "sub", "data-testid": "about-health" },
+        aboutHealth == null ? "健康检查：未检查（需实时模式）" : `健康检查：${aboutHealth}`,
+      ),
+      el(
+        "div",
+        { "data-testid": "about-support-matrix" },
+        table(
+          ["组件", "已验证", "备注"],
+          [
+            ["IgH 主站（ethercat）", "1.6.13", "验收机/虚拟闭环"],
+            ["SOEM（夹具）", "2.0.0", "TAP/UDS 夹具"],
+            ["LinuxCNC + lcec", "⚠️ 待验证", "V1/V2 虚拟闭环由 CNC 侧验收"],
+            ["其它主站/系统", "未验证", "不在本视图支持范围"],
+          ],
+        ),
+      ),
+      el(
+        "p",
+        { class: "sub", "data-testid": "about-token" },
+        "token 只提示不输入：--serve-token-env 模式下浏览器 fetch 无法自动带 Authorization，需反向代理或 curl；本页不保存 token。",
+      ),
+      el(
+        "p",
+        { class: "sub", "data-testid": "about-boundaries" },
+        "不宣称：EtherCAT 一致性 / CTT / LinuxCNC 认证 / 实时 SLA。快照语义，观察值为读取时刻近似值。",
+      ),
+      el(
+        "p",
+        {},
+        el("button", { type: "button", "data-testid": "about-copy-version" }, "复制版本信息"),
+      ),
+    ),
+  );
+}
+
+function refreshAboutHealth() {
+  if (!liveBase) return;
+  fetch(`${liveBase}/health`, { cache: "no-store" })
+    .then((response) => {
+      aboutHealth = response.ok ? `200 OK（${liveBase}/health）` : `${response.status}`;
+    })
+    .catch(() => {
+      aboutHealth = "失败（无法连接）";
+    })
+    .finally(() => renderAll());
+}
+
+// DOD-01 通用态槽位（<view>-loading / -error-state / -stale-badge / -empty）。
+function viewTestid(view, slot) {
+  return `${view}-${slot}`;
 }
 
 function renderAll() {
@@ -618,9 +1166,14 @@ function renderAll() {
   if (currentState) renderState(currentState);
   if (currentPdo) renderPdo(currentPdo);
   if (currentPdoHistory) renderPdoHistory(currentPdoHistory);
-  if (currentTopology) renderTopology(currentTopology);
+  if (currentTopology) {
+    renderOverview(currentTopology);
+    renderTopology(currentTopology);
+  }
   if (currentMetrics) renderMetrics(currentMetrics);
   if (currentDict) renderDict(currentDict);
+  renderEvidence();
+  renderAbout();
   if (!currentState && !currentDict && !currentPdo) {
     app.append(
       section(
@@ -630,6 +1183,44 @@ function renderAll() {
           { class: "sub" },
           "请选择 --dump-state / --dump-dict --json 生成的 JSON，或使用上方只读 API（--serve）。",
         ),
+      ),
+    );
+  }
+  const hasAnyData = Boolean(currentState || currentPdo || currentDict || currentTopology);
+  if (!hasAnyData) {
+    app.append(
+      el(
+        "p",
+        { class: "sub", "data-testid": viewTestid("overview", "empty") },
+        "尚未载入数据：请选择 JSON 文件或填写 API 地址后点“从 API 载入”。",
+      ),
+    );
+  }
+  if (conn.mode === "CONNECTING") {
+    app.append(
+      el(
+        "p",
+        { class: "sub", "data-testid": viewTestid("overview", "loading") },
+        "加载中：正在拉取首次快照（确定性文案，无转圈动画）。",
+      ),
+    );
+  }
+  if (conn.mode === "STOPPED") {
+    app.append(
+      sectionT(
+        viewTestid("overview", "error-state"),
+        "错误状态（E-10）",
+        el("p", { class: "sub" }, "原因：连续 3 次请求失败。影响：自动刷新已停止，当前值为最后一次快照。下一步：确认服务启动后点“重新连接”。"),
+        el("p", {}, el("button", { type: "button", id: "error-retry" }, "重新连接")),
+      ),
+    );
+  }
+  if (conn.mode === "STALE") {
+    app.append(
+      el(
+        "p",
+        { class: "sub", "data-testid": viewTestid("overview", "stale-badge") },
+        "⚠️ 陈旧角标：当前视图数据超过 2 个刷新周期未更新。",
       ),
     );
   }
@@ -673,7 +1264,7 @@ function renderAudit() {
   }
   if (currentAudit.events.length === 0) {
     if (statusNode) statusNode.textContent = "审计为空：尚未发生受控写。";
-    container.append(el("p", { class: "sub" }, "暂无写事件。"));
+    container.append(el("p", { class: "sub", "data-testid": "sdo-audit-empty" }, "暂无写事件。"));
     return;
   }
   const rows = currentAudit.events.map((event) => [
@@ -685,7 +1276,11 @@ function renderAudit() {
     event.new_hex || "-",
   ]);
   container.append(
-    table(["时间", "站（0-based）", "索引", "子索引", "旧值（小端 hex）", "新值（小端 hex）"], rows),
+    tableWithTestidRows(
+      ["时间", "站（0-based）", "索引", "子索引", "旧值（小端 hex）", "新值（小端 hex）"],
+      rows,
+      "sdo-audit-row-",
+    ),
   );
   if (statusNode) statusNode.textContent = `共 ${currentAudit.events.length} 条（服务端最多 64 条）。`;
 }
@@ -1053,17 +1648,26 @@ function parseSdoSub(raw) {
   return value >= 0 && value <= 255 ? value : null;
 }
 
+function setFieldError(id, text) {
+  const node = document.getElementById(id);
+  if (node) node.textContent = text;
+}
+
 function sdoQuery() {
   const index = parseSdoIndex(document.getElementById("sdo-index").value);
   if (index == null) {
     setSdoMessage("sdo-status", "索引非法：请输入十六进制 0x0000–0xFFFF（可省略 0x）。", true);
+    setFieldError("sdo-index-error", "索引非法：需要十六进制 0x0000–0xFFFF（可省略 0x）。");
     return null;
   }
+  setFieldError("sdo-index-error", "");
   const sub = parseSdoSub(document.getElementById("sdo-sub").value);
   if (sub == null) {
     setSdoMessage("sdo-status", "子索引非法：0–255。", true);
+    setFieldError("sdo-sub-error", "子索引非法：需要 0–255。");
     return null;
   }
+  setFieldError("sdo-sub-error", "");
   const slave = selectedSlave();
   return {
     index,
@@ -1096,8 +1700,18 @@ function renderSdoResult(data) {
     ["类型", data.type],
     ["位长", `${data.bits} 位`],
     ["访问", data.access],
-    ["值（大端显示）", hexToBigEndian(data.value_hex)],
-    ["值（原始小端 hex）", data.value_hex === "" ? "-" : data.value_hex],
+    [
+      "值（大端显示）",
+      el(
+        "span",
+        { "data-testid": "sdo-value-hex" },
+        `${hexToBigEndian(data.value_hex)}（原始小端：${data.value_hex === "" ? "-" : data.value_hex}）`,
+      ),
+    ],
+    [
+      "复制",
+      el("button", { type: "button", "data-testid": "sdo-value-copy", id: "sdo-value-copy" }, "复制旧值 hex"),
+    ],
   ];
   container.append(table(["字段", "值"], rows));
 }
@@ -1172,8 +1786,10 @@ async function writeSdo() {
   const bytes = hexToBytes(document.getElementById("sdo-write-value").value);
   if (bytes == null || bytes.length === 0) {
     setSdoMessage("sdo-write-status", "新值非法：需要偶数个十六进制字符（小端原始字节，如 0f00）。", true);
+    setFieldError("sdo-write-value-error", "新值非法：需要偶数个十六进制字符（如 0f00）。");
     return;
   }
+  setFieldError("sdo-write-value-error", "");
   const written = bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("");
   // DOD-02：confirm 信息增强（对象名/位长/旧值/新值/站号 + STALE/暂停警告 + 审计提示）。
   const current =
@@ -1185,23 +1801,75 @@ async function writeSdo() {
       : null;
   const staleWarning =
     conn.mode === "STALE" || conn.mode === "PAUSED" || conn.mode === "STOPPED"
-      ? `\n⚠️ 当前数据可能过期（${connBadgeText(conn.mode)}，最后数据 ${ageText()}）；写入前请确认现场状态。`
+      ? `当前数据可能过期（${connBadgeText(conn.mode)}，最后数据 ${ageText()}）`
       : "";
-  // 二次确认：勾选“允许写入”是第一步，此 confirm 是第二步。
+  const info = {
+    slave: parsed.slave,
+    object: `${parsed.index.toString(16).toUpperCase().padStart(4, "0")}h:${String(parsed.sub).padStart(2, "0")}`,
+    name: current ? current.object_name || current.name || "-" : "（未读取；建议先点“读取”核对旧值/位长）",
+    meta: current ? `${current.bits} 位 / ${current.access}` : "-",
+    oldValue: current ? current.value_hex || "-" : "-",
+    newValue: `${written}（${bytes.length} 字节）`,
+    stale: Boolean(staleWarning),
+  };
+  // 二次确认：勾选“允许写入”是第一步；L2 对话框是第二步（DOD-02/H2，UXD-05）。
+  const dialog = document.getElementById("sdo-confirm-dialog");
+  if (dialog) {
+    openSdoConfirm(parsed, bytes, info);
+    return;
+  }
+  // 回退：无 L2 对话框（旧静态资源/极简宿主）时用原生 confirm，保证二次确认不缺失。
   const confirmed = window.confirm(
-    `确认写入从站 ${parsed.slave}（0-based，0..N-1）的对象 ` +
-      `${parsed.index.toString(16).toUpperCase().padStart(4, "0")}h:${String(parsed.sub).padStart(2, "0")}？\n` +
-      `对象名：${current ? current.object_name || current.name || "-" : "（未读取；建议先点“读取”核对旧值/位长）"}\n` +
-      `位长/访问：${current ? `${current.bits} 位 / ${current.access}` : "-"}\n` +
-      `旧值（小端 hex）：${current ? current.value_hex || "-" : "-"}\n` +
-      `新值（小端 hex）：${written}\n\n` +
+    `确认写入从站 ${parsed.slave}（0-based，0..N-1）的对象 ${info.object}？\n` +
+      `对象名：${info.name}\n位长/访问：${info.meta}\n旧值（小端 hex）：${info.oldValue}\n新值（小端 hex）：${info.newValue}\n\n` +
       "该操作仅在服务端以 --serve-write 启动时生效；写入会记入 /sdo-audit。" +
-      staleWarning,
+      (staleWarning ? `\n⚠️ ${staleWarning}` : ""),
   );
   if (!confirmed) {
     setSdoMessage("sdo-write-status", "已取消写入。", false);
     return;
   }
+  await performSdoWrite(parsed, bytes);
+}
+
+// H2（DOD-02/UXD-05）：L2 自定义确认框（替代原生 confirm 的默认路径；Esc=取消，默认焦点在取消）。
+let pendingSdoWrite = null;
+
+function openSdoConfirm(parsed, bytes, info) {
+  pendingSdoWrite = { parsed, bytes };
+  const dialog = document.getElementById("sdo-confirm-dialog");
+  if (!dialog) return;
+  const set = (testid, text) => {
+    const node = dialog.querySelector(`[data-testid="${testid}"]`);
+    if (node) node.textContent = text;
+  };
+  set("sdo-confirm-slave", String(info.slave));
+  set("sdo-confirm-object", `${info.object} ${info.name}`);
+  set("sdo-confirm-meta", info.meta);
+  set("sdo-confirm-old-value", info.oldValue);
+  set("sdo-confirm-new-value", info.newValue);
+  const staleNode = document.getElementById("sdo-confirm-stale");
+  if (staleNode) {
+    staleNode.hidden = !info.stale;
+    staleNode.textContent = info.stale
+      ? `⚠️ 数据可能过期：${connBadgeText(conn.mode)}，最后数据 ${ageText()}；写入前请确认现场状态。`
+      : "";
+  }
+  dialog.hidden = false;
+  dialog.style.display = "grid";
+  document.getElementById("sdo-confirm-cancel")?.focus();
+}
+
+function closeSdoConfirm() {
+  pendingSdoWrite = null;
+  const dialog = document.getElementById("sdo-confirm-dialog");
+  if (!dialog) return;
+  dialog.hidden = true;
+  dialog.style.display = "none";
+}
+
+async function performSdoWrite(parsed, bytes) {
+  const base = sdoApiBase();
   setSdoMessage("sdo-write-status", "写入中…", false);
   try {
     const response = await fetch(`${base}/sdo${parsed.query}`, {
@@ -1243,4 +1911,95 @@ document.getElementById("sdo-write-enable").addEventListener("change", (event) =
 });
 document.getElementById("sdo-write").addEventListener("click", () => {
   void writeSdo();
+});
+
+// ---- H2（task-44）：testid 动作委托 / 字典交互 / 证据导出 / 关于页 ----
+document.addEventListener("click", (event) => {
+  const target = event.target.closest ? event.target.closest("[data-testid]") : null;
+  if (!target) return;
+  const testid = target.getAttribute("data-testid") || "";
+  const actions = {
+    "shell-context-copy-summary": () => copyText(summaryText(), "摘要已复制"),
+    "shell-context-export": () =>
+      downloadText("ecsim-web-export.json", JSON.stringify(currentExport(), null, 2), "application/json"),
+    "slave-goto-pdo": () =>
+      document.querySelector('[data-testid="pdo-current-table"]')?.scrollIntoView({ block: "start" }),
+    "slave-copy-identity": () =>
+      copyText(currentState ? JSON.stringify(currentState.identity || {}) : "", "身份已复制"),
+    "overview-copy-summary": () => copyText(summaryText(), "摘要已复制"),
+    "overview-pause-toggle": () => togglePause(),
+    "pdo-pause-toggle": () => togglePause(),
+    "pdo-copy-hex": () =>
+      copyText(currentPdo ? `SM2=${currentPdo.sm2.hex}\nSM3=${currentPdo.sm3.hex}` : "", "PDO hex 已复制"),
+    "sdo-value-copy": () => copyText(lastSdoRead ? lastSdoRead.value_hex : "", "SDO 旧值 hex 已复制"),
+    "evidence-copy": () => copyText(buildEvidenceMarkdown(), "证据 Markdown 已复制"),
+    "evidence-download-md": () =>
+      downloadText("ecsim-evidence.md", buildEvidenceMarkdown(), "text/markdown;charset=utf-8"),
+    "evidence-download-json": () =>
+      downloadText("ecsim-evidence.json", JSON.stringify(currentExport(), null, 2), "application/json"),
+    "about-copy-version": () =>
+      copyText(
+        `ec-sim-web；模式=${connBadgeText(conn.mode)}；数据=${ageText()}；不宣称一致性/CTT/认证`,
+        "版本信息已复制",
+      ),
+    "dict-drawer-goto-sdo": () => {
+      const selected = dictFilters.selected;
+      if (!selected) return;
+      document.getElementById("sdo-index").value = selected.index;
+      document.getElementById("sdo-sub").value = String(selected.sub || 0);
+      dictFilters.selected = null;
+      renderAll();
+      document.querySelector("#sdo-index")?.scrollIntoView({ block: "center" });
+    },
+  };
+  const action = actions[testid];
+  if (action) {
+    event.preventDefault();
+    action();
+  }
+});
+
+document.addEventListener("change", (event) => {
+  const key = event.target && event.target.getAttribute && event.target.getAttribute("data-evidence-key");
+  if (key && key in evidenceState.selected) {
+    evidenceState.selected[key] = Boolean(event.target.checked);
+    renderAll();
+  }
+});
+
+document.addEventListener("input", (event) => {
+  if (event.target && event.target.id === "dict-search") {
+    dictFilters.search = event.target.value;
+    const caret = event.target.selectionStart;
+    renderAll();
+    const next = document.getElementById("dict-search");
+    if (next) {
+      next.focus();
+      next.setSelectionRange(caret, caret);
+    }
+  }
+});
+
+document.addEventListener("click", (event) => {
+  const id = event.target && event.target.id;
+  if (id === "dict-clear-filters") {
+    dictFilters.search = "";
+    dictFilters.access = "all";
+    dictFilters.value = "all";
+    dictFilters.selected = null;
+    renderAll();
+  } else if (id === "dict-drawer-close") {
+    dictFilters.selected = null;
+    renderAll();
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "/" && document.activeElement && document.activeElement.tagName !== "INPUT") {
+    event.preventDefault();
+    document.getElementById("dict-search")?.focus();
+  } else if (event.key === "Escape" && dictFilters.selected) {
+    dictFilters.selected = null;
+    renderAll();
+  }
 });

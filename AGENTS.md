@@ -731,3 +731,12 @@ tests-gpl/      只跑 GPL 主站的夹具（独立目录、独立许可、不�
 - **禁止**：`--force`、`-f`、改写已推送历史、绕过测试直接推、推送未完成半成品、改 `origin` 地址。
 - **推送失败**（网络/认证）：重试一次；仍失败就在 WORKLOG 卡片记录原因并退出，下一班继续（本地提交保留，不丢工作）。
 - 合并冲突/非 fast-forward 时**停止**，在 WORKLOG 记录为卡点，等人处理——不要自动 merge/rebase。
+- [ ] **B62 H2 EC-Sim Web：契约/testid + 写作边界（task-44，进行中）**：
+  - ✅ **DOD-01**：`scripts/spikes/web-contract-check.py`（16 `#id` + 87 固定 `data-testid` + 9 参数化模板 +
+    4 通用态槽位；唯一性/命名/`#id` 冻结）**EXIT=0**；为承载钩子补齐：topbar/上下文条/导航/toast/页脚、
+    总览 health+拓扑+从站表+指标卡、从站/PDO/字典（搜索+过滤+L1 抽屉）、SDO（错误态/L2 确认对话框/审计）、
+    证据导出（V-06）、关于页（V-07）；`window.confirm` 保留为无对话框宿主的回退路径（DOD-11 原断言仍成立）。
+  - ✅ **DOD-10**：`scripts/spikes/writing-boundary-check.py`（14 类禁用词 + 页脚常驻边界 + 导出模板边界 +
+    脱敏）**EXIT=0**。
+  - ⚠️ **DOD-07 性能 / DOD-08 分辨率缩放 / DOD-09 i18n 未完成**（需浏览器窗口/实现）：不得记 PASS；
+    证据与下一步见 `docs/verification/2026-11-13-hmi-h2-web.md`。
