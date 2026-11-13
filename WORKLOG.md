@@ -5566,3 +5566,11 @@
   4 视口无横向溢出、<44px=0；en 截图入库 `docs/verification/assets/hmi-h2/en-*`。
 - 待 sim-ux en 模式走查（残留 CJK 扫描/切换持久化/契约不随语言变/DOD-10/11 复跑）后报 task-44 最终状态；
   DOD-07/08 仍"部分"（8 站实时未测），发布冻结、不宣称认证。
+
+### 跨侧确认（同日）：CNC V1 extended 复跑 —— GAP-14/BL-17/BL-18 关闭，T-14 差异记录
+
+- cnc-expert 复跑（`5e50a5f`）：`/pdo` SM3 hex 与 target 5/5 轮一致（`0x637|target|0|8`）、启动行
+  `tx_layout=LcecCsp tx_indices=[0x6041,0x6064,0x606C,0x6061]`、lcec pin 逐值一致 → **GAP-14 在其侧关闭**。
+- T-14：`--al-error 0x0024` 后新起 IgH 见 `INIT+ERROR`、`/state` `0x11`+code、`mailbox_requests=0`
+  （无 ESM ACK→OP；与 SOEM 侧不同）；AC-E-204 按早期 `0x11`+code + 负例判 PASS；**BL-20 仍 ⚠️ 未验证（v1.x 暂停）**。
+- 记录：`docs/verification/2026-11-13-ecsim-binary-delivery.md` §6（只记对方实测，不做外推）。

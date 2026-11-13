@@ -70,3 +70,22 @@ V2 需同时换用本提交的 `plugins/cnc-csp-servo/plugin.yaml`（manifest sh
 - 不宣称 EtherCAT 一致性 / CTT / LinuxCNC 认证；这是**虚拟闭环的帧级/PDO 数据通路**预回归交付物。
 - 无鉴权/无 TLS：`--serve` 是只读观测面，仅回环地址；写路径需显式 `--serve-write`，V1 不使用。
 - 不含任何厂商 ESI/PDF/固件；插件身份为自有 VID/PID + SIMULATED。
+
+## 6. CNC 侧复跑确认（2026-11-13，cnc-expert 提供；GAP-14/BL-17/BL-18 已在其侧关闭）
+
+> 来源：CNC 仓 `docs/verification/2026-11-13-v1-extended-injection.md` §8（commit `5e50a5f`，证据存档 CNC 仓）。
+> 本节只记录**对方实测结论**，不代表 EC-Sim 自证。
+
+- **GAP-14 读方向（已关闭）**：`/pdo` SM3 hex 与 target 逐一对应：12345→`3706393000000000000 008`（排版空格忽略，
+  实际 `3706393000000000000008`）；5 轮 1000/2000/3000/4321/5000 → `3706e803…/3706d007…/3706b80b…/3706e110…/37068813…`
+  （格式 `0x637 | target | 0 | 8`）。
+- **启动行**：`BEHAVIOR cia402 tx_layout=LcecCsp tx_indices=[24641, 24676, 24684, 24673]`
+  （= 0x6041/0x6064/0x606C/0x6061）；`READY tap=tapcnc0 mac=02:ec:51:4d:00:01`。
+- **lcec pin 逐值**：`srv-cia-statusword=0x00000637`、`srv-opmode-display=8`、`srv-actual-position=12345`、
+  `srv-actual-velocity=0`；5/5 轮与 `/pdo` decoded 一致。
+- **T-14 差异（写入证据，不改判据）**：`--al-error 0x0024` 后**新起 IgH**：`ethercat slaves` = `0 0:0 INIT+ERROR`
+  （E 可见），`/state` 仍 `0x11`+`0x0024`，`mailbox_requests=0` → **该 IgH 未发生 ESM ACK→OP**（与 SOEM 侧
+  “ACK 后 OP 0x08”不同）。AC-E-204 判据按"早期 `0x11`+code + 未知码 exit 2"已判 PASS，**不断言 OP 0x08/0x18**；
+  **BL-20（运行期再注入）仍 ⚠️ 未验证、v1.x 暂停**。
+- EC-Sim 侧对应证据：`--al-error` 探针（B57）与 DOD-13 采集（`docs/verification/assets/ecsim-round/`）已记录
+  SOEM 侧行为；两主站差异如实保留，不互相外推。
