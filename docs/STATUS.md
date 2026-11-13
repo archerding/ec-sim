@@ -8,7 +8,7 @@
 核心 ESC（寄存器/SM/FMMU/AL/EEPROM-SII/邮箱/watchdog）+ CoE（SDO 加速/分段/SDO Info/
 Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/CST，Tier0 简化）
 + 声明式设备画像已实现；**未修改的 SOEM 2.0.0 与 IgH 1.6.13** 可发现从站并进入 OP
-（IgH 无应用时到 PREOP）。测试基线 **263 passed**（另 `wasm-runtime` feature 下 plugin-host **56 单测 + 5 集成** / esc-node **78 单测 + 1 集成**：WASM 宿主 + arena + worker 线程 + 行为桥 + 仓库内真实行为画像 + B51 重启/配额 + B54 多实例接线）。**M3 = 退出候选**：Linux 验证机整轮 `run-all-probes.sh` **20 PASS / 0 FAIL / 1 SKIP**（`tap-live` 单独补跑 PASS）、本机 263 passed、许可核对完成、ADR 0002 → Accepted，见 [M3 退出清单](plan/M3-exit-checklist.md)（W6 真人浏览器点击验收待补）。**B54（2026-11-13 团队班）**：新增 `plugins/cnc-csp-servo/`（与 lcec `basic_cia402` 的 PP/CSP PDO 布局一致）+ 多实例行为插件接线 + TAP 多 CiA402 从站探针，作为 CNC 虚拟闭环 V1/V2 的 EC-Sim 侧对接包（见 [CNC-V1-integration](plan/CNC-V1-integration.md)）。**B55（同班）**：修复 ACC-27② P1——控制面 `?slave=` 统一校验（0-based；非法/越界 → 404 JSON，不再静默回退站 0），静态/UDS/TAP 三路径探针 `invalid-slave-probe.sh`。**B57（同班）**：`--al-error <code>` AL Status 错误注入（AC-E-203；只接受已知码、默认关闭、主站 ACK 可清）。
+（IgH 无应用时到 PREOP）。测试基线 **264 passed**（另 `wasm-runtime` feature 下 plugin-host **56 单测 + 5 集成** / esc-node **78 单测 + 1 集成**：WASM 宿主 + arena + worker 线程 + 行为桥 + 仓库内真实行为画像 + B51 重启/配额 + B54 多实例接线）。**M3 = PASS（Lead 会签 2026-11-13）**：验证机 **B-1 `23 PASS / 0 FAIL / 0 SKIP（23）`** + **B-2 `30 PASS / 0 FAIL / 7 SKIP（37；7 项 `igh-*`=NOT-JUDGED/PV-01/PV-14）`**、本机 **264 passed**、许可核对完成、ADR 0002 → Accepted、W6 真人浏览器验收已由 sim-ux 完成；见 [M3 退出清单](plan/M3-exit-checklist.md) 与 `docs/verification/2026-11-13-gate-b2-acceptance-probes.md`。**B54（2026-11-13 团队班）**：新增 `plugins/cnc-csp-servo/`（与 lcec `basic_cia402` 的 PP/CSP PDO 布局一致）+ 多实例行为插件接线 + TAP 多 CiA402 从站探针，作为 CNC 虚拟闭环 V1/V2 的 EC-Sim 侧对接包（见 [CNC-V1-integration](plan/CNC-V1-integration.md)）。**B55（同班）**：修复 ACC-27② P1——控制面 `?slave=` 统一校验（0-based；非法/越界 → 404 JSON，不再静默回退站 0），静态/UDS/TAP 三路径探针 `invalid-slave-probe.sh`。**B57（同班）**：`--al-error <code>` AL Status 错误注入（AC-E-203；只接受已知码、默认关闭、主站 ACK 可清）。
 
 ## 代码与测试
 
@@ -108,7 +108,7 @@ cargo test --workspace
 
 1. ~~**B48（backlog 顶部）**：M3 退出条件核对与收尾~~ ✅ 2026-11-13 完成——验证机整轮 **20 PASS**、
    本机 258 passed、许可/依赖核对（默认 0 第三方；可选 25 个宽松许可）、ADR 0002 → Accepted；
-   见 [M3 退出清单](plan/M3-exit-checklist.md)。**M3 = 退出候选，W6 真人浏览器点击验收待补**。
+   见 [M3 退出清单](plan/M3-exit-checklist.md)。**M3 = PASS（Lead 会签 2026-11-13；W6 已由 sim-ux 完成）**。
 2. ~~**B49（backlog 顶部）M4 测试报告与 CI 接入**~~ ✅ 2026-11-13 完成——新增
    `scripts/spikes/gen-test-report.py`（JSON/Markdown 报告：环境/HEAD/检查/探针/证据链接，零第三方依赖）；
    CI 新增 `docs-and-probes` job（文档一致性 + 非 root UDS 探针 + 报告 artifact）；`run-all-probes.sh`

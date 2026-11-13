@@ -10,23 +10,26 @@
 
 ## 1. 结论摘要
 
-- **M3 = 退出候选（Exit Candidate）**：W1–W8 全部完成且证据齐；五项退出条件中 **4 项达成、1 项部分达成**。
-- **唯一部分项**：W6 的**真实浏览器人工点击验收**（SDO 面板二次确认写入）尚未由真人执行。
-  - 机器可检部分已全绿：`web-sdo-panel` 静态资源回归 PASS（本次整轮探针）；
-  - 本班补充了**无头 Edge 渲染烟测**（截图，1280×900）：页面加载、SDO 面板、token 提示均正常渲染；
-    发现一处低危缺陷（载入区重复渲染，见 §6）——属 HMI 范围，**按冻结规则未修改 `web/`**。
-- **回归证据**：Linux 验证机整轮 `run-all-probes.sh` **20 PASS / 0 FAIL / 0 SKIP**（含 `mcp-tools`、`mcp-stdio`、`tap-live`）；
-  本机 `cargo fmt/clippy/doc` 0 警告、`cargo test --workspace` **256 passed / 0 failed**。
-- **ADR 0002 状态**：由"提议"更新为 **Accepted**（D1–D6 均有实现/证据；D5 许可核对见 §5）。
-- **建议**：M3 可标记为"退出候选"，待 W6 真人点击验收补记后正式关闭；不阻塞后续 B44 增量与 M4。
+- **M3 = PASS（已由 Lead 会签，2026-11-13）**：W1–W8 全部完成且证据齐；五项退出条件**全部达成**。
+  - 会签记录：`cnc-station` 仓库 `docs/product/ECSIM-M3-EXIT-REVIEW.md` v0.5 §10.3（会签=批准，提交 `938cadd`）。
+- **W6 真人浏览器点击验收已完成**（owner `sim-ux` / task-11）：`docs/verification/2026-11-13-m3-w6-browser-acceptance.md`
+  （SDO 面板只读/写入二次确认/错误态/SSE 降级/console 无报错）+ 实测缺口清单（G-09 等转 GO-B）。
+- **回归证据（2026-11-13 轮次 B/C，clean VM 单 runner）**：
+  - **B-1** `run-all-probes.sh`：**`23 PASS / 0 FAIL / 0 SKIP（共 23）`**（注册表 21→23：`tap-cia402`、`invalid-slave`）；
+  - **B-2** `run-acceptance-probes.sh`：**`30 PASS / 0 FAIL / 7 SKIP（共 37）`**（`igh-*` 7 项按 PV-01/PV-14 标
+    `NOT_JUDGED`，不计 PASS）——证据见 `docs/verification/2026-11-13-gate-b2-acceptance-probes.md` §4；
+  - 本机 `cargo fmt/clippy/doc` 0 警告、`cargo test --workspace` **264 passed / 0 failed**。
+  - 日志归档：CNC 仓库 `docs/verification/assets/ecsim-round/`（Lead 指定，含逐文件 sha256）。
+- **ADR 0002 状态**：Accepted（D1–D6 均有实现/证据；D5 许可核对见 §5）。
+- **注意**：M3 的 PASS 是**预回归/用例映射**结论，不构成一致性测试或认证（AGENTS §4）。发布仍按发布闸门评审。
 
 ## 2. 退出条件逐条核对（M3-scope §5）
 
 | # | 退出条件（原文摘要） | 判定 | 证据 |
 |---|---|---|---|
-| 1 | W1–W5 完成且各有探针/单测；W6 人工验收通过；W7/W8 至少产出文档 | **部分** | W1–W5、W7、W8 全达成（§3）；W6：静态回归 + 渲染烟测 PASS，**真人点击未做** ⚠️（§6） |
+| 1 | W1–W5 完成且各有探针/单测；W6 人工验收通过；W7/W8 至少产出文档 | **达成** | W1–W5、W7、W8 全达成（§3）；W6 真人点击验收 PASS（sim-ux/task-11，`docs/verification/2026-11-13-m3-w6-browser-acceptance.md`） |
 | 2 | 默认配置保持只读（写/token/插件均需显式开启） | **达成** | 默认构建零第三方依赖且 `wasm-runtime` 默认关闭；`write-pdo`/`write-sdo`/`serve-token`/`mcp-stdio` 探针 PASS；`POST` 默认 405、写仅 `--serve-write` + 白名单、token 空=不鉴权 |
-| 3 | `run-all-probes.sh` 在 Linux root 下全绿（含新增探针）；`control-plane-doc-check.py` 覆盖新路由 | **达成** | 验证机整轮 **20 PASS / 0 FAIL / 0 SKIP**；`doc-check`、`mcp-tools`、`mcp-stdio`、`tap-live` 均 PASS（§4） |
+| 3 | `run-all-probes.sh` 在 Linux root 下全绿（含新增探针）；`control-plane-doc-check.py` 覆盖新路由 | **达成** | 验证机 **B-1 `23 PASS / 0 FAIL / 0 SKIP（23）`** + **B-2 `30 PASS / 0 FAIL / 7 SKIP（37，`igh-*`=NOT-JUDGED）`**；`doc-check`、`mcp-tools`、`mcp-stdio`、`tap-live`、`tap-cia402`、`invalid-slave`、`pdo-byteorder` 均 PASS（§4） |
 | 4 | 无 GPL/LGPL 代码进核心；无未声明依赖；许可与 NOTICE 复核 | **达成** | 默认依赖树 **0 个第三方 crate**；`wasm-runtime` 可选依赖 25 个，全部宽松许可（MIT / Apache-2.0 / Apache-2.0 WITH LLVM-exception / Unlicense OR MIT）；无 NOTICE 文件且默认零第三方依赖 → 无第三方 NOTICE 义务（§5） |
 | 5 | 文档：ADR 0002 更新为 Accepted、CONTROL-PLANE/STATUS/M3 清单互链 | **达成** | ADR 0002 状态已更新；本清单与 [M3 范围](M3-scope.md)/[STATUS](../STATUS.md)/[CONTROL-PLANE](../CONTROL-PLANE.md)/[VERIFICATION](../VERIFICATION.md) 互链 |
 

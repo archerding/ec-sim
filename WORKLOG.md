@@ -37,6 +37,42 @@
 
 ---
 
+## 2026-11-13 团队班 — **task-41/B60：GAP-14 端到端 PDO 字节序探针 + M3 PASS 回写**
+
+> 任务板 `task-41`；Lead 会签 M3 PASS（`ECSIM-M3-EXIT-REVIEW.md` v0.5 §10.3 / `938cadd`）后的仓库回写。
+> BL-20（运行期 AL 注入）已按 Lead/PM 裁决**暂停**，转 v1.x 候选（task-42 不实现；本班未提交相关改动）。
+
+**做了什么**
+- 新增 `scripts/spikes/pdo-byteorder-probe.sh`（Linux/UDS，无需 root）：
+  - manifest 断言：`cnc-csp-servo` TxPDO = `[0x6041,0x6064,0x606C,0x6061]`、SM3 11B；
+  - 端到端：合成主站写 SM2（controlword 0x000F / mode 8 / target 1000）→ 读回 SM3 原始字节并断言
+    **`3706e80300000000000008`**（statusword 0x0637 | pos 1000 | vel 0 | mode 8）；
+  - 负例判别：旧顺序下 mode 在 offset2、position 在 3..7 → 同字节序列两断言均不成立（旧顺序必 FAIL）；
+  - 启动日志断言 `BEHAVIOR cia402 tx_layout=LcecCsp`（行为编码与 manifest 顺序自动对齐）。
+- 登记 B-2 验收聚合（36 → **37** 项，脚本自算）；`docs/verification/2026-11-13-gate-b2-acceptance-probes.md`
+  更新 §4 轮次 C + ACC-07 追溯行；`docs/VERIFICATION.md` 计数同步。
+- **M3 PASS 回写**：`docs/plan/M3-exit-checklist.md` §1/§2（W6 已完成、五项条件全达成、B-1 23/0/0 +
+  B-2 30/0/7（37）、M3=PASS 并注明会签来源）；`docs/STATUS.md`（M3=PASS、测试基线 264）。
+- 日志归档（Lead 指定）：B-1/B-2/DOD-13/定向探针日志复制到 CNC 仓库
+  `docs/verification/assets/ecsim-round/` + README（来源/命令/结果/逐文件 sha256/边界），EC-Sim 仓库不镜像原始日志。
+
+**验证结果**
+- 验证机（clean VM、单 runner、持锁、未 reboot）：`pdo-byteorder-probe.sh` **EXIT=0**（SM3=`3706e80300000000000008`）；
+  B-2 整轮 **`30 PASS / 0 FAIL / 7 SKIP（共 37）` PASS**（7 个 `igh-*` 仍 `NOT_JUDGED`）。
+- 本机：`cargo fmt --check` / `clippy -D warnings` / `cargo test --workspace` **264 passed**（B60 未改 Rust 代码）；
+  `control-plane-doc-check.py` EXIT=0。
+- 负例：把 manifest Tx 改回旧顺序时探针在第一条 manifest 顺序断言即 FAIL（回归防护成立）。
+
+**卡点**
+- ⚠️ task-42（BL-20）暂停（v1.x），`POST /al-error` 未实现；`0x18` 全库维持 NOT-JUDGED。
+- VM `vm-ecsim.lock` 由本班持有并在整轮后释放；VM SSH 曾出现间歇性慢连接（未 reboot）。
+
+**下次开工第一件事**
+- task-43（H1 Web 实现：DOD-03 SSE 降级/C3、DOD-02 静态说明+审计+confirm、DOD-13 UI `?slave`、DOD-06 44px、
+  DOD-11 confirm 断言迁移同 commit）；完成后通知 sim-ux 走查。
+
+---
+
 ## 2026-11-13 团队班 — **VM 整轮收口：B-1 23 + B-2 36（clean VM 单 runner）+ 新二进制交付 + 探针陈旧断言修正**
 
 > 承接 task-18（B-2 整轮）、task-34（B57 `--al-error` 端到端）、task-39（GAP-14 + 新二进制交付）。

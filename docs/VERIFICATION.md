@@ -8,9 +8,9 @@
 > 最近的完整验证状态：**2026-11-13 团队班（B54/B55/B57/B58 + CNC 对接包 + ACC-27② P1 + VM 整轮 B-1/B-2）**
 > （详见 `WORKLOG.md` 同日条目、[STATUS.md](STATUS.md) 与 [M3 退出清单](plan/M3-exit-checklist.md)）；
 > 探针注册表 **23 项**（B-1 观测面；B55 `invalid-slave`、B54 `tap-cia402`、B52 `agent-skills`）
-> ＋ **B-2 验收面 36 项**（`run-acceptance-probes.sh`，含 B57 `al-error`）。
+> ＋ **B-2 验收面 37 项**（`run-acceptance-probes.sh`，含 B57 `al-error`）。
 > 验证机 2026-11-13 轮次 B（clean VM / 单 runner）：**B-1 `23 PASS / 0 FAIL / 0 SKIP（共 23）`**、
-> **B-2 `29 PASS / 0 FAIL / 7 SKIP（共 36；7 项 `igh-*` = NOT-JUDGED/PV-01/PV-14）`**，明细见
+> **B-2 `30 PASS / 0 FAIL / 7 SKIP（共 37；7 项 `igh-*` = NOT-JUDGED/PV-01/PV-14）`**，明细见
 > `docs/verification/2026-11-13-gate-b2-acceptance-probes.md` §4。
 > 本机 `cargo test --workspace` **263 passed / 0 failed**（B55 +2：`validate_slave_param`；
 > B57 +2：`al_status::is_known`/`force_al_error`；B58 +1：`Cia402TxLayout::LcecCsp` 字节序）。

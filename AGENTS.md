@@ -678,6 +678,13 @@ user.email = deepseek-harness@users.noreply.github.com
   ② 同轮 clean VM 整轮：**B-1 23 PASS / 0 FAIL / 0 SKIP（23）**、`invalid-slave` 全三路径 EXIT=0（ACC-27② TAP 段闭环）、
   `al-error` 实时段 EXIT=0、`tap-cia402` N=2/N=3 EXIT=0；新 release 二进制 sha256
   `7ec957e8e59019811c8ab9ba8c068a1caff18f554348df7a96bfb900f609344c`（1,060,800 B，含 GAP-14 + B57）。
+- [x] ~~**B60 GAP-14 端到端 PDO 字节序探针（task-41）**~~ ✅ **2026-11-13 团队班**：
+  新增 `scripts/spikes/pdo-byteorder-probe.sh`（Linux/UDS，无 root）——合成主站写 SM2
+  （controlword `0x000F` / mode 8 / target 1000）→ 断言 SM3 原始字节 **`3706e80300000000000008`**
+  （statusword 0x0637 | pos 1000 | vel 0 | mode 8）；同探针断言 manifest Tx 顺序
+  `[0x6041,0x6064,0x606C,0x6061]` + SM3 11B，并做**旧顺序负例判别**（offset2/3..7 不同时成立 → 旧顺序必 FAIL）；
+  登记 B-2 验收聚合（36 → **37**，脚本自算）；验证机整轮 **B-2 `30 PASS / 0 FAIL / 7 SKIP（37）` PASS**。
+  证据：`docs/verification/2026-11-13-gate-b2-acceptance-probes.md` §4 轮次 C。
 
 ## 7. 目录约定
 
