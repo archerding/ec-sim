@@ -161,6 +161,7 @@ function ageText() {
   if (!conn.lastDataAt) return "-";
   const age = Math.max(0, Date.now() - conn.lastDataAt);
   if (window.ECSIM_I18N && window.ECSIM_I18N.lang === "en") { return age < 1000 ? `${age} ms ago` : `${(age / 1000).toFixed(1)} s ago`; }
+  return age < 1000 ? `${age} ms 前` : `${(age / 1000).toFixed(1)} s 前`;
 }
 
 // 脱敏：只显示 host:port（不含 scheme/路径/token/凭据）。
@@ -1176,6 +1177,8 @@ function viewTestid(view, slot) {
 }
 
 function renderAll() {
+  // G-23：SSE 高频重渲染时保持滚动位置（scroll anchoring）。
+  const scrollYBefore = window.scrollY;
   app.replaceChildren();
   if (currentState) renderState(currentState);
   if (currentPdo) renderPdo(currentPdo);
@@ -1245,6 +1248,10 @@ function renderAll() {
   renderAudit();
   // G-19：首帧即本地化（避免 overlay 应用前的瞬时中文闪现）。
   if (window.ECSIM_I18N && window.ECSIM_I18N.localize) window.ECSIM_I18N.localize(document.body);
+  // G-23：渲染后恢复滚动（rAF 后，避免内容尺寸瞬间变化导致回到顶部）。
+  if (Math.abs(window.scrollY - scrollYBefore) > 2) {
+    requestAnimationFrame(() => window.scrollTo(0, scrollYBefore));
+  }
 }
 
 // ---- DOD-02：`/sdo-audit` 只读展示（I-12/G-07；实时模式）----
@@ -1553,6 +1560,12 @@ document.getElementById("load-api").addEventListener("click", async () => {
   try {
     const slave = selectedSlave();
     const stateResponse = await fetch(`${base}/state?slave=${slave}`);
+    if (stateResponse.status === 401) {
+      message.textContent = window.ECSIM_I18N && window.ECSIM_I18N.lang === "en"
+        ? "E-05 unauthorized: the server requires Authorization: Bearer token (--serve-token-env). Configure a reverse proxy or use curl -H \\"Authorization: Bearer <token>\\"; this page never stores tokens."
+        : "E-05 鉴权失败：服务端要求 Authorization: Bearer token（--serve-token-env）。请经反向代理注入请求头，或改用 curl -H \\"Authorization: Bearer <token>\\"；本页不保存 token。";
+      return;
+    }
     if (!stateResponse.ok) throw new Error(`/state ${stateResponse.status}`);
     loadJson(await stateResponse.text(), `${base}/state?slave=${slave}`);
     const dictResponse = await fetch(`${base}/dict`);
