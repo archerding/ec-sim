@@ -2,7 +2,8 @@
 # B6/B11 验证：**未修改 SOEM 的 DC 配置路径**——SOEM `simple_ng` 在 `ecx_configdc()` 阶段
 # 会读系统时间（0x0910）、写 DC 激活/启动/周期寄存器（0x0980/0x0990/0x09A0 等）。
 # 用 SV660N 画像（声明 DC）验证：
-#   1. SOEM 输出 `Configuring distributed clock... done`、`mapped 7O+7I`、
+#   1. SOEM 输出 `Configuring distributed clock... done`、`mapped 8O+22I`（手册默认可变映射：
+#      RPDO 8B / TPDO 22B；2026-11-13 由 7B/7B Tier0 布局改为公开手册核对后的默认映射）、
 #      `all slaves are now operational`（OP）、`WKC 3`；
 #   2. 应答器 verbose 统计里 **dc_rd / dc_wr > 0**（证明 DC 寄存器确实被主站访问）；
 #   3. IgH 身份/PREOP 不受影响（可选，见 sv660n-capability-probe.sh）。
@@ -46,7 +47,7 @@ timeout 30 "$SOEM_SIMPLE_NG" "$TAP" >"$NG_OUT" 2>&1 || true
 tr '\r' '\n' <"$NG_OUT" >/tmp/soem-dc-ng.lines
 grep -E "Configuring distributed clock|mapped|operational|WKC" /tmp/soem-dc-ng.lines | head -8 || true
 grep -q "Configuring distributed clock... done" /tmp/soem-dc-ng.lines || fail "SOEM DC 配置未完成"
-grep -q "mapped 7O+7I" /tmp/soem-dc-ng.lines || fail "SOEM 未映射 7O+7I（SV660N 画像）"
+grep -q "mapped 8O+22I" /tmp/soem-dc-ng.lines || fail "SOEM 未映射 8O+22I（SV660N 画像默认映射）"
 grep -q "all slaves are now operational" /tmp/soem-dc-ng.lines || fail "SOEM simple_ng 未进入 OP"
 grep -qE "WKC 3" /tmp/soem-dc-ng.lines || fail "SOEM WKC 不是 3"
 

@@ -670,6 +670,14 @@ user.email = deepseek-harness@users.noreply.github.com
   （CSV 画像/探针不变）。单测：已知值→期望字节序列 `37 06 e8 03 00 00 00 00 00 00 08`；守卫测试更新。
   文档：plugin README/facts、CNC-V1-integration §1/§2.2/§6（GAP-14 排查行）。⚠️ 需新 manifest + 新二进制交付
   （二进制在 EC-Sim VM 重建后）。
+- [x] ~~**B59 探针陈旧断言修正（VM 整轮暴露）**~~ ✅ **2026-11-13 团队班**：
+  ① `soem-dc-probe.sh` 期望 `mapped 7O+7I` → SV660N 默认可变映射早已按公开手册改为 **8B/22B**，改断言
+  `mapped 8O+22I`；② `manifest-slave-probe.sh` 依赖 SOEM 英文文案（该构建把 `r` 渲染为 `n`）与固定对象数
+  （7→现 8）→ 改为按稳定内容断言（`0x1018/0x1c12/0x1c13/0x2000` + `0x1234 / 4660`）。修后两探针在验证机
+  **EXIT=0**（DC: `dc_rd=5335 dc_wr=5337`）；B-2 由 27 PASS/2 FAIL/7 SKIP 变为 **29 PASS / 0 FAIL / 7 SKIP（36）**。
+  ② 同轮 clean VM 整轮：**B-1 23 PASS / 0 FAIL / 0 SKIP（23）**、`invalid-slave` 全三路径 EXIT=0（ACC-27② TAP 段闭环）、
+  `al-error` 实时段 EXIT=0、`tap-cia402` N=2/N=3 EXIT=0；新 release 二进制 sha256
+  `7ec957e8e59019811c8ab9ba8c068a1caff18f554348df7a96bfb900f609344c`（1,060,800 B，含 GAP-14 + B57）。
 
 ## 7. 目录约定
 

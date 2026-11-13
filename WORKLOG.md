@@ -37,6 +37,43 @@
 
 ---
 
+## 2026-11-13 团队班 — **VM 整轮收口：B-1 23 + B-2 36（clean VM 单 runner）+ 新二进制交付 + 探针陈旧断言修正**
+
+> 承接 task-18（B-2 整轮）、task-34（B57 `--al-error` 端到端）、task-39（GAP-14 + 新二进制交付）。
+> VM 纪律：`vm-ecsim.lock` 单占用；13:16 曾因未校验锁 owner 与 sim-expert 的 D 状态进程并发 → 轮次 A **作废**
+> （已记录于证据文档）；sim-expert reboot 清场、Lead 强制释放锁后，本班作为**唯一 runner** 跑完轮次 B。
+
+**做了什么 / 验证**
+- **前置自检（脚本内置）**：`pgrep ecrt-` 空 / 无 D 状态**用户进程**（排除内核线程 `[kworker...]`，修正了误报）/
+  `lsmod` 无 `ec_*` / 无 `escsim*` TAP → `PRECHECK_OK`；未 reboot。
+- **构建交付**：`cargo build --release -p esc-node -p mcp-server`（源 `30ef83b`，代码等价 `9aae5ff`）→
+  `ec-sim-esc` **sha256 `7ec957e8e59019811c8ab9ba8c068a1caff18f554348df7a96bfb900f609344c`**（1,060,800 B），
+  已回填 `.local/artifacts/`（+`BUILD-INFO.txt`）与 `docs/verification/2026-11-13-ecsim-binary-delivery.md`（交付 #2）。
+- **定向探针**：`invalid-slave-probe.sh` **全三路径 EXIT=0**（静态/UDS/TAP，ACC-27② TAP 段闭环）；
+  `al-error-probe.sh` **EXIT=0**（`/state.live.al_status=0x11`、`al_status_code=0x0024`、metrics 17/36）；
+  `tap-cia402-multi-slave-probe.sh` **N=2 EXIT=0**、**N=3 EXIT=0**（V2 `--slaves 3` 参数预回归）。
+- **B-1**：`run-all-probes.sh` → **`23 PASS / 0 FAIL / 0 SKIP（共 23）`**、`RESULT: PASS`。
+- **B-2**：`run-acceptance-probes.sh`（`NOT_JUDGED` 7 个 `igh-*` / PV-01/PV-14）→ 首跑 27 PASS/2 FAIL/7 SKIP，
+  两个 FAIL 均为**探针陈旧断言**（见下），修正后 **`29 PASS / 0 FAIL / 7 SKIP（共 36）`**、`RESULT: PASS`。
+- **B59 探针修正**：
+  ① `soem-dc-probe.sh` 期望 `mapped 7O+7I` → SV660N 手册默认映射已改 8B/22B，改断言 `mapped 8O+22I`；
+  ② `manifest-slave-probe.sh` 依赖 SOEM 英文文案（该构建 `r`→`n` 渲染）与固定对象数 → 改为稳定内容断言
+  （`0x1018/0x1c12/0x1c13/0x2000` + `0x1234 / 4660`）。修后两探针 **EXIT=0**（DC: `dc_rd=5335 dc_wr=5337`）。
+- 文档：`docs/verification/2026-11-13-gate-b2-acceptance-probes.md` §4 写入轮次 B 结果与作废轮次记录；
+  `docs/VERIFICATION.md`、`AGENTS.md`（B58/B59）同步。
+- **DOD-13 采集**：`/tmp/dod13-capture.sh` 修掉 `set -u` 下 trap 早于 PID 赋值的 `EC_PID: unbound variable`；
+  VM 后来 SSH 不稳定，`DOD13_RESULT` 待从 `/tmp/dod13.log` 复核（若未取到由 sim-expert/Lead 从 VM 日志读）。
+
+**卡点**
+- ✅ 轮次 B 全部 PASS；⚠️ DOD-13 的 `al_status` 实测值在 VM SSH 抖动期间未回传（日志已落 `/tmp/dod13.log`）。
+- ⚠️ VM SSH 在整轮后出现间歇性挂起（新连接超时），未 reboot（遵守纪律）；后续使用者需注意 sshd 会话堆积。
+
+**下次开工第一件事**
+- 从 VM `/tmp/dod13.log` 读 `DOD13_RESULT` 回填 sim-expert（DOD-13）；通知 cnc-impl/cnc-expert 换新二进制/
+  manifest（sha256 见上）；继续 task-20 类未完成任务（若有）。
+
+---
+
 ## 2026-11-13 团队班 — **task-34/B57：`--al-error` AL Status 错误注入（AC-E-203 支持）**
 
 > 任务板 `task-34`（Lead 批准，Owner `sim-impl`）。背景：`cnc-expert` 的 AC-E-203 需要

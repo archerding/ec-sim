@@ -4,20 +4,30 @@
 > 主机地址、账号、代理一律不写（见 EC-Sim AGENTS §8）；EC-Sim 侧**不登录 CNC 验证机**，
 > CNC 侧落盘由 `cnc-impl`（CNC 验证机 owner）执行，双方各自出证据。
 
-## 1. 交付物
+## 1. 交付物（**交付 #2，2026-11-13 团队班**：含 GAP-14 + B57）
 
 | 字段 | 值 |
 | --- | --- |
 | 文件名 | `ec-sim-esc-linux-x86_64` |
-| 字节数 | 1,053,952 |
-| sha256 | `878712fe8e8034d79a55e6a66937be14e4de02baba195ea4c40499348879b8ee` |
-| ELF 头 | `7f 45 4c 46 02 01 01 ...`（ELF64、LSB、`e_machine=0x3e` = x86-64） |
-| 源码版本 | EC-Sim `main` @ `182147d`（B54 CNC 虚拟闭环对接包，2026-11-13 团队班） |
+| 字节数 | 1,060,800 |
+| sha256 | `7ec957e8e59019811c8ab9ba8c068a1caff18f554348df7a96bfb900f609344c` |
+| ELF 头 | ELF64、LSB、`e_machine=0x3e` = x86-64 |
+| 源码版本 | EC-Sim `main` @ `30ef83b`（代码等价 `9aae5ff`；GAP-14 TxPDO + B57 `--al-error` + B55 站号校验） |
 | 构建环境 | openEuler 24.03 LTS-SP4 / x86_64 / glibc 2.38 / rustc 1.99.1 / cargo 1.99.1 |
 | 构建命令 | `cargo build --release -p esc-node --bin ec-sim-esc`（默认 feature，零第三方依赖） |
-| 构建时间 | 2026-11-13 12:41（EC-Sim 自有验证机 UTC+8） |
+| 构建时间 | 2026-11-13 13:22（EC-Sim 自有验证机，UTC+8） |
 | 存放（EC-Sim 侧） | `D:\tokengence.ai\ec-sim\.local\artifacts\ec-sim-esc-linux-x86_64` + `BUILD-INFO.txt`（gitignored，**不入库**） |
-| 目标落盘（CNC 侧） | CNC 验证机 `/opt/cnc/bin/ec-sim-esc`（目录由 `cnc-impl` 创建/校验） |
+| 目标落盘（CNC 侧） | CNC 验证机 `/opt/cnc/bin/ec-sim-esc`（由 `cnc-impl` 换装/校验） |
+
+**相对交付 #1（`8ba9b41`，sha256 `878712fe…88b8ee`）的差异**：
+- **GAP-14**：`cnc-csp-servo` 的 TxPDO 顺序 = `[0x6041, 0x6064, 0x606C, 0x6061]`（lcec `basic_cia402` 读方向；
+  SM3 仍 11B）；`ec-sim-esc --behavior cia402` 会按 manifest 0x1A00 顺序自动选择 `Cia402TxLayout`；
+- **B57**：新增 CLI `--al-error <hex>`（AL Status error+code 注入；已知码白名单；默认关闭；未知码 exit 2）；
+- **B55**：控制面 `?slave=` 统一校验（0-based；非法/越界 → 404 JSON）。
+
+**兼容性**：默认行为不变（`--al-error`/写路径/插件均需显式开启）；V1 既有 PASS 不受影响；
+V2 需同时换用本提交的 `plugins/cnc-csp-servo/plugin.yaml`（manifest sha256
+`5f96adc131c19f1448b29f8cd30577e20a12e72ed7fd8ae4ffd2d80f3dcd45e9`）。
 
 ## 2. 交付流程（分工）
 

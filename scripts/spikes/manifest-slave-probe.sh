@@ -64,12 +64,18 @@ grep -q "Output size: 8bits" /tmp/soem-manifest.lines || fail "输出不是 8 �
 grep -q "Input size: 8bits" /tmp/soem-manifest.lines || fail "输入不是 8 位"
 
 echo "=== SOEM slaveinfo -sdo（最多 3 次重试，见脚本头注释）==="
+# 断言只依赖**稳定内容**（对象索引 + 归一化的数值），不依赖 SOEM 该构建的英文文案：
+# 本验证机的 SOEM 2.0 构建把 'r' 渲染成 'n'（"Starting"→"Stanting"、"counter"→"counten"），
+# 且对象数随 fixture 演进会变（当前 = 8 个对象，含 0x2000）。因此用索引/数值断言：
+#   含 0x1018（身份 RECORD）、0x1C12/0x1C13（PDO assign）、0x2000（用户对象）且 0x2000 = 0x1234/4660。
 sdo_ok=0
 for attempt in 1 2 3; do
   timeout 60 "$SOEM_SLAVEINFO" "$TAP" -sdo >"/tmp/soem-manifest-sdo.$attempt.out" 2>&1 || true
   tr '\r' '\n' <"/tmp/soem-manifest-sdo.$attempt.out" >/tmp/soem-manifest-sdo.lines
-  if grep -q "CoE Object Description found, 7 entries." /tmp/soem-manifest-sdo.lines \
-     && grep -q "Sample counter" /tmp/soem-manifest-sdo.lines \
+  if grep -q "0x1018" /tmp/soem-manifest-sdo.lines \
+     && grep -q "0x1c12" /tmp/soem-manifest-sdo.lines \
+     && grep -q "0x1c13" /tmp/soem-manifest-sdo.lines \
+     && grep -q "0x2000" /tmp/soem-manifest-sdo.lines \
      && grep -q "0x1234 / 4660" /tmp/soem-manifest-sdo.lines; then
     sdo_ok=1
     break
@@ -77,7 +83,7 @@ for attempt in 1 2 3; do
   sleep 0.3
 done
 [ "$sdo_ok" -eq 1 ] || fail "SDO Info 未读到 manifest 对象（3 次重试均失败）"
-grep -E "0x1018|0x1c12|0x2000|Sample counter|0x1234" /tmp/soem-manifest-sdo.lines | head -8 || true
+grep -E "0x1018|0x1c12|0x2000|0x1234" /tmp/soem-manifest-sdo.lines | head -8 || true
 
 echo "=== SOEM simple_ng（process data / OP）==="
 timeout 6 "$SOEM_SIMPLE_NG" "$TAP" >/tmp/soem-manifest-op.out 2>&1 || true

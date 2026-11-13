@@ -45,24 +45,46 @@ RESULT: PASS
 - 一个真实拦截案例：首次运行时 `invalid-slave` FAIL——原因是本机 `target/release/ec-sim-esc` 是**旧构建**
   （B55 修复前），重新 `cargo build --release` 后 PASS；说明脚本能抓到"证据二进制与源码不一致"。
 
-## 4. VM 整轮证据（⚠️ 待补；一次作废轮次已记录）
+## 4. VM 整轮证据（2026-11-13 轮次 B：PASS）
 
-**轮次 A（2026-11-13 13:16，作废）**：本人在 EC-Sim VM 上启动整轮，但当时 `vm-ecsim.lock` 已被
-sim-expert（task-22）持有且其 `ecrt_master_sdo_upload` 进程处于内核 D 状态、`ec_master` 被占用 →
-B-2 前 4 项 `esi-sii-scan`/`sv660n-capability`/`manifest-slave`/`esi-manifest-op` 全报
-`FAIL: IgH 未看到身份`，B-1 亦在冲突窗口内。**按 Lead 判定整轮作废、不采信**（已停止进程、未 reboot）。
-教训：VM 共用必须**先校验锁 owner 并等对方释放信号**（同名锁同秒覆盖导致误判），单 runner 才可信。
+**轮次 A（13:16，作废）**：当时 `vm-ecsim.lock` 已被 sim-expert（task-22）持有且其 `ecrt_master_sdo_upload`
+进程处于内核 D 状态、`ec_master` 被占用 → B-2 前 4 项报 `FAIL: IgH 未看到身份`，B-1 亦在冲突窗口内。
+按 Lead 判定整轮作废、不采信（已停进程、未 reboot）。教训：VM 共用必须先校验锁 owner 并等对方释放信号。
 
-**轮次 B（待跑，clean VM）**：
+**轮次 B（13:24–13:28，clean VM，单 runner，**PASS**）**：
+
+- 前置自检：`pgrep ecrt-` 空、无 D 状态**用户进程**（只排除内核线程 `[kworker/...]`）、`lsmod` 无 `ec_*`、
+  无 `escsim*` TAP → `PRECHECK_OK`；`vm-ecsim.lock` = sim-impl；未 reboot。
+- 构建：`cargo build --release -p esc-node -p mcp-server`（源码 `30ef83b`，等价代码 `9aae5ff`）→
+  `ec-sim-esc` sha256 `7ec957e8e59019811c8ab9ba8c068a1caff18f554348df7a96bfb900f609344c`（1,060,800 B）。
+- 定向探针：
+  - `invalid-slave-probe.sh`（静态 + UDS + **TAP** 三路径）**EXIT=0**（TAP 段：非法/越界 404 JSON，0/1 均 200）→
+    ACC-27② TAP 段闭环；
+  - `al-error-probe.sh`（B57）**EXIT=0**：`/state.live.al_status=0x11`、`al_status_code=0x0024`、
+    `/metrics` 17/36；
+  - `tap-cia402-multi-slave-probe.sh` N=2 **EXIT=0**（2 站 OP / workcounter 6 / 14O+22I / decoded 含 606C）；
+    N=3 **EXIT=0**（3 站 OP / workcounter 9 / 21O+33I）→ V2 参数（`--slaves 3` 同画像克隆）已预回归。
+- **B-1**：`run-all-probes.sh` → **`23 PASS / 0 FAIL / 0 SKIP（共 23）`**、`RESULT: PASS`（含 `tap-live`/
+  `tap-cia402`/`invalid-slave`）。
+- **B-2**：`run-acceptance-probes.sh`（`NOT_JUDGED` 7 个 `igh-*`）→ **`29 PASS / 0 FAIL / 7 SKIP（共 36）`**、
+  `RESULT: PASS`；7 个 SKIP 原因均为
+  `NOT-JUDGED（已知环境阻塞 PV-01/PV-14/H6，未执行；不计 PASS）`：`igh-op-probe`、`igh-cia402-op-probe`、
+  `igh-cia402-csv-op-probe`、`igh-el2008-op-probe`、`igh-sv660n-op-probe`、`igh-cia402-cst-op-probe`、`igh-dc-op-probe`。
+- 同轮修掉的**陈旧探针断言**（真实缺陷，非 SKIP 规避）：
+  1. `soem-dc-probe.sh` 期望 `mapped 7O+7I` → SV660N 画像默认可变映射早已改为 **8B/22B**（手册核对），
+     改为断言 `mapped 8O+22I`；修后 **EXIT=0**（OP、WKC 3、`dc_rd=5335 dc_wr=5337`）。
+  2. `manifest-slave-probe.sh` 依赖 SOEM 英文文案（"Sample counter"，且该构建把 `r` 渲染成 `n`）与固定对象数
+     （7→现 8 个对象）→ 改为按稳定内容断言（`0x1018/0x1c12/0x1c13/0x2000` + `0x1234 / 4660`）；修后 **EXIT=0**
+     （SDO Info + OP/WKC3 + IgH 身份）。
+- 日志（EC-Sim VM `/tmp`）：`/tmp/sim-impl-vm-round/{run-all,run-acceptance,invalid-slave,al-error,tap-cia402-n2,tap-cia402-n3}.log`、
+  `/tmp/sim-impl-vm-round-console.log`、`/tmp/b2-clean.log`、`/tmp/recheck-{dc,manifest}.log`。
 
 ```bash
-# EC-Sim 验证机（root，自有 VM；单 runner，先持锁 D:\tokengence.ai\.local\vm-ecsim.lock）
+# clean VM（root，单 runner，先持锁）：
 cargo build --release -p esc-node -p mcp-server
-bash scripts/spikes/run-all-probes.sh          # B-1（0 FAIL；PASS+SKIP=注册表项数）
-bash scripts/spikes/run-acceptance-probes.sh   # B-2（36 项；0 FAIL，SKIP 均带原因）
-# 若验证机仍处 ecrt SDO 已知阻塞（PV-01/PV-14/H6），可对相关项显式标 NOT-JUDGED（不计 PASS）：
-NOT_JUDGED="igh-cia402-op,igh-cia402-csv-op,igh-cia402-cst-op,igh-sv660n-op,igh-dc-op,sdo-upload-probe" \
-  bash scripts/spikes/run-acceptance-probes.sh
+bash scripts/spikes/run-all-probes.sh          # B-1：23 PASS / 0 FAIL / 0 SKIP
+NOT_JUDGED="igh-op-probe,igh-cia402-op-probe,igh-cia402-csv-op-probe,igh-el2008-op-probe,igh-sv660n-op-probe,igh-cia402-cst-op-probe,igh-dc-op-probe" \
+  bash scripts/spikes/run-acceptance-probes.sh # B-2：29 PASS / 0 FAIL / 7 SKIP(NOT-JUDGED)
 ```
 
 > `NOT_JUDGED` 参数：逗号分隔探针名 → 运行时标 `SKIP` 且原因写
