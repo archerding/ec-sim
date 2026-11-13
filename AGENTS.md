@@ -648,6 +648,13 @@ user.email = deepseek-harness@users.noreply.github.com
   （静态/UDS/TAP × {非数字,负,空,越界,0,N-1}，写路由按站隔离）并登记 run-all（注册表 **23 项**）；
   2 条 control-plane 单测；CONTROL-PLANE §2.1 写明 0-based 语义与静态模式仅 `slave=0`。
   证据：WORKLOG 2026-11-13 团队班（B55 段）、`docs/VERIFICATION.md`。不宣称认证。
+- [x] ~~**B56 B-2 验收探针聚合脚本（PV-18 / task-18）**~~ ✅ **2026-11-13 团队班完成（脚本+本机自测；VM 整轮待补）**：
+  新增 `scripts/spikes/run-acceptance-probes.sh`（零第三方依赖，35 项注册表由脚本自算；`--list`；
+  `name|kind|EXIT|status|秒[|skip_reason]` 输出 + `RESULT: PASS|FAIL`；SKIP 必带原因；超时/缺失=FAIL；
+  日志落 `$LOG_DIR`）；与 `run-all-probes.sh` 分工：B-1 观测面 vs **B-2 行业协议验收**（可串联为 Gate B）。
+  本机（非 root）整轮 **3 PASS / 0 FAIL / 32 SKIP**（SKIP 均平台原因）；本机首跑即抓到"证据二进制=旧构建"
+  的真实问题（重 build 后 PASS）。证据：`docs/verification/2026-11-13-gate-b2-acceptance-probes.md`
+  （含 35 项 ACC↔探针追溯表）。⚠️ VM（root/TAP/IgH）整轮与 ACCEPTANCE §3.2.2 状态更新待 VM 恢复/sim-expert 采认。
 
 ## 7. 目录约定
 

@@ -1,5 +1,40 @@
 ---
 
+## 2026-11-13 团队班 — **task-18：B-2 验收探针聚合脚本 `run-acceptance-probes.sh`（PV-18）**
+
+> 任务板 `task-18`（Owner `sim-impl`）。目标：把 EC-SIM ACCEPTANCE §3.2.2 的 **B-2 行业协议探针组**
+> 从"人工清单"升级为一键门（PV-18）。VM 失联期间先完成脚本 + 本机静态自测 + 证据文档；VM 整轮待恢复。
+
+**做了什么**
+- 新增 `scripts/spikes/run-acceptance-probes.sh`（bash、零第三方依赖）：
+  - 注册表 **35 项**（`name|kind|acc`；kind ∈ any/linux/root 只表达平台/权限要求，acc 用于 ACC 追溯），
+    **项数由脚本自算打印**（不硬编码）；`--list` 查看计划与 skip 原因；`RUN_ROOT=0`/`TIMEOUT_SECONDS`/`LOG_DIR` 可覆盖；
+  - 输出格式按 sim-expert 约定：`<name>|<kind>|<EXIT>|<PASS|FAIL|SKIP>|<秒>[|<skip_reason>]`，
+    末尾 `== 汇总：N PASS / M FAIL / K SKIP（共 T）==` + `RESULT: PASS|FAIL`；SKIP 必带原因
+    （平台不适用/缺 root/`RUN_ROOT=0`/探针 exit 2=缺夹具）；超时/探针缺失 → FAIL；每项日志落 `$LOG_DIR`。
+  - 明文区分与 `run-all-probes.sh` 的分工：**B-1 观测面** vs **B-2 行业协议验收**，可串联
+    （`run-all && acceptance` = Gate B）。
+- 证据文档：`docs/verification/2026-11-13-gate-b2-acceptance-probes.md`（脚本/格式/分工/本机自测/
+  VM 整轮模板/35 项 ACC↔探针追溯表/边界）。
+
+**验证结果**
+- 本机（Windows，非 root）：`--list` → 注册表 **35 项**；整轮 → **3 PASS / 0 FAIL / 32 SKIP**（SKIP 均带平台原因）
+  → `RESULT: PASS`（any 类：`mcp-stdio`/`serve-token`/`invalid-slave`）。
+- 首次运行时脚本抓到真实问题：`invalid-slave` FAIL（本机 `target/release/ec-sim-esc` 为 B55 修复前旧构建），
+  重新 `cargo build --release` 后 PASS —— 证明聚合门能发现"证据二进制≠源码"。
+- ⚠️ VM 整轮（含 20 个 root/TAP/IgH 项）待 VM 恢复后跑并归档；ACCEPTANCE 文档更新由 sim-expert 采认
+  （该文件当前有其未提交改动，不并发改）。
+
+**卡点**
+- EC-Sim VM 失联（等用户重启；按 Lead 纪律窗口：sim-ux → sim-expert → sim-impl）。
+- task-17 的 `invalid-slave` **TAP 段**复跑同样排队。
+
+**下次开工第一件事**
+- VM 恢复后：`run-all-probes.sh` + `run-acceptance-probes.sh` 整轮（root）→ 归档日志 → 回填本证据文档
+  §4 与 ACCEPTANCE B-2 状态；补 task-17 TAP 段；再同步 sim-expert/Lead。
+
+---
+
 ## 2026-11-13 团队班 — **task-12（部分）：B52 验收 + CI 观察窗 + M4 退出映射**
 
 > 任务板 `task-12`（Owner `sim-impl`）。VM 不可用（其他任务争用/重启），本班取不依赖 VM 的两项：
