@@ -16,8 +16,8 @@ const [base, outDir, dictPath] = process.argv.slice(2);
 if (!base || !outDir || !dictPath) { console.error("usage: hmi-dod07-perf.mjs <baseUrl> <outDir> <dictPath>"); process.exit(2); }
 const edge = process.env.EDGE_BIN || "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 await mkdir(outDir, { recursive: true });
-const port = 9991;
-const child = spawn(edge, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${path.join(outDir, ".edge")}`, "--no-first-run", "--disable-gpu", "about:blank"], { stdio: "ignore" });
+const port = 9600 + (Date.now() % 300);
+const child = spawn(edge, ["--headless=new", "--no-sandbox", "--disable-dev-shm-usage", `--remote-debugging-port=${port}`, `--user-data-dir=${path.join(outDir, ".edge-" + port)}`, "--no-first-run", "--disable-gpu", "about:blank"], { stdio: "ignore" });
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const getJson = (p) => new Promise((resolve, reject) => {
   http.get({ host: "127.0.0.1", port, path: p }, (r) => { let b = ""; r.on("data", (c) => (b += c)); r.on("end", () => { try { resolve(safeParse(b)); } catch (e) { reject(e); } }); }).on("error", reject);
