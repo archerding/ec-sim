@@ -216,7 +216,7 @@ function updateConnUi() {
     }
   }
   if (dataTime) {
-    dataTime.textContent = `${tz("数据时间：")}${conn.lastDataAt ? new Date(conn.lastDataAt).toLocaleTimeString() : "-"}（${ageText()}）`;
+    dataTime.textContent = window.ECSIM_I18N && window.ECSIM_I18N.lang === "en" ? `${tz("数据时间：")}${conn.lastDataAt ? new Date(conn.lastDataAt).toLocaleTimeString() : "-"} (${ageText()})` : `${tz("数据时间：")}${conn.lastDataAt ? new Date(conn.lastDataAt).toLocaleTimeString() : "-"}（${ageText()}）`;
   }
   if (pauseButton) {
     pauseButton.setAttribute("aria-pressed", conn.paused ? "true" : "false");
@@ -757,13 +757,13 @@ function renderPdoHistory(history) {
       el(
         "p",
         { class: "sub", "data-testid": "pdo-sample-info" },
-        `样本 ${samples.length} 个（按 PDO 变化去重）；蓝线 = SM2 前 2 字节（u16 小端）；绿线 = SM3 前 2 字节；纵轴按两者最大值归一化。`,
+        window.ECSIM_I18N && window.ECSIM_I18N.lang === "en" ? `samples: ${samples.length} (deduped by PDO change); blue line = SM2 first 2 bytes (u16 LE); green line = SM3 first 2 bytes; y-axis normalized by max.` : `样本 ${samples.length} 个（按 PDO 变化去重）；蓝线 = SM2 前 2 字节（u16 小端）；绿线 = SM3 前 2 字节；纵轴按两者最大值归一化。`,
       ),
       canvas,
       el(
         "details",
         { "data-testid": "pdo-waveform-table" },
-        el("summary", {}, `展开前 20 条采样（共 ${samples.length} 条）`),
+        el("summary", {}, window.ECSIM_I18N && window.ECSIM_I18N.lang === "en" ? `Show first 20 samples (total ${samples.length})` : `展开前 20 条采样（共 ${samples.length} 条）`),
         table(
           ["#", "SM2 hex", "SM3 hex", "AL"],
           samples.slice(0, 20).map((sample, index) => [
@@ -1237,6 +1237,8 @@ function renderAll() {
   setStaticModeNotice(Boolean(currentState && !currentState.live));
   updateSdoCurrent();
   renderAudit();
+  // G-19：首帧即本地化（避免 overlay 应用前的瞬时中文闪现）。
+  if (window.ECSIM_I18N && window.ECSIM_I18N.localize) window.ECSIM_I18N.localize(document.body);
 }
 
 // ---- DOD-02：`/sdo-audit` 只读展示（I-12/G-07；实时模式）----
