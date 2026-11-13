@@ -5595,3 +5595,8 @@
   Markdown/关于页；en CJK 仅剩白名单 `中文`（toggle 文案）。
 - `--serve` 产品路径复测：4 视口 en 无溢出、<44px=0；`web-i18n-check`/`contract`/`writing-boundary`/
   `web-sdo-panel`/`serve-web-assets-probe` 全 EXIT=0；截图 `product-serve-en/zh-*` 更新。
+
+### G-19 收口（batch 3b）
+
+- overlay 整句优先 + 移除拆词单字映射；`ageText()` 语言感知；证据 Markdown/DC kv/异常位表头 `tz()`；
+  en 全角标点规则转 ASCII。产品路径 en headless CJK 仅 `中文`（白名单）；五脚本+serve 资产探针全 EXIT=0。

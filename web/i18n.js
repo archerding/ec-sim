@@ -284,12 +284,43 @@
     "一致性": "conformance", "认证": "certification", "实时": "realtime", "快照语义": "snapshot semantics",
     "观察": "observe", "为读取时刻近似": "approximated at read time", "值": "value",    "条（服务端最多 64 条）。": " entries (server keeps up to 64).",
   };
+  // G-19 收口（batch 3b）：整句优先，避免单字替换产生混排；证据模板/关于页/实时区句子逐条映射。
+  Object.assign(enExtras, {
+    "快照语义，观察值为读取时刻近似值。": "Snapshot semantics; values are approximations at read time.",
+    "数值为读取时刻近似值。": "Values are approximations at read time.",
+    "观察值为读取时刻近似值。": "values are approximations at read time",
+    "未验证项标 ⚠️ 并给方法": "unverified items are marked ⚠️ with method",
+    "对象 31 个 / 条目": "objects 31 / entries",
+    "- 快照语义，非实时 SLA；数值为读取时刻近似值。": "- Snapshot semantics, no realtime SLA; values are approximations at read time.",
+    "- 不宣称 EtherCAT 一致性 / CTT / LinuxCNC 或任何认证。": "- No EtherCAT conformance / CTT / LinuxCNC or other certification claimed.",
+    "⚠️ 未验证项：DOD-13b `OP|error=0x18`（NOT-JUDGED，BL-20 v1.x）；DC 仅 Tier0 模拟时钟。": "⚠️ Unverified: DOD-13b `OP|error=0x18` (NOT-JUDGED, BL-20 v1.x); DC is Tier0 simulated only.",
+    "⚠️ 边界：快照语义（非实时 SLA）；不宣称一致性/CTT/认证；未验证项标 ⚠️ 并给方法；不含 token/绝对路径。": "⚠️ Boundaries: snapshot semantics (no realtime SLA); no conformance/CTT/certification claimed; unverified items are marked ⚠️ with method; no token/absolute paths.",
+    "## 边界（必读）": "## Boundaries (read first)", "# EC-Sim 证据导出": "# EC-Sim Evidence Export",
+    "数据年龄：": "Data age: ", "生成时间：": "Generated: ", "- 数据年龄：": "- Data age: ",
+    "（AL 派生：state & 0x0F，bit4=error，bit5=ID 请求）": " (AL derived: state & 0x0F, bit4=error, bit5=ID request)",
+    "展开前 20 条采样（共 ": "Show first 20 samples (of ",
+    "异常位": "abnormal flag", "AL 状态码": "AL code", "AL 状态": "AL state",
+    "DC 模拟时间": "DC sim time", "DC 模拟时间（ns）": "DC sim time (ns)",
+    "邮箱请求/响应": "Mailbox req/resp", "DC 寄存器读/写": "DC reg reads/writes",
+    "复制拓扑摘要": "Copy topology summary", "复制总览摘要": "Copy overview summary",
+    "对象 31 个 / 条目": "objects 31 / entries",
+    "支持矩阵": "Support matrix",
+    "IgH 主站（ethercat）": "IgH master (ethercat)", "SOEM（夹具）": "SOEM (fixture)",
+    "其它主站/系统": "Other masters/systems", "主站": "master", "夹具": "fixture",
+  });
+  const fixRules = [
+    [/（(\d+(?:\.\d+)?) (ms|s) 前）/g, "($1 $2 ago)"],
+    [/(\d+) 个/g, "$1 items"], [/(\d+) 条/g, "$1 entries"], [/(\d+) 位/g, "$1-bit"],
+    [/（AL 派生：[^）]*）/g, " (AL derived: state & 0x0F, bit4=error, bit5=ID request)"],
+    [/（/g, "("], [/）/g, ")"], [/；/g, "; "],
+  ];
   const rules = [
     [/(\d+(?:\.\d+)?) ms 前/g, "$1 ms ago"], [/(\d+(?:\.\d+)?) s 前/g, "$1 s ago"],
     [/（(\d+(?:\.\d+)?) ms 前）/g, "($1 ms ago)"], [/（(\d+(?:\.\d+)?) s 前）/g, "($1 s ago)"],
     [/(\d+) 位/g, "$1-bit"], [/(\d+) 站 \//g, "$1 slaves /"], [/异常 (\d+)/g, "problems $1"],
     [/(\d+) 个从站/g, "$1 slaves"], [/(\d+) 条/g, "$1 entries"],
   ];
+  for (const [pattern, replacement] of fixRules) rules.push([pattern, replacement]);
   let localizing = false;
   function localizeString(source) {
     let text = source;

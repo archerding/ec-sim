@@ -105,36 +105,36 @@
     "paint": [
       {
         "name": "first-paint",
-        "startTime": 144
+        "startTime": 76
       },
       {
         "name": "first-contentful-paint",
-        "startTime": 144
+        "startTime": 76
       }
     ],
     "navigation": {
-      "domContentLoaded": 93.3,
-      "load": 131.3,
+      "domContentLoaded": 22.8,
+      "load": 63.7,
       "transferSize": 16862
     },
     "resources": [
       {
         "name": "i18n.js",
-        "duration": 4.3,
-        "transferSize": 30743
+        "duration": 7.8,
+        "transferSize": 33663
       },
       {
         "name": "app.js",
-        "duration": 4.4,
-        "transferSize": 74884
+        "duration": 7.7,
+        "transferSize": 74997
       },
       {
         "name": "favicon.ico",
-        "duration": 1.2,
+        "duration": 1.6,
         "transferSize": 356
       }
     ],
-    "screenshot": ".local\\hmi-capture\\final-zh\\1024x768.png"
+    "screenshot": ".local\\hmi-capture\\final2-zh\\1024x768.png"
   },
   {
     "label": "1280x900",
@@ -242,31 +242,31 @@
     "paint": [
       {
         "name": "first-paint",
-        "startTime": 20
+        "startTime": 28
       },
       {
         "name": "first-contentful-paint",
-        "startTime": 20
+        "startTime": 28
       }
     ],
     "navigation": {
-      "domContentLoaded": 9.7,
-      "load": 11,
+      "domContentLoaded": 10.1,
+      "load": 11.3,
       "transferSize": 16862
     },
     "resources": [
       {
         "name": "i18n.js",
-        "duration": 1.9,
-        "transferSize": 30743
+        "duration": 1.7,
+        "transferSize": 33663
       },
       {
         "name": "app.js",
-        "duration": 1.9,
-        "transferSize": 74884
+        "duration": 2.3,
+        "transferSize": 74997
       }
     ],
-    "screenshot": ".local\\hmi-capture\\final-zh\\1280x900.png"
+    "screenshot": ".local\\hmi-capture\\final2-zh\\1280x900.png"
   },
   {
     "label": "1920x1080",
@@ -374,31 +374,31 @@
     "paint": [
       {
         "name": "first-paint",
-        "startTime": 36
+        "startTime": 40
       },
       {
         "name": "first-contentful-paint",
-        "startTime": 36
+        "startTime": 40
       }
     ],
     "navigation": {
-      "domContentLoaded": 16,
-      "load": 18.1,
+      "domContentLoaded": 22,
+      "load": 24.1,
       "transferSize": 16862
     },
     "resources": [
       {
         "name": "i18n.js",
-        "duration": 2.4,
-        "transferSize": 30743
+        "duration": 2,
+        "transferSize": 33663
       },
       {
         "name": "app.js",
-        "duration": 2.6,
-        "transferSize": 74884
+        "duration": 2.4,
+        "transferSize": 74997
       }
     ],
-    "screenshot": ".local\\hmi-capture\\final-zh\\1920x1080.png"
+    "screenshot": ".local\\hmi-capture\\final2-zh\\1920x1080.png"
   },
   {
     "label": "1024x768@125",
@@ -506,30 +506,30 @@
     "paint": [
       {
         "name": "first-paint",
-        "startTime": 44
+        "startTime": 32
       },
       {
         "name": "first-contentful-paint",
-        "startTime": 44
+        "startTime": 32
       }
     ],
     "navigation": {
-      "domContentLoaded": 14.8,
-      "load": 17.4,
+      "domContentLoaded": 15.4,
+      "load": 17.6,
       "transferSize": 16862
     },
     "resources": [
       {
         "name": "i18n.js",
-        "duration": 2.4,
-        "transferSize": 30743
+        "duration": 2.2,
+        "transferSize": 33663
       },
       {
         "name": "app.js",
-        "duration": 2.6,
-        "transferSize": 74884
+        "duration": 2.9,
+        "transferSize": 74997
       }
     ],
-    "screenshot": ".local\\hmi-capture\\final-zh\\1024x768@125.png"
+    "screenshot": ".local\\hmi-capture\\final2-zh\\1024x768@125.png"
   }
 ]

@@ -160,7 +160,7 @@ function connBadgeText(mode) {
 function ageText() {
   if (!conn.lastDataAt) return "-";
   const age = Math.max(0, Date.now() - conn.lastDataAt);
-  return age < 1000 ? `${age} ms 前` : `${(age / 1000).toFixed(1)} s 前`;
+  if (window.ECSIM_I18N && window.ECSIM_I18N.lang === "en") { return age < 1000 ? `${age} ms ago` : `${(age / 1000).toFixed(1)} s ago`; }
 }
 
 // 脱敏：只显示 host:port（不含 scheme/路径/token/凭据）。
@@ -421,12 +421,12 @@ function renderState(state) {
         kvGrid([
           [tz("站地址"), live.station_address],
           [tz("AL 状态"), `${live.al_status}${live.al_status_code !== "0x0000" ? ` / ${live.al_status_code}` : ""}`],
-          ["DC 模拟时间", `${live.dc_time_ns} ns`],
+          [tz("DC 模拟时间"), `${live.dc_time_ns} ns`],
           [tz("收/发帧"), `${live.stats.frames_in} / ${live.stats.frames_out}`],
           [tz("丢弃帧"), live.stats.frames_dropped],
           [tz("datagram 命中"), live.stats.datagrams_hit],
-          ["邮箱请求/响应", `${live.stats.mailbox_requests} / ${live.stats.mailbox_responses}`],
-          ["DC 寄存器读/写", `${live.stats.dc_reg_reads} / ${live.stats.dc_reg_writes}`],
+          [tz("邮箱请求/响应"), `${live.stats.mailbox_requests} / ${live.stats.mailbox_responses}`],
+          [tz("DC 寄存器读/写"), `${live.stats.dc_reg_reads} / ${live.stats.dc_reg_writes}`],
         ]),
         el(
           "p",
@@ -960,7 +960,7 @@ function renderOverview(topology) {
     sectionT(
       "overview-health",
       tr("section.overview", "总线总览（health）"),
-      el("p", { class: "sub" }, `${health}（AL 派生：state & 0x0F，bit4=error，bit5=ID 请求）`),
+      el("p", { class: "sub" }, `${health}${tz("（AL 派生：state & 0x0F，bit4=error，bit5=ID 请求）")}`),
       problemRows.length === 0
         ? el(
             "p",
@@ -987,14 +987,14 @@ function buildEvidenceMarkdown() {
   const lines = [];
   lines.push(`# EC-Sim 证据导出（ecsim-evidence-v1）`);
   lines.push("");
-  lines.push(`- 生成时间：${new Date().toISOString()}`);
+  lines.push(`- ${tz("生成时间：")}${new Date().toISOString()}`);
   lines.push(`- 模式：${connBadgeText(conn.mode)}；站：${selectedSlave()}（0-based）；API：${sourceHostPort() || "-"}`);
-  lines.push(`- 数据年龄：${ageText()}`);
+  lines.push(`- ${tz("数据年龄：")}${ageText()}`);
   lines.push("");
-  lines.push("## 边界（必读）");
+  lines.push(tz("## 边界（必读）"));
   lines.push("");
-  lines.push("- 快照语义，非实时 SLA；数值为读取时刻近似值。");
-  lines.push("- 不宣称 EtherCAT 一致性 / CTT / LinuxCNC 或任何认证。");
+  lines.push(tz("- 快照语义，非实时 SLA；数值为读取时刻近似值。"));
+  lines.push(tz("- 不宣称 EtherCAT 一致性 / CTT / LinuxCNC 或任何认证。"));
   lines.push("- ⚠️ 未验证项：DOD-13b `OP|error=0x18`（NOT-JUDGED，BL-20 v1.x）；DC 仅 Tier0 模拟时钟。");
   lines.push("");
   const pick = (key, label, data, format) => {

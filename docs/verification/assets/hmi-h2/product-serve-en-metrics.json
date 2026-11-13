@@ -21,41 +21,41 @@
     "cjk": [
       "中文"
     ],
-    "appTextLength": 966,
+    "appTextLength": 965,
     "under44": [],
     "paint": [
       {
         "name": "first-paint",
-        "startTime": 72
+        "startTime": 68
       },
       {
         "name": "first-contentful-paint",
-        "startTime": 72
+        "startTime": 68
       }
     ],
     "navigation": {
-      "domContentLoaded": 22.8,
-      "load": 52.9,
+      "domContentLoaded": 17.3,
+      "load": 49.4,
       "transferSize": 16862
     },
     "resources": [
       {
         "name": "i18n.js",
-        "duration": 7.6,
-        "transferSize": 30743
+        "duration": 5.6,
+        "transferSize": 33663
       },
       {
         "name": "app.js",
-        "duration": 7.7,
-        "transferSize": 74884
+        "duration": 5.8,
+        "transferSize": 74997
       },
       {
         "name": "favicon.ico",
-        "duration": 1.4,
+        "duration": 1,
         "transferSize": 356
       }
     ],
-    "screenshot": ".local\\hmi-capture\\final-en\\1024x768.png"
+    "screenshot": ".local\\hmi-capture\\final2-en\\1024x768.png"
   },
   {
     "label": "1280x900",
@@ -79,36 +79,36 @@
     "cjk": [
       "中文"
     ],
-    "appTextLength": 966,
+    "appTextLength": 965,
     "under44": [],
     "paint": [
       {
         "name": "first-paint",
-        "startTime": 24
+        "startTime": 28
       },
       {
         "name": "first-contentful-paint",
-        "startTime": 24
+        "startTime": 28
       }
     ],
     "navigation": {
-      "domContentLoaded": 11.3,
-      "load": 12.9,
+      "domContentLoaded": 9.9,
+      "load": 11.3,
       "transferSize": 16862
     },
     "resources": [
       {
         "name": "i18n.js",
-        "duration": 1.9,
-        "transferSize": 30743
+        "duration": 1.8,
+        "transferSize": 33663
       },
       {
         "name": "app.js",
         "duration": 2,
-        "transferSize": 74884
+        "transferSize": 74997
       }
     ],
-    "screenshot": ".local\\hmi-capture\\final-en\\1280x900.png"
+    "screenshot": ".local\\hmi-capture\\final2-en\\1280x900.png"
   },
   {
     "label": "1920x1080",
@@ -132,36 +132,36 @@
     "cjk": [
       "中文"
     ],
-    "appTextLength": 966,
+    "appTextLength": 965,
     "under44": [],
     "paint": [
       {
         "name": "first-paint",
-        "startTime": 40
+        "startTime": 52
       },
       {
         "name": "first-contentful-paint",
-        "startTime": 40
+        "startTime": 52
       }
     ],
     "navigation": {
-      "domContentLoaded": 17.9,
-      "load": 19.8,
+      "domContentLoaded": 35,
+      "load": 37.4,
       "transferSize": 16862
     },
     "resources": [
       {
         "name": "i18n.js",
-        "duration": 2.7,
-        "transferSize": 30743
+        "duration": 1.6,
+        "transferSize": 33663
       },
       {
         "name": "app.js",
-        "duration": 2.7,
-        "transferSize": 74884
+        "duration": 2.2,
+        "transferSize": 74997
       }
     ],
-    "screenshot": ".local\\hmi-capture\\final-en\\1920x1080.png"
+    "screenshot": ".local\\hmi-capture\\final2-en\\1920x1080.png"
   },
   {
     "label": "1024x768@125",
@@ -185,35 +185,35 @@
     "cjk": [
       "中文"
     ],
-    "appTextLength": 966,
+    "appTextLength": 965,
     "under44": [],
     "paint": [
       {
         "name": "first-paint",
-        "startTime": 48
+        "startTime": 52
       },
       {
         "name": "first-contentful-paint",
-        "startTime": 48
+        "startTime": 52
       }
     ],
     "navigation": {
-      "domContentLoaded": 17.7,
-      "load": 20,
+      "domContentLoaded": 20.9,
+      "load": 23.4,
       "transferSize": 16862
     },
     "resources": [
       {
         "name": "i18n.js",
-        "duration": 2.9,
-        "transferSize": 30743
+        "duration": 1.9,
+        "transferSize": 33663
       },
       {
         "name": "app.js",
-        "duration": 3.1,
-        "transferSize": 74884
+        "duration": 2.1,
+        "transferSize": 74997
       }
     ],
-    "screenshot": ".local\\hmi-capture\\final-en\\1024x768@125.png"
+    "screenshot": ".local\\hmi-capture\\final2-en\\1024x768@125.png"
   }
 ]
