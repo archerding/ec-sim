@@ -15,14 +15,14 @@
 //! - 读者不持锁，写者不等待读者 → 实时环零阻塞（写者侧只做一次 CAS + 两次
 //!   序列号自增 + 定长拷贝）。
 //!
-//! 数据用 [`AtomicU8`] 承载，避免 `unsafe` 共享可变内存：本模块**不含 `unsafe`**。
+//! 数据用 `AtomicU8` 承载，避免 `unsafe` 共享可变内存：本模块**不含 `unsafe`**。
 //! 代价是每字节一次 relaxed 原子访问；对 SM2/SM3（几十字节）可忽略。
 //!
 //! # 边界（W2 其余子项不在本模块）
 //!
 //! - 只保证"快照不撕裂"；不保证写者不覆盖读者尚未读完的旧槽（读者读到旧
-//!   generation 是允许的，调用方可比较 [`ArenaSnapshot::generation`] 判断陈旧）；
-//! - 单写者契约由 `publishing` 标志强制执行：并发写返回 [`ArenaError::ConcurrentWriter`]，
+//!   generation 是允许的，调用方可比较 `ArenaSnapshot::generation` 判断陈旧）；
+//! - 单写者契约由 `publishing` 标志强制执行：并发写返回 `ArenaError::ConcurrentWriter`，
 //!   不破坏序列号；
 //! - 插件线程隔离 / fuel / 超时 / 内存上限仍属 W2 后续子项，见
 //!   `docs/plan/M3-scope.md`。
