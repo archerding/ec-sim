@@ -10,7 +10,7 @@
 //! 因此**插件永不进入实时环**（AGENTS §1 核心约束）。
 
 use crate::Responder;
-use plugin_host::behavior::{BehaviorRuntime, BehaviorSpec, BehaviorStats};
+use plugin_host::behavior::{BehaviorQuota, BehaviorRuntime, BehaviorSpec, BehaviorStats};
 use plugin_host::manifest::PluginManifest;
 use plugin_host::wasm_worker::WorkerLimits;
 use std::path::Path;
@@ -96,13 +96,31 @@ pub struct BehaviorBridge {
 impl BehaviorBridge {
     /// 从 WAT 文本启动（测试/内置画像用）。
     pub fn spawn_wat(text: &str, config: BehaviorBridgeConfig) -> Result<Self, String> {
-        let runtime = BehaviorRuntime::spawn_wat(text, config.spec())?;
+        Self::spawn_wat_with_quota(text, config, None)
+    }
+
+    /// 从 WAT 文本启动，并占用一个实例配额（多从站/多实例接线用）。
+    pub fn spawn_wat_with_quota(
+        text: &str,
+        config: BehaviorBridgeConfig,
+        quota: Option<&BehaviorQuota>,
+    ) -> Result<Self, String> {
+        let runtime = BehaviorRuntime::spawn_wat_with_quota(text, config.spec(), quota)?;
         Ok(Self::wrap(runtime, config))
     }
 
     /// 从 wasm 二进制启动。
     pub fn spawn_wasm_bytes(bytes: &[u8], config: BehaviorBridgeConfig) -> Result<Self, String> {
-        let runtime = BehaviorRuntime::spawn_wasm_bytes(bytes, config.spec())?;
+        Self::spawn_wasm_bytes_with_quota(bytes, config, None)
+    }
+
+    /// 从 wasm 二进制启动，并占用一个实例配额（多从站/多实例接线用）。
+    pub fn spawn_wasm_bytes_with_quota(
+        bytes: &[u8],
+        config: BehaviorBridgeConfig,
+        quota: Option<&BehaviorQuota>,
+    ) -> Result<Self, String> {
+        let runtime = BehaviorRuntime::spawn_wasm_bytes_with_quota(bytes, config.spec(), quota)?;
         Ok(Self::wrap(runtime, config))
     }
 
@@ -112,6 +130,15 @@ impl BehaviorBridge {
     pub fn from_manifest(
         manifest: &PluginManifest,
         manifest_path: impl AsRef<Path>,
+    ) -> Result<Option<Self>, String> {
+        Self::from_manifest_with_quota(manifest, manifest_path, None)
+    }
+
+    /// 同 [`Self::from_manifest`]，并占用一个实例配额（B51 配额在多实例里的接线）。
+    pub fn from_manifest_with_quota(
+        manifest: &PluginManifest,
+        manifest_path: impl AsRef<Path>,
+        quota: Option<&BehaviorQuota>,
     ) -> Result<Option<Self>, String> {
         let Some(behavior) = manifest.behavior.as_ref() else {
             return Ok(None);
@@ -126,11 +153,11 @@ impl BehaviorBridge {
         if is_wat {
             let text = std::fs::read_to_string(&code_path)
                 .map_err(|error| format!("读取行为插件 {} 失败：{error}", code_path.display()))?;
-            Self::spawn_wat(&text, config).map(Some)
+            Self::spawn_wat_with_quota(&text, config, quota).map(Some)
         } else {
             let bytes = std::fs::read(&code_path)
                 .map_err(|error| format!("读取行为插件 {} 失败：{error}", code_path.display()))?;
-            Self::spawn_wasm_bytes(&bytes, config).map(Some)
+            Self::spawn_wasm_bytes_with_quota(&bytes, config, quota).map(Some)
         }
     }
 
@@ -180,6 +207,81 @@ impl BehaviorBridge {
     /// SM 布局（用于日志）。
     pub fn config(&self) -> &BehaviorBridgeConfig {
         &self.config
+    }
+}
+
+/// 多从站行为桥集合（B51 后续：把实例配额接到 `esc-node` 的多从站链）。
+///
+/// `--slaves N` 时每个从站一个插件实例（各自独立 arena/worker/ticker），
+/// 全部实例共享**同一个** [`BehaviorQuota`]，因此"一个进程最多跑几个插件实例"
+/// 是显式、可观测的；配额上限默认等于从站数（每个从站恰一个实例），
+/// 也可由 `--behavior-max-instances` 收紧以验证超限拒绝路径。
+pub struct BehaviorBridges {
+    quota: BehaviorQuota,
+    bridges: Vec<BehaviorBridge>,
+}
+
+impl BehaviorBridges {
+    /// 为 `instances` 个从站各启动一个插件实例（配额 = instances）。
+    pub fn from_manifest(
+        manifest: &PluginManifest,
+        manifest_path: impl AsRef<Path>,
+        instances: usize,
+    ) -> Result<Option<Self>, String> {
+        Self::from_manifest_with_quota(manifest, manifest_path, instances, None)
+    }
+
+    /// 同 [`Self::from_manifest`]，可显式传入共享配额（`None` = 按 instances 新建）。
+    ///
+    /// 任一次实例化失败即返回错误（已启动的实例随 `Vec` 丢弃自动释放配额名额）。
+    pub fn from_manifest_with_quota(
+        manifest: &PluginManifest,
+        manifest_path: impl AsRef<Path>,
+        instances: usize,
+        quota: Option<BehaviorQuota>,
+    ) -> Result<Option<Self>, String> {
+        let instances = instances.max(1);
+        if manifest.behavior.is_none() {
+            return Ok(None);
+        }
+        let quota = quota.unwrap_or_else(|| BehaviorQuota::new(instances));
+        let mut bridges = Vec::with_capacity(instances);
+        for index in 0..instances {
+            let bridge = BehaviorBridge::from_manifest_with_quota(
+                manifest,
+                manifest_path.as_ref(),
+                Some(&quota),
+            )?
+            .ok_or_else(|| "manifest 缺少 behavior 段".to_string())
+            .map_err(|error| format!("第 {index} 个行为插件实例启动失败：{error}"))?;
+            bridges.push(bridge);
+        }
+        Ok(Some(Self { quota, bridges }))
+    }
+
+    /// 帧周期调用：第 i 个从站的过程数据交给第 i 个插件实例（多出来的从站跳过）。
+    ///
+    /// 每个 `on_frame` 都不等待插件（见 [`BehaviorBridge::on_frame`]），
+    /// 因此 N 个实例也不会把插件耗时带进帧循环。
+    pub fn on_frame(&mut self, responders: &mut [Responder]) {
+        for (bridge, responder) in self.bridges.iter_mut().zip(responders.iter_mut()) {
+            bridge.on_frame(responder);
+        }
+    }
+
+    /// 实例配额（`max` 上限 / `active` 当前占用）。
+    pub fn quota(&self) -> &BehaviorQuota {
+        &self.quota
+    }
+
+    /// 已启动的插件实例数。
+    pub fn instances(&self) -> usize {
+        self.bridges.len()
+    }
+
+    /// 各实例统计（顺序同从站链）。
+    pub fn stats(&self) -> Vec<BehaviorStats> {
+        self.bridges.iter().map(BehaviorBridge::stats).collect()
     }
 }
 
@@ -262,5 +364,84 @@ mod tests {
                 .expect("no behavior")
                 .is_none()
         );
+    }
+
+    /// B51 后续：两个从站各一个插件实例，共享配额；配额满时第三个实例被拒绝，
+    /// 且每个从站的 SM3 只由自己的实例写回（互不串扰）。
+    #[test]
+    fn multi_instance_bridges_share_quota_and_apply_per_slave() {
+        let mut responders = vec![Responder::default(), Responder::default()];
+        assert!(responders[0].write_process_data(0x1100, &[1, 0]));
+        assert!(responders[1].write_process_data(0x1100, &[41, 0]));
+
+        let quota = BehaviorQuota::new(2);
+        let first = BehaviorBridge::spawn_wat_with_quota(COUNTER_WAT, config(), Some(&quota))
+            .expect("第 1 个实例");
+        let second = BehaviorBridge::spawn_wat_with_quota(COUNTER_WAT, config(), Some(&quota))
+            .expect("第 2 个实例");
+        assert_eq!(quota.active(), 2, "两个实例应各占一个名额");
+        let error = match BehaviorBridge::spawn_wat_with_quota(COUNTER_WAT, config(), Some(&quota))
+        {
+            Ok(_) => panic!("配额已满时第 3 个实例应被拒绝"),
+            Err(error) => error,
+        };
+        assert!(error.contains("配额"), "错误应说明配额已满：{error}");
+        assert_eq!(quota.active(), 2, "被拒绝的实例不得占用名额");
+
+        let mut bridges = BehaviorBridges {
+            quota: quota.clone(),
+            bridges: vec![first, second],
+        };
+        assert_eq!(bridges.instances(), 2);
+        let deadline = Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            bridges.on_frame(&mut responders);
+            let low = responders[0].read_process_data(0x1110, 1)[0];
+            let high = responders[1].read_process_data(0x1110, 1)[0];
+            if low == 2 && high == 42 {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "两个从站应各自得到 SM2+1（当前 {low} / {high}）：{:?}",
+                bridges.stats()
+            );
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        // 每个实例只写自己的从站：SM2 不应被改写。
+        assert_eq!(responders[0].read_process_data(0x1100, 1), vec![1]);
+        assert_eq!(responders[1].read_process_data(0x1100, 1), vec![41]);
+        let stats = bridges.stats();
+        assert_eq!(stats.len(), 2);
+        assert!(stats.iter().all(|entry| entry.ticks >= 1), "{stats:?}");
+        assert_eq!(bridges.quota().active(), 2);
+    }
+
+    /// 仓库内真实画像：按从站数启动 N 个实例；配额收紧时启动明确失败。
+    #[test]
+    fn from_manifest_spawns_one_instance_per_slave_and_rejects_quota_overflow() {
+        let manifest_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../plugins/behavior-counter/plugin.yaml");
+        let manifest = PluginManifest::load(&manifest_path).expect("加载 behavior-counter");
+
+        let bridges = BehaviorBridges::from_manifest(&manifest, &manifest_path, 3)
+            .expect("启动 3 个实例")
+            .expect("manifest 声明了 behavior");
+        assert_eq!(bridges.instances(), 3);
+        assert_eq!(bridges.quota().max(), 3);
+        assert_eq!(bridges.quota().active(), 3);
+        assert_eq!(bridges.stats().len(), 3);
+
+        // 配额上限 1 却要求 2 个实例 → 第二个实例被拒绝（错误链里带配额信息）。
+        let error = match BehaviorBridges::from_manifest_with_quota(
+            &manifest,
+            &manifest_path,
+            2,
+            Some(BehaviorQuota::new(1)),
+        ) {
+            Ok(_) => panic!("配额不足时应返回错误"),
+            Err(error) => error,
+        };
+        assert!(error.contains("配额"), "错误应说明配额已满：{error}");
     }
 }

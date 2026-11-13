@@ -119,6 +119,7 @@ fn cia402_profiles_declare_supported_modes_matching_layout() {
         ("generic-cia402-servo", 0x01C1u32),
         ("generic-cia402-csv-servo", 0x03CD),
         ("generic-cia402-cst-servo", 0x0410),
+        ("cnc-csp-servo", 0x01C1),
         ("inovance-sv660n", 0x03AD),
     ];
     for (id, expected) in cases {
@@ -139,6 +140,78 @@ fn cia402_profiles_declare_supported_modes_matching_layout() {
         ]);
         assert_eq!(value, expected, "{id} 的 0x6502 与布局不一致");
     }
+}
+
+/// CNC 虚拟闭环画像（V1/V2）守卫：布局必须与 lcec `basic_cia402` 的期望一致
+/// （cnc-impl 2026-11-13 对 lcec commit c6f8820 源码的核对）：
+/// - RxPDO 0x1600（SM2，7 字节）= 0x6040 U16 → 0x6060 S8 → 0x607A S32（顺序固定，0x6040 第一项）；
+/// - TxPDO 0x1A00（SM3，11 字节）= 0x6041 U16 → 0x6061 S8 → 0x6064 S32 → 0x606C S32
+///   （`enableCSP` 隐式要求 Tx 含 0x606C 实际速度）。
+#[test]
+fn cnc_csp_servo_layout_matches_lcec_csp_expectations() {
+    let path = repo_root()
+        .join("plugins")
+        .join("cnc-csp-servo")
+        .join("plugin.yaml");
+    let manifest = PluginManifest::load(path.to_str().expect("utf8 path")).expect("load");
+
+    let out_sm = manifest
+        .sm
+        .iter()
+        .find(|sm| sm.dir == "out")
+        .expect("缺少 dir=out 的 SM2");
+    let in_sm = manifest
+        .sm
+        .iter()
+        .find(|sm| sm.dir == "in")
+        .expect("缺少 dir=in 的 SM3");
+    assert_eq!(out_sm.len, 7, "RxPDO/SM2 必须是 7 字节");
+    assert_eq!(in_sm.len, 11, "TxPDO/SM3 必须是 11 字节（含 0x606C）");
+
+    let rx: Vec<(u16, u8, u8)> = manifest
+        .rx_pdos
+        .iter()
+        .find(|pdo| pdo.index == 0x1600)
+        .expect("缺少 RxPDO 0x1600")
+        .entries
+        .iter()
+        .map(|entry| (entry.index, entry.sub, entry.bits))
+        .collect();
+    assert_eq!(
+        rx,
+        vec![(0x6040, 0, 16), (0x6060, 0, 8), (0x607A, 0, 32)],
+        "RxPDO 0x1600 条目必须与 lcec PP/CSP 期望一致"
+    );
+
+    let tx: Vec<(u16, u8, u8)> = manifest
+        .tx_pdos
+        .iter()
+        .find(|pdo| pdo.index == 0x1A00)
+        .expect("缺少 TxPDO 0x1A00")
+        .entries
+        .iter()
+        .map(|entry| (entry.index, entry.sub, entry.bits))
+        .collect();
+    assert_eq!(
+        tx,
+        vec![
+            (0x6041, 0, 16),
+            (0x6061, 0, 8),
+            (0x6064, 0, 32),
+            (0x606C, 0, 32)
+        ],
+        "TxPDO 0x1A00 必须是 lcec enableCSP 的隐含布局（含 0x606C）"
+    );
+
+    // 映射对象必须真实生成（lcec 按从站映射对象读回匹配，不只看 SM 长度）。
+    let dict = dictionary_from_manifest(&manifest).expect("dictionary");
+    for index in [0x1600u16, 0x1A00] {
+        assert!(dict.object(index).is_some(), "缺少映射对象 0x{index:04X}");
+    }
+    assert!(
+        dict.entry(0x606C, 0).is_some(),
+        "0x606C 实际速度必须在对象字典里"
+    );
 }
 
 /// SV660N 固定映射（手册 2.2.6）守卫：0x1701（PP/CSP，4 对象/12 字节）与

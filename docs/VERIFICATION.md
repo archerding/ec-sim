@@ -5,12 +5,13 @@
 
 > 环境基线：Linux 验证机（见 `docs/LINUX-SERVER.md`）上的**未修改** SOEM 2.0.0 与 IgH 1.6.13；
 > IgH 的 ecrt 应用夹具只在验证机本地构建、**不入库**（GPL 边界，见 `AGENTS.md` §3）。
-> 最近的完整验证状态：**2026-11-13（B52 Agent Skills 静态校验）**（详见 `WORKLOG.md` 同日条目、
+> 最近的完整验证状态：**2026-11-13 团队班（B54 CNC 虚拟闭环对接包）**（详见 `WORKLOG.md` 同日条目、
 > [STATUS.md](STATUS.md) 与 [M3 退出清单](plan/M3-exit-checklist.md)）；
-> 探针注册表 **21 项**（B52 新增 `agent-skills`）：本机 any 类 **7 PASS / 14 SKIP**；
-> 验证机整轮最近一次 **20 PASS / 0 FAIL / 0 SKIP**（B50 时；含新探针的整轮由 CI `docs-and-probes` 覆盖，
-> 推送后验证）；本机 `cargo test --workspace` **258 passed / 0 failed**。
-> `mcp-tools`/`mcp-stdio`/`agent-skills` 本机与 CI/验证机均 PASS（B45/B47/B52 引入，2026-11-13）。
+> 探针注册表 **22 项**（B54 新增 `tap-cia402`；B52 新增 `agent-skills`）：本机 any 类 **7 PASS / 15 SKIP**；
+> 验证机整轮最近一次 **20 PASS / 0 FAIL / 1 SKIP**（B-1 复跑，`tap-live` 因 TAP 被占用单独补跑 PASS，
+> 见 `docs/verification/2026-11-13-ecsim-probe-registry-reconcile.md`）；本机 `cargo test --workspace`
+> **259 passed / 0 failed**（B54 +1：`cnc_csp_servo_layout_matches_lcec_csp_expectations`）。
+> `mcp-tools`/`mcp-stdio`/`agent-skills`/`tap-cia402` 分见 B45/B47/B52/B54（2026-11-13）。
 
 ## 无特权（UDS 合成主站，任意平台可跑）
 
@@ -53,7 +54,8 @@
 | `sv660n-capability-probe.sh` | SV660N 画像能力位复核：SOEM 64/176 bits（手册默认映射）、`CoE details=0x0d`（无 SDO Info）、`Has DC: 1`；IgH PREOP+身份 `0xe5f1` | **EXIT=0** |
 | `generic-cia402-probe.sh` | 通用 CiA 402 画像：SOEM 56/56 bits、OP、WKC 3；IgH PREOP+身份 | **EXIT=0** |
 | `igh-op-probe.sh` / `igh-el2008-op-probe.sh` | IgH ecrt 夹具（本地构建）配置 domain → OP（`al_states=0x08`、WKC） | **EXIT=0** |
-| `igh-cia402-op-probe.sh` | IgH ecrt 7B CiA402：OP + 状态字/模式/位置 | **EXIT=0** |
+| `igh-cia402-op-probe.sh` | IgH ecrt 7B CiA402：OP + 状态字/模式/位置（`EXPECT_PID` 可覆盖画像身份） | **EXIT=0**（V1 PP 画像，B54 复跑） |
+| `igh-cia402-op-probe.sh`（`MANIFEST=plugins/cnc-csp-servo/plugin.yaml`） | IgH ecrt 在 **11B TxPDO** 的 CSP 画像上仍进 OP（身份 `0xe5e3`）；⚠️ 该 ecrt 夹具的 SDO 段在验证机阻塞（已知 ecrt ioctl 环境问题，PV-01/PV-14），完整 RESULT 断言未取到 | **OP 达成**（B54，⚠️ SDO 段阻塞） |
 | `igh-cia402-csv-op-probe.sh` | IgH ecrt 11B CSV：OP + 速度模式位置累加/速度显示 | **EXIT=0** |
 | `uds-multi-slave-probe.sh` | `--slaves 8` 多从站链：广播 WKC=8、逐站地址分配、配置地址寻址 | **EXIT=0** |
 | `sdo-write-probe.sh` | `POST /sdo` 受控写：静态/未开开关 405；`--serve-write` 写 0x6040=0x000F 成功、`/sdo-audit` 有记录、`ecsim_sdo_writes_total=1`；0x1018→403、未知→404、长度错→400 | **EXIT=0** |

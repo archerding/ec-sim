@@ -1049,6 +1049,8 @@ fn main() -> std::process::ExitCode {
     let mut fault: Option<u16> = None;
     // 同一进程模拟的 ESC 数量（B12 多从站链；默认 1）。
     let mut slave_count: usize = 1;
+    // 行为插件实例配额上限（B51 后续：--slaves N 时每站一个实例，默认 = N）。
+    let mut behavior_max_instances: Option<usize> = None;
     // UDS 线缆层忙轮询模式（B17 延迟基准用；默认阻塞等待，省 CPU）。
     let mut poll = false;
     let mut dump_sii = false;
@@ -1116,6 +1118,21 @@ fn main() -> std::process::ExitCode {
                     return std::process::ExitCode::from(2);
                 }
             },
+            "--behavior-max-instances" => match args.next() {
+                Some(text) => match text.parse::<usize>() {
+                    Ok(max) if (1..=64).contains(&max) => behavior_max_instances = Some(max),
+                    _ => {
+                        eprintln!(
+                            "ec-sim-esc: --behavior-max-instances 需要 1..=64 的整数（行为插件实例配额上限）"
+                        );
+                        return std::process::ExitCode::from(2);
+                    }
+                },
+                None => {
+                    eprintln!("ec-sim-esc: --behavior-max-instances 需要数量（如 2）");
+                    return std::process::ExitCode::from(2);
+                }
+            },
             "--fault" => match args.next() {
                 Some(text) => {
                     let digits = text.trim_start_matches("0x").trim_start_matches("0X");
@@ -1172,7 +1189,8 @@ fn main() -> std::process::ExitCode {
                 println!(
                     "用法: ec-sim-esc [--tap <name> | --uds <path>] [--verbose] [--esm-lax] \
                      [--manifest <plugin.yaml>] [--esi <file.esi.xml>] [--behavior cia402]
-                     [--fault <hex>（需 --behavior cia402）] [--slaves <1..64>] [--poll]
+                     [--fault <hex>（需 --behavior cia402）] [--slaves <1..64>]
+                     [--behavior-max-instances <1..64>（manifest behavior: 的实例配额上限，默认 = --slaves）] [--poll]
                      调试：--dump-sii [--manifest <yaml>] [--esi <xml>] 打印 SII 镜像 hex/类别链后退出；
                      --dump-dict [--json] [--manifest <yaml>] [--esi <xml>] 打印运行时对象字典后退出（--json 输出 dict-v1）；
                      --dump-state [--manifest <yaml>] [--esi <xml>] 打印只读状态 JSON（供 WebUI/工具消费）；
@@ -1325,6 +1343,7 @@ fn main() -> std::process::ExitCode {
             behavior,
             fault,
             slave_count,
+            behavior_max_instances,
             poll,
             live_serve,
             web_root.clone(),
@@ -1341,6 +1360,7 @@ fn main() -> std::process::ExitCode {
             behavior,
             fault,
             slave_count,
+            behavior_max_instances,
             live_serve,
             web_root.clone(),
             serve_write,
@@ -1356,6 +1376,7 @@ fn main() -> std::process::ExitCode {
             behavior,
             fault,
             slave_count,
+            behavior_max_instances,
             live_serve,
             web_root.clone(),
             serve_write,
@@ -1480,6 +1501,47 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// 按 `--slaves` 数量启动行为插件实例集合（B51 后续：多实例接线 + 共享实例配额）。
+///
+/// - 无 `behavior:` 声明 → `Ok(None)`（不启动任何实例）；
+/// - 有声明 → 每站一个实例（互不共享 arena/worker），共享一个 [`BehaviorQuota`]；
+/// - `max` 由 `--behavior-max-instances` 给出，缺省上限 = 从站数；
+///   上限不足时返回错误（由调用方转成非 0 退出码），不会"静默少启动"。
+#[cfg(all(target_os = "linux", feature = "wasm-runtime"))]
+fn spawn_behavior_bridges(
+    manifest: Option<&plugin_host::manifest::PluginManifest>,
+    behavior_code: Option<&std::path::Path>,
+    slave_count: usize,
+    behavior_max_instances: Option<usize>,
+) -> Result<Option<esc_node::behavior::BehaviorBridges>, String> {
+    let (Some(manifest), Some(code)) = (manifest, behavior_code) else {
+        return Ok(None);
+    };
+    let quota = behavior_max_instances.map(plugin_host::behavior::BehaviorQuota::new);
+    let bridges = esc_node::behavior::BehaviorBridges::from_manifest_with_quota(
+        manifest,
+        code,
+        slave_count,
+        quota,
+    )?
+    .ok_or_else(|| "manifest 缺少 behavior 段".to_string())?;
+    if let Some(config) = esc_node::behavior::BehaviorBridgeConfig::from_manifest(manifest) {
+        println!(
+            "BEHAVIOR wasm instances={} quota={}/{} sm2=0x{:04X}/{}B sm3=0x{:04X}/{}B tick_hz={} timeout={}ms",
+            bridges.instances(),
+            bridges.quota().active(),
+            bridges.quota().max(),
+            config.sm2_address,
+            config.sm2_len,
+            config.sm3_address,
+            config.sm3_len,
+            config.tick_hz,
+            config.tick_timeout_ms
+        );
+    }
+    Ok(Some(bridges))
+}
+
 #[cfg(target_os = "linux")]
 #[allow(clippy::too_many_arguments)]
 fn run_uds(
@@ -1492,6 +1554,7 @@ fn run_uds(
     behavior: Option<String>,
     fault: Option<u16>,
     slave_count: usize,
+    behavior_max_instances: Option<usize>,
     poll: bool,
     serve: Option<String>,
     web_root: Option<String>,
@@ -1531,32 +1594,21 @@ fn run_uds(
         }
     };
     let responders = std::sync::Arc::new(std::sync::Mutex::new(responders));
-    // B44 子项 3：WASM 行为桥（插件在独立 ticker 线程，帧循环只 publish/poll）。
+    // B44 子项 3 + B51 后续：WASM 行为桥（插件在独立 ticker 线程，帧循环只 publish/poll）。
+    // `--slaves N` 时每站一个实例，共享一个实例配额（上限默认 = N；--behavior-max-instances 可收紧）。
+    let _ = behavior_max_instances;
     #[cfg(feature = "wasm-runtime")]
-    let mut behavior_bridge = match (&manifest, behavior_code.as_deref()) {
-        (Some(manifest), Some(code)) => {
-            match esc_node::behavior::BehaviorBridge::from_manifest(manifest, code) {
-                Ok(Some(bridge)) => {
-                    let config = bridge.config();
-                    println!(
-                        "BEHAVIOR wasm sm2=0x{:04X}/{}B sm3=0x{:04X}/{}B tick_hz={} timeout={}ms",
-                        config.sm2_address,
-                        config.sm2_len,
-                        config.sm3_address,
-                        config.sm3_len,
-                        config.tick_hz,
-                        config.tick_timeout_ms
-                    );
-                    Some(bridge)
-                }
-                Ok(None) => None,
-                Err(error) => {
-                    eprintln!("ec-sim-esc: 启动行为插件失败：{error}");
-                    return std::process::ExitCode::from(7);
-                }
-            }
+    let mut behavior_bridges = match spawn_behavior_bridges(
+        manifest.as_ref(),
+        behavior_code.as_deref(),
+        slave_count,
+        behavior_max_instances,
+    ) {
+        Ok(bridges) => bridges,
+        Err(error) => {
+            eprintln!("ec-sim-esc: 启动行为插件失败：{error}");
+            return std::process::ExitCode::from(7);
         }
-        _ => None,
     };
     #[cfg(not(feature = "wasm-runtime"))]
     if behavior_code.is_some() {
@@ -1613,10 +1665,8 @@ fn run_uds(
             }
             let reply = esc_node::handle_frame_chain(&mut guard, &buf[..len], DEFAULT_SIM_MAC);
             #[cfg(feature = "wasm-runtime")]
-            if let Some(bridge) = behavior_bridge.as_mut() {
-                if let Some(first) = guard.first_mut() {
-                    bridge.on_frame(first);
-                }
+            if let Some(bridges) = behavior_bridges.as_mut() {
+                bridges.on_frame(guard.as_mut_slice());
             }
             reply
         };
@@ -1654,6 +1704,7 @@ fn run(
     behavior: Option<String>,
     fault: Option<u16>,
     slave_count: usize,
+    behavior_max_instances: Option<usize>,
     serve: Option<String>,
     web_root: Option<String>,
     serve_write: bool,
@@ -1693,32 +1744,21 @@ fn run(
         }
     };
     let responders = std::sync::Arc::new(std::sync::Mutex::new(responders));
-    // B44 子项 3：WASM 行为桥（插件在独立 ticker 线程，帧循环只 publish/poll）。
+    // B44 子项 3 + B51 后续：WASM 行为桥（插件在独立 ticker 线程，帧循环只 publish/poll）。
+    // `--slaves N` 时每站一个实例，共享一个实例配额（上限默认 = N；--behavior-max-instances 可收紧）。
+    let _ = behavior_max_instances;
     #[cfg(feature = "wasm-runtime")]
-    let mut behavior_bridge = match (&manifest, behavior_code.as_deref()) {
-        (Some(manifest), Some(code)) => {
-            match esc_node::behavior::BehaviorBridge::from_manifest(manifest, code) {
-                Ok(Some(bridge)) => {
-                    let config = bridge.config();
-                    println!(
-                        "BEHAVIOR wasm sm2=0x{:04X}/{}B sm3=0x{:04X}/{}B tick_hz={} timeout={}ms",
-                        config.sm2_address,
-                        config.sm2_len,
-                        config.sm3_address,
-                        config.sm3_len,
-                        config.tick_hz,
-                        config.tick_timeout_ms
-                    );
-                    Some(bridge)
-                }
-                Ok(None) => None,
-                Err(error) => {
-                    eprintln!("ec-sim-esc: 启动行为插件失败：{error}");
-                    return std::process::ExitCode::from(7);
-                }
-            }
+    let mut behavior_bridges = match spawn_behavior_bridges(
+        manifest.as_ref(),
+        behavior_code.as_deref(),
+        slave_count,
+        behavior_max_instances,
+    ) {
+        Ok(bridges) => bridges,
+        Err(error) => {
+            eprintln!("ec-sim-esc: 启动行为插件失败：{error}");
+            return std::process::ExitCode::from(7);
         }
-        _ => None,
     };
     #[cfg(not(feature = "wasm-runtime"))]
     if behavior_code.is_some() {
@@ -1759,10 +1799,8 @@ fn run(
             }
             let reply = esc_node::handle_frame_chain(&mut guard, &buf[..len], mac);
             #[cfg(feature = "wasm-runtime")]
-            if let Some(bridge) = behavior_bridge.as_mut() {
-                if let Some(first) = guard.first_mut() {
-                    bridge.on_frame(first);
-                }
+            if let Some(bridges) = behavior_bridges.as_mut() {
+                bridges.on_frame(guard.as_mut_slice());
             }
             reply
         };
@@ -1793,6 +1831,7 @@ fn run(
     _behavior: Option<String>,
     _fault: Option<u16>,
     _slave_count: usize,
+    _behavior_max_instances: Option<usize>,
     _serve: Option<String>,
     _web_root: Option<String>,
     _serve_write: bool,
@@ -1814,6 +1853,7 @@ fn run_uds(
     _behavior: Option<String>,
     _fault: Option<u16>,
     _slave_count: usize,
+    _behavior_max_instances: Option<usize>,
     _poll: bool,
     _serve: Option<String>,
     _web_root: Option<String>,

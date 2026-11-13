@@ -9,7 +9,7 @@
 #   - 以 root 运行
 #
 # 断言：
-#   1. `ethercat slaves`：`OP` + 身份 `0x00000ec5:0x0000e5e0`；
+#   1. `ethercat slaves`：`OP` + 身份 `0x00000ec5:<EXPECT_PID>`（默认 0000e5e0）；
 #   2. 应用 `RESULT al_states=0x08`；
 #   3. `STATUS sw=0x... modes_display=8 pos=1000`，且状态字含 Operation enabled(bit2) 与
 #      Target reached(bit10) —— 即 7 字节 TxPDO 由 CiA 402 行为驱动；
@@ -21,6 +21,8 @@ set -euo pipefail
 TAP="${TAP:-escsim0}"
 MAC="${MAC:-02:ec:51:4d:00:01}"
 MANIFEST="${MANIFEST:-plugins/generic-cia402-servo/plugin.yaml}"
+# 画像身份（16 进制小写，如 0000e5e3）；cnc-csp-servo 等其它 CiA402 画像用环境变量覆盖。
+EXPECT_PID="${EXPECT_PID:-0000e5e0}"
 BIN="${BIN:-target/release/ec-sim-esc}"
 IGH_INCLUDE="${IGH_INCLUDE:-/opt/ecsim/igh/include}"
 IGH_LIB="${IGH_LIB:-/opt/ecsim/igh/lib/libethercat.a}"
@@ -64,7 +66,7 @@ sleep 2
 
 echo "=== IgH ethercat slaves ==="
 "$IGH_BIN" slaves
-"$IGH_BIN" slaves | grep -q "0x00000ec5:0x0000e5e0" || fail "IgH 未看到 CiA 402 画像身份"
+"$IGH_BIN" slaves | grep -q "0x00000ec5:0x$EXPECT_PID" || fail "IgH 未看到 CiA 402 画像身份（期望 PID $EXPECT_PID）"
 
 echo "=== ecrt 应用（写控制字序列 / 读状态字）==="
 timeout 60 "$IGH_APP_BIN" 2 >"$APP_OUT" 2>&1 &

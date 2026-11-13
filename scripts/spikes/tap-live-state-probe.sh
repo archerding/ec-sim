@@ -88,21 +88,22 @@ process = subprocess.Popen(
 try:
     deadline = time.time() + 8.0
     op = False
+    al_status = 0
     while time.time() < deadline:
         _, state = get("/state")
-        status = int(state["live"]["al_status"], 16)
-        if status & 0x0F == 0x08:
+        al_status = int(state["live"]["al_status"], 16)
+        if al_status & 0x0F == 0x08:
             op = True
             break
         time.sleep(0.1)
     assert op, f"TAP 下未到 OP：{state['live']}"
     assert state["live"]["stats"]["frames_in"] > 0, state["live"]["stats"]
-    status, pdo = get("/pdo")
-    assert status == 200 and pdo["schema"] == "ec-sim/pdo-v1"
+    http_status, pdo = get("/pdo")
+    assert http_status == 200 and pdo["schema"] == "ec-sim/pdo-v1"
     assert pdo["sm2"]["address"].startswith("0x") and pdo["sm3"]["address"].startswith("0x")
     print(
-        "OK: TAP 实时 /state AL=0x%02x（OP）、frames_in=%d；/pdo schema=%s"
-        % (status, state["live"]["stats"]["frames_in"], pdo["schema"])
+        "OK: TAP 实时 /state AL=0x%02x（OP）、frames_in=%d；/pdo HTTP %d schema=%s"
+        % (al_status, state["live"]["stats"]["frames_in"], http_status, pdo["schema"])
     )
 finally:
     process.terminate()

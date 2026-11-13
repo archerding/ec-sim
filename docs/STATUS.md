@@ -1,4 +1,4 @@
-# EC-Sim 当前状态快照（2026-11-13 09:12）
+# EC-Sim 当前状态快照（2026-11-13 团队班 13:00）
 
 > 本页是**项目状态索引**，不是规范或认证结论。所有"已验证"都指仓库内脚本/单测的
 > 可复现结果，**不构成**一致性测试或认证（见 `AGENTS.md` §3/§4）。
@@ -8,7 +8,7 @@
 核心 ESC（寄存器/SM/FMMU/AL/EEPROM-SII/邮箱/watchdog）+ CoE（SDO 加速/分段/SDO Info/
 Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/CST，Tier0 简化）
 + 声明式设备画像已实现；**未修改的 SOEM 2.0.0 与 IgH 1.6.13** 可发现从站并进入 OP
-（IgH 无应用时到 PREOP）。测试基线 **258 passed**（另 `wasm-runtime` feature 下 plugin-host **56 单测 + 5 集成** / esc-node **75 单测 + 1 集成**：WASM 宿主 + arena + worker 线程 + 行为桥 + 仓库内真实行为画像 + B51 重启/配额）。**M3 = 退出候选**：Linux 验证机整轮 `run-all-probes.sh` **20 PASS / 0 FAIL / 0 SKIP**（含 `mcp-tools`/`mcp-stdio`/TAP）、本机 258 passed、许可核对完成、ADR 0002 → Accepted，见 [M3 退出清单](plan/M3-exit-checklist.md)（W6 真人浏览器点击验收待补）。
+（IgH 无应用时到 PREOP）。测试基线 **259 passed**（另 `wasm-runtime` feature 下 plugin-host **56 单测 + 5 集成** / esc-node **77 单测 + 1 集成**：WASM 宿主 + arena + worker 线程 + 行为桥 + 仓库内真实行为画像 + B51 重启/配额 + B54 多实例接线）。**M3 = 退出候选**：Linux 验证机整轮 `run-all-probes.sh` **20 PASS / 0 FAIL / 1 SKIP**（`tap-live` 单独补跑 PASS）、本机 259 passed、许可核对完成、ADR 0002 → Accepted，见 [M3 退出清单](plan/M3-exit-checklist.md)（W6 真人浏览器点击验收待补）。**B54（2026-11-13 团队班）**：新增 `plugins/cnc-csp-servo/`（与 lcec `basic_cia402` 的 PP/CSP PDO 布局一致）+ 多实例行为插件接线 + TAP 多 CiA402 从站探针，作为 CNC 虚拟闭环 V1/V2 的 EC-Sim 侧对接包（见 [CNC-V1-integration](plan/CNC-V1-integration.md)）。
 
 ## 代码与测试
 
@@ -16,7 +16,7 @@ Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/
 | --- | --- | --- |
 | `esc-core` | 寄存器、SM/FMMU、AL 状态机、EEPROM-SII 生成、邮箱解析、watchdog | 86 |
 | `esc-node` | 从站应答器、PDI 内存、邮箱处理、CiA 402 行为、`ec-sim-esc` 二进制；WASM 行为桥（可选 feature）；链处理/1 kHz 基准示例（B46） | 73（另 `wasm-runtime` 下 73 单测 + 1 行为画像集成） |
-| `plugin-host` | plugin.yaml 解析/校验、SII/字典/ESI 生成；PDO arena 同步（W2）；WASM 宿主 + 行为运行时（可选 feature） | 33 + 4 集成（另 `wasm-runtime` 下 53 + 5 集成） |
+| `plugin-host` | plugin.yaml 解析/校验、SII/字典/ESI 生成；PDO arena 同步（W2）；WASM 宿主 + 行为运行时（可选 feature） | 33 + 5 集成（另 `wasm-runtime` 下 53 + 5 集成） |
 | `wire` | EtherCAT 帧/datagram 编解码 + WKC 语义 | 23 |
 | `control-plane` | 只读快照 API：state-v1 / dict-v1 JSON + 路由表（`/state`、`/dict`） | 20 |
 | `mcp-server` | MCP/Agent 桥接（B47）：JSON-RPC 2.0 stdio + 9 个只读工具（只发 GET），零第三方依赖；B50 增调用审计 JSON Lines | 18 |
@@ -41,8 +41,12 @@ Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/
   `--fault` 故障注入与复位；`0x6502` 按各画像布局声明（7B=0x01C1、11B=0x03CD、
   5B=0x0410、SV660N=0x03AD 公开实测）。详见 [cia402-modes-matrix.md](plugins/cia402-modes-matrix.md)。
 - **设备画像**：`generic-io`、`beckhoff-el2008`、`generic-cia402-servo`、
-  `generic-cia402-csv-servo`、`generic-cia402-cst-servo`（均自有 VID/PID + SIMULATED），
+  `generic-cia402-csv-servo`、`generic-cia402-cst-servo`、`cnc-csp-servo`（CNC 虚拟闭环 V2 CSP 布局：
+  Rx 7B + Tx 11B 含 `0x606C`；均自有 VID/PID + SIMULATED），
   `inovance-sv660n` 兼容画像（默认可变 PDO 已按公开手册核对：RPDO 8B / TPDO 22B + DC）。
+- **多实例行为插件（B51 后续 / B54）**：`esc-node::behavior::BehaviorBridges` 按 `--slaves N` 为每个从站
+  各启动一个 WASM 行为实例（独立 arena/worker/ticker），共享一个 `BehaviorQuota`（默认上限 = N，
+  `--behavior-max-instances` 可收紧，超限显式失败）；帧循环仍只 publish/poll，不把插件耗时带进帧处理。
 - **插件宿主（M3-W1 spike）**：`plugin-host` 的 `wasm-runtime` feature（**默认关闭**，默认构建仍零第三方
   依赖）提供 wasmi 0.31 最小宿主——`env.read_pdo`/`env.write_pdo`/`env.log` + `tick` 导出、PDO arena
   快照、日志上限 64KiB；WAT 夹具 + `wasm-plugin-probe.sh`；release 实测实例化 605µs / tick 179.5ns。
@@ -123,7 +127,14 @@ cargo test --workspace
    映射为诊断技能（诊断步骤、错误码、只读/快照边界、归档摘要模板）；新增
    `scripts/spikes/agent-skills-check.py` 并登记进 `run-all-probes.sh`（`agent-skills`，any）——
    校验 frontmatter/只读边界/工具目录一致/示例 JSON-RPC 合法性/无 token。本机 **EXIT=0**。
-6. **B53（建议）DC 仿真 Tier1**：寄存器 + SYNC0/tick（帧驱动）；实现后在测试画像上验证再声明 SII DC。
+6. ~~**B54（团队班）CNC 虚拟闭环对接包**~~ ✅ 2026-11-13 完成——`plugins/cnc-csp-servo/`（Rx 7B `0x6040/0x6060/0x607A`，
+   Tx 11B `0x6041/0x6061/0x6064/0x606C`，`0x6502=0x01C1`，与 lcec `basic_cia402` PP/CSP 期望一致）；
+   `esc-node` 多实例行为插件接线（`BehaviorBridges` 每站一实例 + 共享 `BehaviorQuota`，
+   `--behavior-max-instances` 收紧）；`scripts/spikes/tap-cia402-multi-slave-probe.sh`（TAP 2 站 **EXIT=0**）；
+   对接文档 [plan/CNC-V1-integration.md](plan/CNC-V1-integration.md)；release 二进制交付给 CNC 侧
+   （`.local/artifacts/`，sha256 `878712fe…88b8ee`，⚠️ 不入库）。⚠️ 验证机上 csp 画像的 IgH ecrt 夹具在
+   `ecrt_master_sdo_download` 内核 D 状态卡死（PV-01/PV-14 类环境问题）→ 该项仅以 SOEM/TAP 与本侧 TAP 探针为证据。
+7. **B53（建议）DC 仿真 Tier1**：寄存器 + SYNC0/tick（帧驱动）；实现后在测试画像上验证再声明 SII DC。
    **不承诺**真实同步精度/抖动（需真机/HIL）。
 7. 验证机补跑 `wasm-plugin-probe.sh` / `wasm-behavior-probe.sh` 与 Linux CLI UDS/TAP 行为插件端到端（需 crates.io，或先 vendor wasmi/wat）。
 8. CA 部分写/子索引顺序语义完善；fuzz 升级。

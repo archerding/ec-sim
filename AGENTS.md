@@ -626,6 +626,20 @@ user.email = deepseek-harness@users.noreply.github.com
   不引入写工具、不宣称认证。
 - [ ] **B53 DC 仿真 Tier1（建议，backlog 顶部）**：DC 寄存器 + SYNC0/tick（帧驱动）实现与画像验证；
   **不承诺**真实同步精度/抖动（需真机/HIL），SII DC 声明需在验证后复核。
+- [x] ~~**B54 CNC 虚拟闭环对接包：CiA402 布局 ↔ lcec + 多实例行为插件 + TAP 多从站探针**~~ ✅ **2026-11-13 团队班完成**：
+  （任务板 `task-8`）① `esc-node` 多实例接线——新增 `BehaviorBridges`（每从站一个行为插件实例，共享
+  `BehaviorQuota`；`--behavior-max-instances` 收紧上限，超限显式失败），补 2 条 feature 单测（各自写回
+  自己的 SM3 / 配额满拒绝）+ 仓库画像守卫；② 新增 `plugins/cnc-csp-servo/`（Rx 7B `0x6040/0x6060/0x607A` +
+  Tx 11B `0x6041/0x6061/0x6064/0x606C`，`0x6502=0x01C1`）——与 lcec `basic_cia402` 的 CSP 期望一致
+  （`0x606C` 为 `enableCSP` 隐式要求），守卫测试 `cnc_csp_servo_layout_matches_lcec_csp_expectations`；
+  ③ 对接说明 [CNC-V1-integration](docs/plan/CNC-V1-integration.md)（布局表/启动 runbook/排查表/二进制交付/边界）；
+  ④ 新增 `scripts/spikes/tap-cia402-multi-slave-probe.sh`（TAP N 个 CiA402 从站：slaveinfo N 站 + WKC 3N +
+  `mapped 7N O+11N I` + `/topology` 全 OP + `/pdo` 具名解码）并登记 `run-all-probes.sh`（`tap-cia402`，root）；
+  ⑤ EC-Sim 验证机实测：`igh-cia402-op-probe.sh` 对 `generic-cia402-servo`（V1 PP）与 `cnc-csp-servo`
+  （11B Tx）均 **EXIT=0**（`ethercat slaves` OP + `al_states=0x08` + `sw=0x0637 modes_display=8 pos=1000`）；
+  ⚠️ `tap-cia402` 整轮因验证机被 B-1 验收占用未跑（登记为下一轮证据）。
+  二进制交付：release `ec-sim-esc`（openEuler 24.03 SP4 / glibc 2.38 / rustc 1.99.1，
+  sha256 `878712fe…88b8ee`）放 `.local/artifacts/`（gitignored，不入库）。不宣称一致/认证。
 
 ## 7. 目录约定
 

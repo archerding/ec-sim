@@ -1,5 +1,64 @@
 ---
 
+## 2026-11-13 12:37–13:10 团队班（DSH Agent Teams）— **B54：CNC 虚拟闭环对接包（task-8）**
+
+> 任务来源：团队任务板 `task-8`「EC-Sim 实现：M3 收尾 + 与 CNC 闭环对接准备」（Owner `sim-impl`）。
+> 与旧调度 worker 并发：动手前 `git status` 干净（仅 `.scratch/`），期间 worker 推送了 B52（`7d665da`），
+> 本班改动未与其冲突（不同文件/区段）。
+
+**做了什么**
+- **多实例行为插件接线（B51 后续）**：`esc-node::behavior` 新增 `BehaviorBridges`——按 `--slaves N` 为
+  每个从站各起一个 WASM 行为实例（独立 arena/worker/ticker），共享一个 `BehaviorQuota`（默认上限 = N；
+  新增 CLI `--behavior-max-instances <1..64>` 可收紧，超限显式失败）；`BehaviorBridge` 增加
+  `spawn_*_with_quota` / `from_manifest_with_quota`；UDS/TAP 帧循环改为 `bridges.on_frame(&mut guard)`。
+  单测 +2（两个实例各写自己的 SM3、互不串扰；配额满时第 3 个实例被拒绝）+ 真实画像 3 实例/配额超限守卫。
+- **CNC 侧 PDO 布局对齐（与 `cnc-impl` 直接对齐）**：lcec `basic_cia402` 核对结论——V1(PP) 与
+  `generic-cia402-servo`（7B/7B）一致；V2(CSP) 的 `enableCSP` **隐式要求 TxPDO 含 `0x606C`** →
+  新增 `plugins/cnc-csp-servo/`（Rx 7B = `0x6040/0x6060/0x607A`，Tx 11B = `0x6041/0x6061/0x6064/0x606C`，
+  `0x6502=0x01C1`，无 DC，自有 VID/PID `0x0EC5/0xE5E3` + facts/README）；新增守卫测试
+  `cnc_csp_servo_layout_matches_lcec_csp_expectations`（条目顺序/位长/SM 长度/映射对象存在性）。
+- **对接说明**：新增 [docs/plan/CNC-V1-integration.md](docs/plan/CNC-V1-integration.md)——lcec 期望表、
+  逐字节 PDO 布局（V1/V2）、EC-Sim 启动 runbook（TAP→sim→IgH，`--esm-lax` 不需要、`--behavior cia402` 建议）、
+  排查表（AL 码/身份/0x606C）、二进制交付字段、边界（不宣称一致/认证）。
+- **TAP 多从站 CiA402 探针**：新增 `scripts/spikes/tap-cia402-multi-slave-probe.sh`（root；N 个 CSP 从站：
+  slaveinfo N 站 + Calculated workcounter 3N + 每站 56/88bits；simple_ng `mapped 7N O+11N I bytes` +
+  全站 operational；`--serve` `/topology` N 站全 OP + `/pdo` decoded 含 6040/6041/6064/606C），
+  登记进 `run-all-probes.sh`（`tap-cia402`，root；注册表 **21 → 22 项**，总数由脚本自算）。
+- **顺带修复（sim-expert 报 P2）**：`tap-live-state-probe.sh` 成功日志把 `/pdo` 的 HTTP 200 当 AL 打印
+  （变量覆盖），断言不变、仅日志误导——已改成独立 `al_status`/`http_status`。
+- **交付物**：EC-Sim VM 上构建 release `ec-sim-esc`（openEuler 24.03 SP4 / glibc 2.38 / rustc 1.99.1，
+  `cargo build --release -p esc-node` 默认 feature、零第三方依赖），sha256
+  `878712fe8e8034d79a55e6a66937be14e4de02baba195ea4c40499348879b8ee`（1,053,952 B），置于
+  `.local/artifacts/`（gitignored，不入库）+ `BUILD-INFO.txt`；`cnc-impl` 已收到路径/哈希/CLI 形态。
+
+**验证结果**
+- `cargo fmt --all -- --check` **0**；`cargo clippy --workspace --all-targets -- -D warnings` **0**；
+  `cargo test --workspace` **259 passed / 0 failed**（+1 新守卫）；`cargo test -p esc-node --features wasm-runtime`
+  **77 单测 + 1 集成** PASS（+2 多实例/配额）；`cargo clippy -p esc-node --features wasm-runtime -D warnings` 0。
+- EC-Sim 验证机（自有，root）：
+  - `igh-cia402-op-probe.sh`（`generic-cia402-servo`，V1 PP）**EXIT=0**：`ethercat slaves` OP +
+    `RESULT al_states=0x08 slaves_responding=1`、`STATUS sw=0x0637 modes_display=8 pos=1000`；
+  - `tap-cia402-multi-slave-probe.sh`（N=2，`cnc-csp-servo`）**EXIT=0**：slaveinfo 2 站/workcounter 6/
+    Rx 56bits+Tx 88bits、`/topology` 2/2 站 OP、`/pdo?slave=0` decoded 含 0x6040/0x6041/0x6060/0x6061/
+    0x6064/0x606C/0x607A、simple_ng `mapped 14O+22I bytes` + 全站 operational。
+  - ⚠️ `cnc-csp-servo` 的 **IgH ecrt 夹具**在 `ecrt_master_sdo_download` **内核 D 状态卡死**（`kill -9` 无效、
+    `/proc/<pid>/stack` 证实 `ec_ioctl_slave_sdo_download`），即 PV-01/PV-14 类环境问题现场；已把内核栈
+    交 sim-expert（task-22）做配对定性，并 reboot 干净 VM。V1（lcec 零 SDO）不依赖该路径。
+  - 探针注册表 `run-all-probes.sh` 增 `tap-cia402`（root）后整轮 22 项，下一轮验证机整轮由 sim-expert/
+    task-18 聚合脚本覆盖（本班未再抢整轮）。
+
+**卡点**
+- ⚠️ `cnc-csp-servo` 的 IgH ecrt 路径未取到完整 RESULT（SDO 段卡死，环境/PV 类）；V1 不依赖。
+- ⚠️ `--slaves N` 仍是**同一画像克隆 N 份** → V2「3 伺服 + IO 混合拓扑」需逐站画像列表（未做，登记后续）。
+- ⚠️ EC-Sim VM 12:57 reboot 后本班未再登录（让给 sim-expert/sim-ux 的窗口）。
+
+**下次开工第一件事**
+- 优先 **task-26**（二进制交付到 CNC VM：共享盘已就绪，等 `cnc-impl`/Lead 确认由谁 scp）→ 再 **task-17**
+  （`/sdo`、`/dict` 非法/越界 slave 静默回退 0 → 统一 404 JSON，静态/实时/UDS/TAP 全路径 + 0-based 语义
+  + 探针矩阵 `invalid-slave-probe.sh`）→ task-12（M4 收尾）→ task-18（B-2 聚合脚本）。
+
+---
+
 ## 2026-11-13 12:37 班（低峰）— **B52：M4 Agent Skills 只读技能文档与示例 + 静态校验**
 
 > 调度上下文计划重点（B2b / B8 / B4）均早已完成；按 `AGENTS.md` §6 取 backlog 顶部 **B52**
