@@ -305,6 +305,7 @@
     "复制拓扑摘要": "Copy topology summary", "复制总览摘要": "Copy overview summary",
     "对象 31 个 / 条目": "objects 31 / entries",
     "支持矩阵": "Support matrix",
+    "条目": "entries", "对象": "objects", "个": "items", "行": " rows",
     "IgH 主站（ethercat）": "IgH master (ethercat)", "SOEM（夹具）": "SOEM (fixture)",
     "其它主站/系统": "Other masters/systems", "主站": "master", "夹具": "fixture",
   });
@@ -312,7 +313,9 @@
     [/（(\d+(?:\.\d+)?) (ms|s) 前）/g, "($1 $2 ago)"],
     [/(\d+) 个/g, "$1 items"], [/(\d+) 条/g, "$1 entries"], [/(\d+) 位/g, "$1-bit"],
     [/（AL 派生：[^）]*）/g, " (AL derived: state & 0x0F, bit4=error, bit5=ID request)"],
-    [/（/g, "("], [/）/g, ")"], [/；/g, "; "],
+    [/对象 (\d+) 个 \/ 条目 (\d+) 个（值按小端存储，显示为 0x 大端十六进制）。/g, "objects $1 / entries $2 (stored LE, shown as 0x big-endian)."],
+    [/当前筛选命中 (\d+) 行。/g, "Current filter hits $1 rows."],
+    [/站地址 (0x[0-9a-fA-F]+) \/ AL (0x[0-9a-fA-F]+)；hex 为小端原始字节，右侧为按 u16 小端解码。/g, "Station $1 / AL $2; hex is raw LE; right column decodes u16 LE."],
   ];
   const rules = [
     [/(\d+(?:\.\d+)?) ms 前/g, "$1 ms ago"], [/(\d+(?:\.\d+)?) s 前/g, "$1 s ago"],
@@ -328,6 +331,7 @@
     for (const key of Object.keys(enExtras).sort((a, b) => b.length - a.length)) {
       if (text.includes(key)) text = text.split(key).join(enExtras[key]);
     }
+    text = text.replace(/（/g, "(").replace(/）/g, ")").replace(/；/g, "; ");
     return text;
   }
   function localizeDom(root) {
