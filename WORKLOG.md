@@ -5554,3 +5554,15 @@
 - 采集发现并修复 2 处 DOD-06 缺口：导航链接宽度 <44px、checkbox 24px → 统一 ≥44px；复测四视口
   **<44px = 0、横向溢出 = 0**；静态 FCP 32–112 ms（8 站实时性能 ⚠️ 未测）。
 - 未占用 EC-Sim VM、未动 `vm-ecsim.lock`、未 reboot；headless 结果不替代 sim-ux 人工走查。
+
+### H2 补充（同日）：DOD-09 i18n 三批完成（待 sim-ux en 走查）
+
+- batch 1 `b2b17a4`：`web/i18n.js`（zh/en 词典 + t()/text() + applyStatic/setLang，`?lang=en` 覆盖、
+  localStorage、`<html lang>` 切换）+ 静态外壳 data-i18n（保留中文 fallback）+ `#lang-toggle`（44px/aria-pressed）
+  + `web-i18n-check.py`。
+- batch 2a `7b00a15`：连接状态 8 态徽标、E-10/STALE/PAUSED/RECONNECTING banner、静态模式说明、章节标题动态化。
+- batch 2b `35e8f69`：页面顶部说明/context bar/SDO 面板/审计区/表头与 kv/按钮/消息/证据/关于/L2 confirm 全量迁移；
+  zh/en 词典 77 键；`web-i18n-check.py`（键集/空翻译/视觉宽度/未使用键/lang 切换）EXIT=0；zh+en headless
+  4 视口无横向溢出、<44px=0；en 截图入库 `docs/verification/assets/hmi-h2/en-*`。
+- 待 sim-ux en 模式走查（残留 CJK 扫描/切换持久化/契约不随语言变/DOD-10/11 复跑）后报 task-44 最终状态；
+  DOD-07/08 仍"部分"（8 站实时未测），发布冻结、不宣称认证。

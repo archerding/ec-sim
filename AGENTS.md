@@ -744,3 +744,9 @@ tests-gpl/      只跑 GPL 主站的夹具（独立目录、独立许可、不�
   - ✅ **DOD-07/08 参考证据（headless）**：`scripts/spikes/hmi-browser-probe.mjs`（Edge headless + CDP）+
     `docs/verification/assets/hmi-h2/`（4 视口截图/metrics）：渲染 7 section、可见交互 43、**<44px=0**、
     横向溢出=0、静态 FCP 32–112 ms；并修 nav 链接/checkbox 的 44px 缺口。**8 站实时性能与 7 视图人工确认仍 ⚠️ 未测**。
+
+- [ ] **B63 DOD-09 i18n（task-44，实现完成待走查）**：`web/i18n.js`（zh/en 77 键、`t()`/`text()`、
+  `applyStatic`/`setLang`、`?lang=en` 覆盖、localStorage、`<html lang>` 切换）+ `#lang-toggle`（44px/aria-pressed）；
+  静态外壳 `data-i18n`（保留中文 fallback，DOD-11/DOD-10 不破）；动态文案（徽标/banner/说明/章节/表头/kv/按钮/
+  消息/证据/关于/L2 confirm）全量迁移；`scripts/spikes/web-i18n-check.py` 契约检查。证据
+  `docs/verification/2026-11-13-hmi-h2-web.md` §8。⚠️ 待 sim-ux en 模式走查确认；DOD-07/08 仍"部分"。
