@@ -29,7 +29,7 @@
 | W5 | 可选 token | `--serve-token-env VAR`（`Authorization: Bearer`）；空 = 现状 | 探针：带/不带 token 的 200/401 行为 | ✅ 已完成（B41：`serve-token-probe.sh`；401/403/200、静态资源豁免、写路径同保护） |
 | W6 | Web SDO 面板 | 只读浏览；写入需二次确认且仅当写开关启用 | `node --check` + 人工验收（⚠️ 无 DOM 测试） | ✅ 实现完成（B42：`web-sdo-panel-check.py` 静态资源回归 + `serve-web-probe.sh` 同源资源断言；`GET /sdo` 浏览 + `--serve-write` 勾选/confirm 二次确认写入）；⚠️ 浏览器人工点击验收待补 |
 | W7 | 32 从站 @1 kHz 调研 | 瓶颈记录与可行路径（SOEM 线程/内核旁路） | 文档结论；不承诺达成 | ✅ 已完成（B45：[M3-W7 瓶颈调研](M3-W7-32slave-1khz-bottleneck.md)；修正 `simple_ng` 口径——32 站链处理 1.7 µs、TAP 往返 167 µs，未测 RT@p99 → 建议 B46） |
-| W8 | MCP/Agent 桥接 stub | 工具清单与只读端点映射（不含写） | 设计文档；无外部依赖 | ❌ 未开始 |
+| W8 | MCP/Agent 桥接 stub | 工具清单与只读端点映射（不含写） | 设计文档；无外部依赖 | ✅ 已完成（B45：[M3-W8 设计](M3-W8-mcp-agent-bridge-stub.md) + 机器可读目录 `m3-w8-mcp-tools-v1.json`（9 个只读工具/6 个排除项）+ 静态校验 `mcp-tools-check.py`；MCP server 实现留待后续 B47） |
 
 ## 4. 风险与依赖
 
@@ -50,4 +50,6 @@
 
 1. ✅ W1 spike 已完成（B43，wasmi 0.31.2 + 最小宿主，见 [spike-6](../spikes/spike-6-wasm-host.md)）。
 2. ✅ W2 arena 同步（W1 依赖）**已完成**（B44）：双缓冲/seqlock + generation（`plugin-host::arena`，`crates/plugin-host/tests/arena_no_alloc.rs` 零分配守卫 + 2 万次发布并发压测零撕裂）；子项 2 **插件独占 worker 线程 + fuel/超时 + 内存上限**（`plugin-host::wasm_worker`：`ArenaSnapshot` 投递 + `recv_timeout` 有界等待 + `StoreLimits`；死循环由 fuel 终止、宿主永不 join 卡住的插件）；子项 3 **实例生命周期接 `esc-node` 非实时线程**（`plugin-host::behavior` + `esc_node::behavior::BehaviorBridge` + manifest `behavior:`；UDS/TAP 帧循环只 publish/poll）；子项 4 **仓库内真实行为画像 + 端到端探针**（`plugins/behavior-counter/`：自写 WAT + manifest `behavior:`，`crates/esc-node/tests/behavior_counter_plugin.rs` 经合成主站帧验证 SM3 = SM2 + 1，探针 `wasm-behavior-probe.sh`；`wasm-runtime` 下 plugin-host 53 / esc-node 73 单测 + 6 集成测试）。增量项（不在 W2 原范围）：插件 panic 重启与多实例配额、Linux CLI UDS/TAP 端到端（需 crates.io）。
-3. ✅ W7 32 从站调研已完成（B45：[M3-W7 瓶颈调研](M3-W7-32slave-1khz-bottleneck.md)）；W8 MCP/Agent 桥接 stub 仍待做（只读端点映射设计文档）。
+3. ✅ W7 32 从站调研已完成（B45：[M3-W7 瓶颈调研](M3-W7-32slave-1khz-bottleneck.md)）。
+4. ✅ W8 MCP/Agent 桥接 stub 已完成（B45：[M3-W8 设计](M3-W8-mcp-agent-bridge-stub.md) + 工具目录 + `mcp-tools-check.py`）；
+   MCP server 实现（`ec-sim-mcp` stdio + 端到端探针）列为后续项 B47，**不影响** M3 退出条件（W7/W8 以文档为退出条件）。

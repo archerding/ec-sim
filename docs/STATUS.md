@@ -1,4 +1,4 @@
-# EC-Sim 当前状态快照（2026-11-13 08:20）
+# EC-Sim 当前状态快照（2026-11-13 08:50）
 
 > 本页是**项目状态索引**，不是规范或认证结论。所有"已验证"都指仓库内脚本/单测的
 > 可复现结果，**不构成**一致性测试或认证（见 `AGENTS.md` §3/§4）。
@@ -50,7 +50,7 @@ Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/
 
 ## 控制面与 WebUI
 
-- 控制面（`--serve`）：只读 API（`/state`、`/dict`、`/pdo`、`/topology`、`/metrics`，支持 `?slave=N`）+ M3 写路径（`--serve-write` 下的 `POST /sdo`/`POST /pdo`、SDO 只读浏览、`/sdo-audit`）+ 可选静态 Bearer token（`--serve-token-env`，默认关闭）；零依赖 Web 页含 **SDO 面板**（`GET /sdo` 浏览 + 勾选/`confirm` 二次确认的受控写；⚠️ 无 DOM 自动化，静态回归 + 人工验收）：见 **[CONTROL-PLANE.md](CONTROL-PLANE.md)**、[web/README.md](../web/README.md)；M2 退出条件核对见 **[M2 退出清单](plan/M2-exit-checklist.md)**；M3 范围见 **[M3 范围](plan/M3-scope.md)** 与 **[ADR 0002](adr/0002-m3-plugin-host-and-write-paths.md)**。
+- 控制面（`--serve`）：只读 API（`/state`、`/dict`、`/pdo`、`/topology`、`/metrics`，支持 `?slave=N`）+ M3 写路径（`--serve-write` 下的 `POST /sdo`/`POST /pdo`、SDO 只读浏览、`/sdo-audit`）+ 可选静态 Bearer token（`--serve-token-env`，默认关闭）；零依赖 Web 页含 **SDO 面板**（`GET /sdo` 浏览 + 勾选/`confirm` 二次确认的受控写；⚠️ 无 DOM 自动化，静态回归 + 人工验收）：见 **[CONTROL-PLANE.md](CONTROL-PLANE.md)**、[web/README.md](../web/README.md)；M2 退出条件核对见 **[M2 退出清单](plan/M2-exit-checklist.md)**；M3 范围见 **[M3 范围](plan/M3-scope.md)** 与 **[ADR 0002](adr/0002-m3-plugin-host-and-write-paths.md)**；MCP/Agent 桥接 **stub 设计**（9 个只读工具映射，不含写）见 **[M3-W8 设计](plan/M3-W8-mcp-agent-bridge-stub.md)**（实现留待 B47）。
 
 ## 验证证据（详见 [docs/VERIFICATION.md](VERIFICATION.md)）
 
@@ -98,6 +98,7 @@ cargo test --workspace
 
 1. B44 原定范围已完成（子项 1–3 + 本班子项 4：仓库内真实行为画像 `plugins/behavior-counter/` 与 `wasm-behavior-probe.sh` 端到端）；剩余增量项：插件 panic 重启、多实例配额。
 2. 验证机补跑 `wasm-plugin-probe.sh` / `wasm-behavior-probe.sh` 与 Linux CLI UDS/TAP 行为插件端到端（需 crates.io，或先 vendor wasmi/wat）。
-3. M3-W7：32 从站 @1 kHz 瓶颈调研（文档结论，不承诺达成）。**已完成（B45）**：见 [M3-W7 文档](plan/M3-W7-32slave-1khz-bottleneck.md)——32 站链处理 1.7 µs（0.17% 预算）、TAP 往返 167 µs；修正 SOEM `simple_ng` 采样口径（fixed sleep，非控制环频率）。M3-W8：MCP/Agent 桥接 stub（只读端点映射）待做。
-4. DC 仿真（寄存器 + SYNC0/tick），实现后在测试画像上验证再声明 SII DC。
-5. CA 部分写/子索引顺序语义完善；fuzz 升级。
+3. M3-W7：32 从站 @1 kHz 瓶颈调研（文档结论，不承诺达成）。**已完成（B45）**：见 [M3-W7 文档](plan/M3-W7-32slave-1khz-bottleneck.md)——32 站链处理 1.7 µs（0.17% 预算）、TAP 往返 167 µs；修正 SOEM `simple_ng` 采样口径（fixed sleep，非控制环频率）。
+4. M3-W8：MCP/Agent 桥接 stub（只读端点映射）。**已完成（B45）**：[M3-W8 设计](plan/M3-W8-mcp-agent-bridge-stub.md) + 工具目录 + `mcp-tools-check.py`；下一项 **B46**（原生 32 站 @1 kHz 基准），其后 **B47**（`ec-sim-mcp` stdio 实现 + 探针）。
+5. DC 仿真（寄存器 + SYNC0/tick），实现后在测试画像上验证再声明 SII DC。
+6. CA 部分写/子索引顺序语义完善；fuzz 升级。

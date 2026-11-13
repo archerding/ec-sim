@@ -547,7 +547,8 @@ user.email = deepseek-harness@users.noreply.github.com
     crates.io）；验证方法：`cargo run -p esc-node --features wasm-runtime -- --uds /tmp/x --manifest
     plugins/behavior-counter/plugin.yaml`。
 
-- [ ] **B45 M3-W7：32 从站 @1 kHz 瓶颈调研（M3）**：SOEM 线程/内核旁路可行路径、现有 8 从站实测差距、文档结论（**不承诺达成**）；顺带 M3-W8 MCP/Agent 桥接 stub（只读端点映射）。
+- [x] ~~**B45 M3-W7/W8：32 从站 @1 kHz 瓶颈调研 + MCP/Agent 桥接 stub（M3）**~~ ✅ **2026-11-13 完成**：
+  两个子项均为文档/静态检查交付（W7 **不承诺达成**；W8 **只读、不含写**；均无外部依赖）。
   - 进度（2026-11-13 09:34 班）：**M3-W7 完成**——新增
     [docs/plan/M3-W7-32slave-1khz-bottleneck.md](docs/plan/M3-W7-32slave-1khz-bottleneck.md)：
     ① 修正测量口径（SOEM `simple_ng` 样例含 fixed `osal_usleep(5000)`，`iterations/T`
@@ -558,10 +559,27 @@ user.email = deepseek-harness@users.noreply.github.com
     TAP + 未修改 SOEM：8 站 avg **164 µs**、32 站 avg **167 µs**（往返与从站数近似无关，
     TAP 唤醒主导；32 站单轮仍在 1 ms 内）；④ 瓶颈分解/可行路径/下一轮 RT 验证建议。
     ⚠️ 未测多 datagram/segment 帧形状与隔离 CPU+RT 下 1 kHz 实际发帧 p99（建议 B46）。
+  - 进度（2026-11-13 08:50 班）：**M3-W8 完成**——新增
+    [docs/plan/M3-W8-mcp-agent-bridge-stub.md](docs/plan/M3-W8-mcp-agent-bridge-stub.md)
+    （D1–D7：stdio JSON-RPC 2.0、独立 `ec-sim-mcp` 进程经 `--api` 只发 GET、只读 allowlist、
+    零第三方依赖、原样透传端点 JSON、一工具一端点 `ecsim_*`、快照语义如实告知）+
+    机器可读目录 [m3-w8-mcp-tools-v1.json](docs/plan/m3-w8-mcp-tools-v1.json)
+    （**9 个只读工具** + 6 个排除项：`/`、`/index.html`、`/app.js`、`/events`(SSE)、
+    `POST /sdo`、`POST /pdo`——写路径**永不映射**）+ 静态校验
+    `scripts/spikes/mcp-tools-check.py`（工具全 GET、查询参数变体有声明、文档 GET 路由
+    全覆盖或显式排除、设计文档/ M3 清单/ run-all 互链）本机 **EXIT=0**；
+    M3 scope W8 ✅、VERIFICATION/STATUS/run-all-probes 同步。MCP server 实现（S1/S2）列为 B47。
+    ⚠️ 未实现 server、未跑 stdio 探针（B47）。
 - [ ] **B46 原生 32 站 @1 kHz 基准（M3-W7 后续，建议）**：Rust 原生主站按 `clock_nanosleep`
   1 kHz 发 32 站 LRW 帧，统计 p50/p99/max/jitter（隔离 CPU + `SCHED_FIFO` 对照），
   并与 [M3-W7 文档](docs/plan/M3-W7-32slave-1khz-bottleneck.md) §4 数据对齐；
   同时补多 datagram 帧形状的 `chain_latency` 测量。**不承诺对外 SLA**，只做能力证据。
+- [ ] **B47 `ec-sim-mcp` stdio 实现（M3-W8 后续，建议）**：新增只读 `ec-sim-mcp` 二进制
+  （JSON-RPC 2.0 stdio：`initialize`/`ping`/`tools/list`/`tools/call`），按
+  [m3-w8-mcp-tools-v1.json](docs/plan/m3-w8-mcp-tools-v1.json) 映射控制面
+  `--api http://127.0.0.1:<port>` 的 GET 端点；零第三方依赖；配 `mcp-stdio-probe.sh`
+  （`tools/list` 恰好 9 个只读工具、未知工具报错、`--serve-write` 下工具表不变）并加入
+  run-all-probes（Linux）。**不含写**。
 
 ## 7. 目录约定
 

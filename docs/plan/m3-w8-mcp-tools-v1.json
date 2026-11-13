@@ -1,0 +1,133 @@
+{
+  "schema": "ecsim/mcp-tools-v1",
+  "read_only": true,
+  "protocol": "MCP tools subset over JSON-RPC 2.0 (stdio); details pending spec re-check",
+  "description": "EC-Sim 控制面只读观测端点的 MCP 工具映射（stub 设计，不含任何写工具）。由 scripts/spikes/mcp-tools-check.py 校验与 docs/CONTROL-PLANE.md 一致。",
+  "tools": [
+    {
+      "name": "ecsim_health",
+      "description": "读取控制面健康状态（内联 JSON，不需要 token）。",
+      "http": {"method": "GET", "endpoint": "/health"},
+      "queries": [],
+      "mode": "any",
+      "response_schema": "inline JSON",
+      "input_schema": {"type": "object", "properties": {}, "required": [], "additionalProperties": false}
+    },
+    {
+      "name": "ecsim_state",
+      "description": "读取只读状态快照 state-v1（实时模式额外含 live 字段）；slave 可选，越界由服务端 404。",
+      "http": {"method": "GET", "endpoint": "/state"},
+      "queries": ["slave"],
+      "mode": "any",
+      "response_schema": "ec-sim/state-v1",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "slave": {"type": "integer", "minimum": 0, "description": "从站索引；缺省 0（/state?slave=N）"}
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "ecsim_dict",
+      "description": "读取运行时对象字典 dict-v1（需启动时带 manifest，否则服务端 404）。",
+      "http": {"method": "GET", "endpoint": "/dict"},
+      "queries": [],
+      "mode": "any",
+      "response_schema": "ec-sim/dict-v1",
+      "input_schema": {"type": "object", "properties": {}, "required": [], "additionalProperties": false}
+    },
+    {
+      "name": "ecsim_sdo_read",
+      "description": "只读浏览运行时对象字典的值（sdo-v1），不经过 mailbox；index 必填，sub 缺省 0。",
+      "http": {"method": "GET", "endpoint": "/sdo"},
+      "queries": ["index", "sub"],
+      "mode": "any",
+      "response_schema": "ec-sim/sdo-v1",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "index": {"type": "string", "pattern": "^(0[xX][0-9a-fA-F]{1,4}|[0-9]{1,5})$", "description": "对象索引：0x 十六进制（如 0x6040）或十进制 u16"},
+          "sub": {"type": "integer", "minimum": 0, "maximum": 255, "description": "子索引（u8，缺省 0）"}
+        },
+        "required": ["index"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "ecsim_topology",
+      "description": "读取链上从站摘要 topology-v1（仅实时模式：--serve 与 UDS/TAP 同进程）。",
+      "http": {"method": "GET", "endpoint": "/topology"},
+      "queries": [],
+      "mode": "live",
+      "response_schema": "ec-sim/topology-v1",
+      "input_schema": {"type": "object", "properties": {}, "required": [], "additionalProperties": false}
+    },
+    {
+      "name": "ecsim_pdo",
+      "description": "读取当前 PDO pdo-v1：SM2/SM3 原始字节与 decoded 具名解码（仅实时模式）；slave 可选。",
+      "http": {"method": "GET", "endpoint": "/pdo"},
+      "queries": ["slave"],
+      "mode": "live",
+      "response_schema": "ec-sim/pdo-v1",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "slave": {"type": "integer", "minimum": 0, "description": "从站索引；缺省 0（/pdo?slave=N）"}
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "ecsim_pdo_history",
+      "description": "读取按变化去重的 PDO 时间序列 pdo-history-v1（/pdo?history=1；仅实时模式，slave 可叠加）。",
+      "http": {"method": "GET", "endpoint": "/pdo"},
+      "queries": ["slave", "history"],
+      "mode": "live",
+      "response_schema": "ec-sim/pdo-history-v1",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "slave": {"type": "integer", "minimum": 0, "description": "从站索引；缺省 0（/pdo?slave=N&history=1）"}
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "ecsim_metrics",
+      "description": "读取 Prometheus 文本指标（text/plain; version=0.0.4；仅实时模式，slave 可过滤）。",
+      "http": {"method": "GET", "endpoint": "/metrics"},
+      "queries": ["slave"],
+      "mode": "live",
+      "response_schema": "text/plain; version=0.0.4",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "slave": {"type": "integer", "minimum": 0, "description": "只导出指定从站；缺省全量（/metrics?slave=N）"}
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "ecsim_sdo_audit",
+      "description": "读取最近 64 条 SDO 写审计事件 sdo-audit-v1（只读观测；本 stub 不提供写工具）。",
+      "http": {"method": "GET", "endpoint": "/sdo-audit"},
+      "queries": [],
+      "mode": "live",
+      "response_schema": "ec-sim/sdo-audit-v1",
+      "input_schema": {"type": "object", "properties": {}, "required": [], "additionalProperties": false}
+    }
+  ],
+  "excluded": [
+    {"method": "GET", "endpoint": "/", "reason": "静态 HTML 或服务自述 JSON，不是结构化观测数据；页面加载由人/浏览器完成"},
+    {"method": "GET", "endpoint": "/index.html", "reason": "静态 Web 外壳，同上"},
+    {"method": "GET", "endpoint": "/app.js", "reason": "静态前端脚本，同上"},
+    {"method": "GET", "endpoint": "/events", "reason": "SSE 长连接，不适合单次工具请求/响应；后续可作为订阅类能力单独设计"},
+    {"method": "POST", "endpoint": "/sdo", "reason": "写路径；本 stub 明确不含写，即使控制面启用 --serve-write 也不映射"},
+    {"method": "POST", "endpoint": "/pdo", "reason": "写路径；本 stub 明确不含写，即使控制面启用 --serve-write 也不映射"}
+  ]
+}

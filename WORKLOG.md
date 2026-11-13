@@ -1,5 +1,53 @@
 ---
 
+## 2026-11-13 08:52 班（低峰）— **B45 收尾（M3-W8）：MCP/Agent 桥接 stub 设计 + 机器可读工具目录 + 静态校验，B45 完成**
+
+> 调度上下文计划重点（B2b / B8 / B4）均早已完成；按 `AGENTS.md` §5 取 backlog 顶部未完成项
+> **B45**，本班做其"下次开工第一件事"——上一班留下的唯一缺口：**M3-W8 MCP/Agent 桥接 stub**
+> （只读端点映射设计文档，无外部依赖）。
+
+**做了什么**
+- 新增 [docs/plan/M3-W8-mcp-agent-bridge-stub.md](docs/plan/M3-W8-mcp-agent-bridge-stub.md)：
+  D1–D7 设计决策（stdio JSON-RPC 2.0、独立 `ec-sim-mcp` 进程经 `--api` **只发 GET**、
+  只读 allowlist 写到桥接层、零第三方依赖、原样透传端点 JSON、一工具一端点 `ecsim_*`、
+  快照语义如实告知）；9 个工具 × 端点的映射表；HTTP→工具错误码映射（NOT_FOUND /
+  MODE_UNAVAILABLE / AUTH_REQUIRED / FORBIDDEN / UPSTREAM_ERROR / TIMEOUT / RESPONSE_TOO_LARGE）；
+  安全边界（token 只从环境变量读、默认只允许回环、参数不拼 URL、5s/1MiB 上限、提示注入边界）；
+  S0–S3 分阶段实现计划与验收；**明确不含写**。
+- 新增机器可读目录 [docs/plan/m3-w8-mcp-tools-v1.json](docs/plan/m3-w8-mcp-tools-v1.json)：
+  `read_only: true`；**9 个只读工具**（`ecsim_health/state/dict/sdo_read/topology/pdo/
+  pdo_history/metrics/sdo_audit`），每个工具输入 schema 最小合法（`additionalProperties:false`）；
+  **6 个排除项**（`/`、`/index.html`、`/app.js`、`/events`(SSE)、`POST /sdo`、`POST /pdo`——
+  写路径即使 `--serve-write` 开启也**永不映射**）。
+- 新增 `scripts/spikes/mcp-tools-check.py`（零依赖静态校验）：目录结构合法、工具全 GET、
+  无写工具、查询参数变体（slave/history/index/sub）有声明、`CONTROL-PLANE.md` 全部 GET 路由
+  要么被映射要么显式排除、设计文档/M3 清单/`run-all-probes.sh`/VERIFICATION 互链。
+- `run-all-probes.sh` 新增 `mcp-tools|any|mcp-tools-check.py|yes`（静态检查，无需 root；
+  验证机下一轮 run-all 应为 19 项）。
+- 文档同步：`AGENTS.md`（B45 → ✅ 完成、W8 进度、新增下一项 B47）、`docs/plan/M3-scope.md`
+  （W8 ✅ + §6 记录 B47）、`docs/STATUS.md`（控制面/MCP stub、下一步）、`docs/VERIFICATION.md`。
+
+**验证结果**
+- `python3 scripts/spikes/mcp-tools-check.py` → **EXIT=0**（9 工具 / 12 条文档 GET 路由 / 6 排除项）。
+- `python3 scripts/spikes/control-plane-doc-check.py` → **EXIT=0**（14 条路径、17 个探针，未回归）。
+- 本机：`cargo fmt --all -- --check` OK；`cargo clippy --workspace --all-targets -- -D warnings` OK；
+  `cargo test --workspace` → **238 passed / 0 failed**（纯文档/脚本变更，测试基线不变）。
+- ⚠️ 未在验证机跑：新增 run-all 项是跨平台静态检查，留待下一轮验证机 `run-all-probes.sh` 覆盖；
+  MCP server 未实现（B47），stdio 探针未跑。⚠️ MCP 协议字段名（`initialize`/`tools/list`/
+  `tools/call`、`content`/`isError`）按公开规范整理，**未联网核对原文**，实现前需复核。
+
+**卡点**
+- 无硬阻塞。MCP 规范细节复核是 B47 的前置（已写入设计文档 §1/§8，标 ⚠️）。
+- 本班为纯文档/脚本项，无代码行为变化；不宣称任何 MCP/一致性认证。
+
+**下次开工第一件事**
+- 取 backlog 顶部 **B46：原生 32 站 @1 kHz 基准**——Rust 原生主站按 `clock_nanosleep`
+  1 kHz 发 32 站 LRW 帧，统计 p50/p99/max/jitter（隔离 CPU + `SCHED_FIFO` 对照），
+  并补多 datagram 帧形状的 `chain_latency` 测量；与 M3-W7 文档 §4 数据对齐。
+  之后为 **B47**（`ec-sim-mcp` stdio 实现 + `mcp-stdio-probe.sh`）。
+
+---
+
 ## 2026-11-13 09:34 班（低峰）— **B45 M3-W7：32 从站 @1 kHz 瓶颈调研（文档结论）+ 测量口径修正**
 
 > 调度上下文计划重点（B2b / B8 / B4）均早已完成；按 `AGENTS.md` §5 取 backlog 顶部未完成项

@@ -42,6 +42,7 @@ run_with_timeout() {
 # name|kind|script|python?
 PROBES="
 doc-check|any|control-plane-doc-check.py|yes
+mcp-tools|any|mcp-tools-check.py|yes
 http-state|any|http-state-probe.sh|no
 live-state|linux|live-state-probe.sh|no
 pdo-live|linux|pdo-live-probe.sh|no
