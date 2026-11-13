@@ -1,0 +1,9 @@
+duration_seconds=14408
+http_fail_total=0
+sse_events_total=28780
+sse_errors=0
+0
+samples_rows=242
+final_rss_kb=3060
+final_fds=6
+final_threads=3

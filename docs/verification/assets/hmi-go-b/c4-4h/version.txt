@@ -1,0 +1,2 @@
+ec-sim-esc 0.0.1
+2e672e574eb65c2f985a53d494c3bae97252f5857f95f29699b0976771e9498f  target/release/ec-sim-esc

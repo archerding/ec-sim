@@ -1,0 +1,57 @@
+[
+  {
+    "round": 1,
+    "fcp": 60,
+    "domContentLoaded": 40.59999996423721,
+    "load": 43.59999996423721,
+    "apiToFirstRender": 40.89999997615814,
+    "navClickToScroll": 160.19999998807907,
+    "scrollY": 7077,
+    "appSections": 14,
+    "overflowX": -15
+  },
+  {
+    "round": 2,
+    "fcp": 24,
+    "domContentLoaded": 12.800000011920929,
+    "load": 14.399999976158142,
+    "apiToFirstRender": 90.39999997615814,
+    "navClickToScroll": 158,
+    "scrollY": 7077,
+    "appSections": 14,
+    "overflowX": -15
+  },
+  {
+    "round": 3,
+    "fcp": 24,
+    "domContentLoaded": 14.899999976158142,
+    "load": 16.299999952316284,
+    "apiToFirstRender": 21.099999964237213,
+    "navClickToScroll": 165.9000000357628,
+    "scrollY": 7077,
+    "appSections": 14,
+    "overflowX": -15
+  },
+  {
+    "round": 4,
+    "fcp": 28,
+    "domContentLoaded": 15.5,
+    "load": 16.80000001192093,
+    "apiToFirstRender": 20.400000035762787,
+    "navClickToScroll": 165.39999997615814,
+    "scrollY": 0,
+    "appSections": 14,
+    "overflowX": -15
+  },
+  {
+    "round": 5,
+    "fcp": 28,
+    "domContentLoaded": 13.899999976158142,
+    "load": 15.199999988079071,
+    "apiToFirstRender": 23.80000001192093,
+    "navClickToScroll": 158.5999999642372,
+    "scrollY": 7077,
+    "appSections": 14,
+    "overflowX": -15
+  }
+]
