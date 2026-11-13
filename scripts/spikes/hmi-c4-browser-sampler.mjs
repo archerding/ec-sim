@@ -53,7 +53,7 @@ const inject = `(() => {
   const origClearInterval = window.clearInterval.bind(window);
   window.clearInterval = function (id) { c.intervalsLive = Math.max(0, c.intervalsLive - 1); return origClearInterval(id); };
   const origSetTimeout = window.setTimeout.bind(window);
-  window.setTimeout = function (...args) { c.timeoutsCreated += 1; c.timeoutsLive += 1; return origSetTimeout(...args); };
+  window.setTimeout = function (...args) { c.timeoutsCreated += 1; c.timeoutsLive += 1; const fn = args[0]; if (typeof fn === "function") { args[0] = function (...inner) { c.timeoutsLive = Math.max(0, c.timeoutsLive - 1); return fn.apply(this, inner); }; } return origSetTimeout(...args); };
   const origClearTimeout = window.clearTimeout.bind(window);
   window.clearTimeout = function (id) { c.timeoutsLive = Math.max(0, c.timeoutsLive - 1); return origClearTimeout(id); };
   if (window.EventSource) {
@@ -76,7 +76,8 @@ try {
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
   await cdp.send("Page.navigate", { url });
   await sleep(2000);
-  await evaluate(cdp, `(async () => { const input = document.getElementById("api"); if (input) input.value = location.origin; document.getElementById("load-api")?.click(); await new Promise(r => setTimeout(r, 800)); const live = document.getElementById("live"); if (live && !live.checked) live.click(); })()`);
+  // 确保实时模式：勾选 #live 并派发 change（触发 SSE EventSource 创建），等待连接建立。
+  await evaluate(cdp, `(async () => { const input = document.getElementById("api"); if (input) input.value = location.origin; document.getElementById("load-api")?.click(); await new Promise(r => setTimeout(r, 1200)); const live = document.getElementById("live"); if (live) { live.checked = true; live.dispatchEvent(new Event("change", { bubbles: true })); } await new Promise(r => setTimeout(r, 1500)); return document.getElementById("conn-badge")?.dataset?.mode || null; })()`);
 
   const started = Date.now();
   while (Date.now() - started < duration * 1000) {
