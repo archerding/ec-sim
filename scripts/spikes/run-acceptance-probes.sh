@@ -158,7 +158,8 @@ while IFS='|' read -r name kind acc; do
   fi
   started="$(date +%s)"
   if [ "$has_timeout" = "yes" ]; then
-    BIN="$BIN" PY="$PY" timeout "$TIMEOUT_SECONDS" bash "$script" >"$log" 2>&1
+    # -k 5：先 TERM，5s 后 KILL，避免探针挂起后残留进程（D 状态内核阻塞仍需人工处理）。
+    BIN="$BIN" PY="$PY" timeout -k 5 "$TIMEOUT_SECONDS" bash "$script" >"$log" 2>&1
     code=$?
   else
     BIN="$BIN" PY="$PY" bash "$script" >"$log" 2>&1

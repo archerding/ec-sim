@@ -1511,6 +1511,22 @@ fn build_responder(
         responder
     };
     let mut responder = responder;
+    // GAP-14：CiA402 行为编码的 11 字节 TxPDO 顺序必须与 manifest 的 0x1A00 条目顺序一致。
+    // lcec `basic_cia402`（CSP/PP）读方向 = [0x6041, 0x6064, 0x606C, 0x6061]；
+    // 其它 11 字节布局（如 CSV 画像）沿用历史顺序 [0x6041, 0x6061, 0x6064, 0x606C]。
+    if behavior == Some("cia402") {
+        let tx_indices: Vec<u16> = manifest
+            .and_then(|manifest| manifest.tx_pdos.first())
+            .map(|pdo| pdo.entries.iter().map(|entry| entry.index).collect())
+            .unwrap_or_default();
+        let tx_layout = if tx_indices == [0x6041u16, 0x6064, 0x606C, 0x6061] {
+            esc_node::Cia402TxLayout::LcecCsp
+        } else {
+            esc_node::Cia402TxLayout::Standard
+        };
+        println!("BEHAVIOR cia402 tx_layout={tx_layout:?} tx_indices={tx_indices:?}");
+        responder = responder.with_cia402_tx_layout(tx_layout);
+    }
     if let Some(code) = fault {
         if behavior == Some("cia402") {
             responder.inject_cia402_fault(code);

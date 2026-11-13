@@ -33,8 +33,12 @@ mailbox:
   coe: {sdo: true, sdo_info: true, complete_access: true}
 
 # SM2（RxPDO，主站→从站）7 字节：0x6040 + 0x6060 + 0x607A
-# SM3（TxPDO，从站→主站）11 字节：0x6041 + 0x6061 + 0x6064 + 0x606C
-# （TxPDO 比 7 字节通用画像多 0x606C 实际速度；lcec CSP 要求的隐式条目）
+# SM3（TxPDO，从站→主站）11 字节，条目顺序按 lcec `basic_cia402` 的**读方向**定案（GAP-14）：
+#   0x6041(statusword 16) → 0x6064(actual position 32) → 0x606C(actual velocity 32) → 0x6061(mode display 8)
+# 依据：lcec c6f8820 `lcec_class_cia402.c::lcec_cia402_add_input_sync()` 先固定 Statusword，
+# 再按 `FOR_ALL_READ_PDOS_DO` 顺序 actual_position → actual_velocity → opmode_display。
+# 集合/位长未变（16+32+32+8=11B）——只改条目顺序；模拟器行为编码由
+# `esc_node::Cia402TxLayout::LcecCsp` 对齐（`ec-sim-esc` 从本 manifest 顺序自动选择）。
 sm:
   - {index: 0, dir: mbox-in,  start: 0x1000, len: 128}
   - {index: 1, dir: mbox-out, start: 0x1080, len: 128}
@@ -52,9 +56,9 @@ pdo:
     - index: 0x1A00
       entries:
         - {index: 0x6041, sub: 0, bits: 16}
-        - {index: 0x6061, sub: 0, bits: 8}
         - {index: 0x6064, sub: 0, bits: 32}
         - {index: 0x606C, sub: 0, bits: 32}
+        - {index: 0x6061, sub: 0, bits: 8}
 
 objects:
   - {index: 0x1008, sub: 0, name: Device name, dtype: VISIBLE_STRING, access: ro, value: "CNC virtual-loop CSP servo (SIMULATED)"}

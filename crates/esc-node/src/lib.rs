@@ -156,6 +156,22 @@ struct SegmentedDownload {
     last_toggle: Option<u8>,
 }
 
+/// 11 字节 TxPDO 的对象顺序（Tier0：目前两种真实布局）。
+///
+/// 真实 EtherCAT 从站里"TxPDO 内对象顺序"由主站按从站 PDO 映射对象（0x1A00）逐条配置决定；
+/// 模拟器的行为编码必须与 **manifest 声明的映射顺序**一致，否则主站读到错位数据
+/// （GAP-14：lcec `basic_cia402` 的 CSP/PP 读方向为 `6041 → 6064 → 606C → 6061`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Cia402TxLayout {
+    /// 通用 11 字节顺序：`0x6041(16) → 0x6061(8) → 0x6064(32) → 0x606C(32)`
+    /// （`generic-cia402-csv-servo` 历史布局；7 字节布局不受影响）。
+    #[default]
+    Standard,
+    /// lcec `basic_cia402` 读方向顺序：`0x6041(16) → 0x6064(32) → 0x606C(32) → 0x6061(8)`
+    /// （`cnc-csp-servo` 使用；GAP-14 由 cnc-impl 对 lcec `c6f8820` 源码定案）。
+    LcecCsp,
+}
+
 /// CiA 402 状态机行为：每个帧周期读 SM2 的控制字，写 SM3 的状态字（Tier0 骨架）。
 #[derive(Debug, Clone)]
 struct Cia402Behavior {
@@ -169,6 +185,8 @@ struct Cia402Behavior {
     in_offset: u16,
     /// SM3 长度（>=7 时按完整 TxPDO 写入：状态字 + 模式显示 + 实际位置）。
     in_len: u16,
+    /// 11 字节 TxPDO 的对象顺序（见 [`Cia402TxLayout`]）。
+    tx_layout: Cia402TxLayout,
     /// Tier0 简化：Operation enabled 时实际位置直接跟随目标位置（无运动环）。
     position_actual: i32,
     /// 模式显示 `0x6061`（镜像最近一次 RxPDO 中的模式 `0x6060`）。
@@ -306,11 +324,24 @@ impl Responder {
             out_len,
             in_offset,
             in_len,
+            tx_layout: Cia402TxLayout::default(),
             position_actual: 0,
             modes_display: 0,
             velocity_actual: 0,
             torque_actual: 0,
         });
+        self
+    }
+
+    /// 指定 11 字节 TxPDO 的对象顺序（见 [`Cia402TxLayout`]；GAP-14）。
+    ///
+    /// 必须与 manifest 的 TxPDO（0x1A00）条目顺序一致；7 字节/5 字节布局不受影响。
+    /// 未调用时使用 [`Cia402TxLayout::Standard`]（既有行为不变）。
+    #[must_use]
+    pub fn with_cia402_tx_layout(mut self, layout: Cia402TxLayout) -> Self {
+        if let Some(behavior) = self.cia402.as_mut() {
+            behavior.tx_layout = layout;
+        }
         self
     }
 
@@ -433,10 +464,22 @@ impl Responder {
             memory.write(behavior.in_offset, &tx);
         } else if usize::from(behavior.in_len) >= 11 {
             let mut tx = [0u8; 11];
-            tx[0..2].copy_from_slice(&statusword.to_le_bytes());
-            tx[2] = modes as u8;
-            tx[3..7].copy_from_slice(&behavior.position_actual.to_le_bytes());
-            tx[7..11].copy_from_slice(&velocity_actual.to_le_bytes());
+            match behavior.tx_layout {
+                Cia402TxLayout::Standard => {
+                    tx[0..2].copy_from_slice(&statusword.to_le_bytes());
+                    tx[2] = modes as u8;
+                    tx[3..7].copy_from_slice(&behavior.position_actual.to_le_bytes());
+                    tx[7..11].copy_from_slice(&velocity_actual.to_le_bytes());
+                }
+                Cia402TxLayout::LcecCsp => {
+                    // GAP-14：lcec basic_cia402 的 CSP/PP 读方向顺序
+                    // 0x6041(16) → 0x6064(32) → 0x606C(32) → 0x6061(8)。
+                    tx[0..2].copy_from_slice(&statusword.to_le_bytes());
+                    tx[2..6].copy_from_slice(&behavior.position_actual.to_le_bytes());
+                    tx[6..10].copy_from_slice(&velocity_actual.to_le_bytes());
+                    tx[10] = modes as u8;
+                }
+            }
             memory.write(behavior.in_offset, &tx);
         } else if usize::from(behavior.in_len) >= 7 {
             let mut tx = [0u8; 7];
@@ -4354,6 +4397,61 @@ mod tests {
         write_rx(&mut responder, 0x0000, 9, 0, 5);
         responder.tick(5);
         assert_eq!(read_tx(&mut responder), (0x0240, 9, 10, 0));
+    }
+
+    #[test]
+    fn cia402_lcec_csp_tx_layout_encodes_statusword_position_velocity_mode_in_order() {
+        // GAP-14：lcec `basic_cia402` 的 CSP 读方向顺序 =
+        // 0x6041(statusword) → 0x6064(actual position) → 0x606C(actual velocity) → 0x6061(mode display)。
+        // 已知值 → 期望字节序列（小端）：0x0637 | 1000 | 0 | 8 = 37 06 e8 03 00 00 00 00 00 00 08。
+        fn write_rx7(responder: &mut Responder, controlword: u16, mode: i8, target: i32) {
+            let mut data = vec![0u8; 7];
+            data[0..2].copy_from_slice(&controlword.to_le_bytes());
+            data[2] = mode as u8;
+            data[3..7].copy_from_slice(&target.to_le_bytes());
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Apwr,
+                1,
+                0,
+                0x1100,
+                data,
+            )]);
+            responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APWR reply");
+        }
+
+        let mut responder = Responder::default()
+            .with_cia402_behavior(0x1100, 7, 0x1110, 11)
+            .with_cia402_tx_layout(Cia402TxLayout::LcecCsp);
+        write_rx7(&mut responder, 0x0006, 8, 1000); // Shutdown → Ready
+        responder.tick(1);
+        write_rx7(&mut responder, 0x0007, 8, 1000); // Switch on
+        responder.tick(2);
+        write_rx7(&mut responder, 0x000F, 8, 1000); // Enable operation（CSP 位置跟随）
+        responder.tick(3);
+        let tx = responder.read_process_data(0x1110, 11);
+        assert_eq!(
+            tx,
+            vec![
+                0x37, 0x06, // statusword 0x0637（Operation enabled + Target reached）
+                0xe8, 0x03, 0x00, 0x00, // position actual = 1000（LE）
+                0x00, 0x00, 0x00, 0x00, // velocity actual = 0
+                0x08, // mode display = 8（CSP）
+            ],
+            "LcecCsp 布局字节序列不符：{tx:?}"
+        );
+        // 对照：Standard 布局在同一状态下字节顺序不同（mode 在 offset 2）。
+        let mut standard = Responder::default().with_cia402_behavior(0x1100, 7, 0x1110, 11);
+        write_rx7(&mut standard, 0x0006, 8, 1000);
+        standard.tick(1);
+        write_rx7(&mut standard, 0x0007, 8, 1000);
+        standard.tick(2);
+        write_rx7(&mut standard, 0x000F, 8, 1000);
+        standard.tick(3);
+        let tx_standard = standard.read_process_data(0x1110, 11);
+        assert_eq!(tx_standard[2], 0x08, "Standard 布局：mode 在 offset 2");
+        assert_ne!(tx, tx_standard, "两种布局的字节序列必须不同");
     }
 
     #[test]

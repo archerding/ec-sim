@@ -12,7 +12,7 @@
 | 场景 | lcec 期望（`cnc-impl` 对 lcec commit `c6f8820` 源码核对） | EC-Sim 画像 | 结论 |
 | --- | --- | --- | --- |
 | **V1（PP，单从站）** | Rx 0x1600 = 0x6040 U16 + 0x6060 S8 + 0x607A S32（7B）；Tx 0x1A00 = 0x6041 U16 + 0x6061 S8 + 0x6064 S32（7B）；`0x6502` 含 PP(bit0)；无 `<dcConf>` | `plugins/generic-cia402-servo/plugin.yaml`（7B/7B，`0x6502=0x01C1`） | ✅ **一致，直接用** |
-| **V2/V3（CSP，多轴）** | **`enableCSP=1` 隐式要求 TxPDO 含 `0x606C:00` S32（实际速度）** → Tx 11B（6041+6061+6064+606C）；Rx 仍 7B；`0x6502` 保持 `0x01C1` | **新增 `plugins/cnc-csp-servo/plugin.yaml`**（Rx 7B / Tx 11B，`0x6502=0x01C1`） | ✅ 已落地，见 `crates/plugin-host/tests/plugin_manifests.rs` 守卫 |
+| **V2/V3（CSP，多轴）** | **`enableCSP=1` 隐式要求 TxPDO 含 `0x606C:00` S32（实际速度）** → Tx 11B，且 lcec 读方向顺序 = `6041 → 6064 → 606C → 6061`（GAP-14）；Rx 仍 7B；`0x6502` 保持 `0x01C1` | **`plugins/cnc-csp-servo/plugin.yaml`**（Rx 7B / Tx 11B，`0x6502=0x01C1`，Tx 条目顺序已按 GAP-14 定案） | ✅ 已落地 + GAP-14 修正（单测/守卫） |
 
 lcec 侧要点（事实记录，不构成认证）：
 
@@ -36,9 +36,17 @@ lcec 侧要点（事实记录，不构成认证）：
 | 偏移 | RxPDO（SM2 @ 0x1100） | 类型 | SM3 @ 0x1110（TxPDO） | 类型 |
 | --- | --- | --- | --- | --- |
 | 0..2 | `0x6040` Controlword | U16 LE | `0x6041` Statusword | U16 LE |
-| 2..3 | `0x6060` Modes of operation | S8 | `0x6061` Modes of operation display | S8 |
-| 3..7 | `0x607A` Target position | S32 LE | `0x6064` Position actual value | S32 LE |
-| — | — | — | `0x606C` Velocity actual value（lcec CSP 隐式要求） | S32 LE（7..11） |
+| 2..3 | `0x6060` Modes of operation | S8 | `0x6064` Position actual value（lcec 读方向第 2 项） | S32 LE（2..6） |
+| 3..7 | `0x607A` Target position | S32 LE | `0x606C` Velocity actual value | S32 LE（6..10） |
+| — | — | — | `0x6061` Modes of operation display | S8（10..11） |
+
+> **GAP-14（2026-11-13 修正）**：TxPDO 顺序 = lcec `basic_cia402` 的**读方向顺序**
+> `[0x6041, 0x6064, 0x606C, 0x6061]`（`cnc-impl` 对 lcec `c6f8820` 源码定案：
+> `lcec_cia402_add_input_sync()` 固定 Statusword 第一，再按 `FOR_ALL_READ_PDOS_DO` 顺序
+> actual_position → actual_velocity → opmode_display）。旧顺序
+> `[0x6041, 0x6061, 0x6064, 0x606C]` 会让 lcec 读到 `position=target×256+8`、`opmode_display=0`
+> （cnc-expert 5 轮复现）。模拟器侧行为编码用 `Cia402TxLayout::LcecCsp` 对齐，单测断言已知值→字节序列；
+> `generic-cia402-servo` 的 Tx 顺序仍为历史布局（仅供 EC-Sim 内部探针/CSV 用例，不用于 lcec）。
 
 `0x6502`（Supported drive modes）= `0x01C1`：PP(bit0)/HM(bit5)/IP(bit6)/CSP(bit7)。
 
@@ -165,6 +173,7 @@ CNC 侧 2026-11-13 用本对接包跑通 **V1 单从站 OP**（`cnc-impl` 在其
 | AL Status Code `0x0024/0x0025`（映射无效） | 0x1600/0x1A00 映射位长与 SM 长度不一致 | 用 lcec 的 XML PDO 条目核对 §2（条目必须在映射对象里） |
 | 身份不符 | 拿错 manifest 或 PID 过期 | `0x00000e5e0`（V1 PP 画像）/`0x0000e5e3`（CSP 画像） |
 | 0x606C 相关 mismatch | 用 7B Tx 画像跑 CSP | V2 起改用 `plugins/cnc-csp-servo`（Tx 11B） |
+| lcec 读到 `position = target×256+8`、`opmode_display=0` | **TxPDO 条目顺序**与 lcec 读方向不一致（GAP-14） | 用本仓库**修正后**的 `cnc-csp-servo`（Tx = `6041→6064→606C→6061`）并配合 `--behavior cia402`（模拟器按 manifest 顺序自动选择 `Cia402TxLayout::LcecCsp`）；`/pdo` 的 SM3 hex 应为 `3706<pos LE>00000000<mode>` |
 | `/pdo` 无 decoded | 静态模式（无 `--tap/--uds`） | 实时模式才返回 live/decoded |
 
 ## 7. 边界（必须随验收报告复述）

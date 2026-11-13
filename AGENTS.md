@@ -662,6 +662,14 @@ user.email = deepseek-harness@users.noreply.github.com
   注入+ACK 清除）；探针 `scripts/spikes/al-error-probe.sh`（Linux/UDS：`/state.live.al_status=0x11`、
   `al_status_code`、`/metrics`；本机跑参数校验段）；登记 B-2 验收聚合（36 项）。文档：CONTROL-PLANE §1
   调试开关 + README。⚠️ 交付二进制需在 EC-Sim VM 重建（新特性）后再给 cnc-expert 做 AC-E-203 端到端。
+- [x] ~~**B58 GAP-14：`cnc-csp-servo` TxPDO 顺序按 lcec 读方向修正（V2 硬阻塞）**~~ ✅ **2026-11-13 团队班完成（离线单测；端到端由 cnc-expert 复跑）**：
+  TxPDO 0x1A00 改为 **`0x6041 → 0x6064 → 0x606C → 0x6061`**（SM3 仍 11B；依据 lcec `c6f8820`
+  `lcec_cia402_add_input_sync()` 的 `FOR_ALL_READ_PDOS_DO` 顺序，cnc-impl/cnc-expert 定案）；
+  `esc-node` 新增 `Cia402TxLayout { Standard, LcecCsp }` + `with_cia402_tx_layout`，11 字节 TxPDO 编码按布局分支，
+  `ec-sim-esc --behavior cia402` 从 manifest 0x1A00 顺序自动选择并打印 `tx_layout=`；Standard 保持既有行为
+  （CSV 画像/探针不变）。单测：已知值→期望字节序列 `37 06 e8 03 00 00 00 00 00 00 08`；守卫测试更新。
+  文档：plugin README/facts、CNC-V1-integration §1/§2.2/§6（GAP-14 排查行）。⚠️ 需新 manifest + 新二进制交付
+  （二进制在 EC-Sim VM 重建后）。
 
 ## 7. 目录约定
 

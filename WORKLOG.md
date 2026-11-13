@@ -1,5 +1,42 @@
 ---
 
+## 2026-11-13 团队班 — **task-39/B58：GAP-14 TxPDO 顺序修正（V2 硬阻塞）**
+
+> 任务板 `task-39`（Lead 批准，Owner `sim-impl`）。事实来源：`cnc-expert` task-31 实测（lcec 读错位 5 轮复现）
+> + `cnc-impl` 对 lcec `c6f8820` 源码定案（`lcec_class_cia402.c::lcec_cia402_add_input_sync()`：
+> Statusword 固定第一，再按 `FOR_ALL_READ_PDOS_DO` 顺序 actual_position → actual_velocity → opmode_display）。
+> 现象：EC-Sim 发 `[6041,6061,6064,606C]` → lcec 读到 `position=target×256+8`、`opmode_display=0`（V1 只验
+> OP/pin/WKC，未验读方向，故此前未暴露）。
+
+**做了什么（离线，全部本机验证）**
+- `plugins/cnc-csp-servo/plugin.yaml`：TxPDO 0x1A00 条目顺序改为
+  **`0x6041(16) → 0x6064(32) → 0x606C(32) → 0x6061(8)`**（SM3 仍 11B，集合/位长不变）。
+- `esc-node`：新增 `Cia402TxLayout { Standard, LcecCsp }` + `Responder::with_cia402_tx_layout()`；
+  11 字节 TxPDO 编码按布局分支（Standard 保持历史顺序，不影响 CSV 画像/既有探针）；
+  `ec-sim-esc` 在 `--behavior cia402` 时**从 manifest 的 0x1A00 条目顺序自动选择布局**并打印
+  `BEHAVIOR cia402 tx_layout=… tx_indices=[…]`。
+- 单测：`cia402_lcec_csp_tx_layout_encodes_statusword_position_velocity_mode_in_order`
+  （已知值 controlword=0x000F/mode=8/target=1000 → 期望字节 `37 06 | e8 03 00 00 | 00 00 00 00 | 08`，
+  并对照 Standard 布局字节不同）；`plugin_manifests` 守卫改为新顺序断言。
+- 文档：`plugins/cnc-csp-servo/{README,facts}`、[CNC-V1-integration](docs/plan/CNC-V1-integration.md) §1/§2.2/§6
+  （新增 GAP-14 排查行）；`generic-cia402-servo` 保持历史 Tx 顺序并注明不用于 lcec（仅内部/CSV 探针）。
+
+**验证结果**
+- `cargo test -p esc-node --lib` **75 passed**（含新布局单测）；`cargo test -p plugin-host --test plugin_manifests` **4 passed**；
+  待跑全量三件套（fmt/clippy/workspace test）后提交推送。
+- ⚠️ 端到端（lcec 读方向 5 轮一致性）由 `cnc-expert` 用新 manifest + 新二进制在其验证机复跑；
+  本班 VM 在他人窗口内，未跑 TAP/整轮。
+
+**卡点**
+- 新 release 二进制（含 `--al-error` + 本布局修正）需 EC-Sim VM 重建后交付；VM 排队（sim-ux → sim-expert → 我）。
+
+**下次开工第一件事**
+- VM 轮到时：rebuild release + 更新 `.local/artifacts/`/sha256/交付文档 → 通知 cnc-impl/cnc-expert 换新
+  manifest+二进制 → `invalid-slave` TAP 段 / `al-error` 实时段 / `tap-cia402` N=2,3 / B-1(23)+B-2(36) 整轮回填 →
+  complete task-18；随后等 cnc-expert 的 GAP-14/AC-E-204 结果。
+
+---
+
 ## 2026-11-13 团队班 — **task-34/B57：`--al-error` AL Status 错误注入（AC-E-203 支持）**
 
 > 任务板 `task-34`（Lead 批准，Owner `sim-impl`）。背景：`cnc-expert` 的 AC-E-203 需要

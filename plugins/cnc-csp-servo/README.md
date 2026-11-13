@@ -8,10 +8,18 @@
 | 方向 | 映射对象 | 条目（按字节流顺序） | 字节 |
 | --- | --- | --- | --- |
 | RxPDO 0x1600（SM2） | 0x6040 U16 → 0x6060 S8 → 0x607A S32 | controlword / modes / target position | 7 |
-| TxPDO 0x1A00（SM3） | 0x6041 U16 → 0x6061 S8 → 0x6064 S32 → 0x606C S32 | statusword / modes display / position actual / velocity actual | 11 |
+| TxPDO 0x1A00（SM3） | 0x6041 U16 → 0x6064 S32 → 0x606C S32 → 0x6061 S8 | statusword / position actual / velocity actual / modes display | 11 |
 
 字节序：每个对象小端。`0x6040`/`0x6041` 分别是 Rx/Tx 第一项。
 `0x6502`（Supported drive modes）= `0x01C1`（PP bit0 / HM bit5 / IP bit6 / CSP bit7）。
+
+> **GAP-14（2026-11-13 修正）**：TxPDO 顺序是 lcec `basic_cia402` 的**读方向顺序**
+> （Statusword 固定第一 → actual_position → actual_velocity → opmode_display），
+> 由 `cnc-impl` 对 lcec `c6f8820` 源码定案；模拟器行为编码用
+> `esc_node::Cia402TxLayout::LcecCsp` 对齐（`ec-sim-esc` 从 manifest 的 0x1A00 条目顺序自动选择）。
+> 旧顺序（6041→6061→6064→606C）会让 lcec 读到错位值（`position=target×256+8`、`opmode_display=0`）。
+> 单测：`crates/esc-node/src/lib.rs` 的
+> `cia402_lcec_csp_tx_layout_encodes_statusword_position_velocity_mode_in_order`（已知值→期望字节序列）。
 
 ## 为什么多一个 0x606C
 
