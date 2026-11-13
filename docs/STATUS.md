@@ -8,7 +8,7 @@
 核心 ESC（寄存器/SM/FMMU/AL/EEPROM-SII/邮箱/watchdog）+ CoE（SDO 加速/分段/SDO Info/
 Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/CST，Tier0 简化）
 + 声明式设备画像已实现；**未修改的 SOEM 2.0.0 与 IgH 1.6.13** 可发现从站并进入 OP
-（IgH 无应用时到 PREOP）。测试基线 **256 passed**（另 `wasm-runtime` feature 下 plugin-host **58** / esc-node **74**：WASM 宿主 + arena + worker 线程 + 行为桥 + 仓库内真实行为画像）。
+（IgH 无应用时到 PREOP）。测试基线 **256 passed**（另 `wasm-runtime` feature 下 plugin-host **58** / esc-node **74**：WASM 宿主 + arena + worker 线程 + 行为桥 + 仓库内真实行为画像）。**M3 = 退出候选**：Linux 验证机整轮 `run-all-probes.sh` **20 PASS / 0 FAIL / 0 SKIP**（含 `mcp-tools`/`mcp-stdio`/TAP）、本机 256 passed、许可核对完成、ADR 0002 → Accepted，见 [M3 退出清单](plan/M3-exit-checklist.md)（W6 真人浏览器点击验收待补）。
 
 ## 代码与测试
 
@@ -102,11 +102,13 @@ cargo test --workspace
 
 ## 下一步（按优先级）
 
-1. **B48（backlog 顶部）**：M3 退出条件核对与收尾——W6 浏览器人工验收、ADR 0002 状态复核、
-   `run-all-probes.sh` 验证机整轮复跑（含 `mcp-tools`/`mcp-stdio`）、落 `docs/plan/M3-exit-checklist.md`。
-   B47（`ec-sim-mcp` stdio）已于 2026-11-13 完成（`crates/mcp-server` + `mcp-stdio-probe.sh`）。
-2. B44 剩余增量项：插件 panic 重启、多实例配额。
-3. 验证机补跑 `wasm-plugin-probe.sh` / `wasm-behavior-probe.sh` 与 Linux CLI UDS/TAP 行为插件端到端（需 crates.io，或先 vendor wasmi/wat）。
-4. DC 仿真（寄存器 + SYNC0/tick），实现后在测试画像上验证再声明 SII DC。
-5. CA 部分写/子索引顺序语义完善；fuzz 升级。
-6. 性能：TAP/UDS 闭环 32 站 @1 kHz 与 DC 下的长稳测试（B46 未覆盖部分，⚠️ 待验证）。
+1. ~~**B48（backlog 顶部）**：M3 退出条件核对与收尾~~ ✅ 2026-11-13 完成——验证机整轮 **20 PASS**、
+   本机 256 passed、许可/依赖核对（默认 0 第三方；可选 25 个宽松许可）、ADR 0002 → Accepted；
+   见 [M3 退出清单](plan/M3-exit-checklist.md)。**M3 = 退出候选，W6 真人浏览器点击验收待补**。
+2. **B49（建议）M4 测试报告与 CI 接入**：脚本生成 JSON/Markdown 报告（版本/环境/结果/证据链接），
+   CI 增加文档一致性 + 非 root UDS 探针；按 ECSIM-PRD（`REQ-TST-05/08`）与 M3-W8 §9 补覆盖。
+3. B44 剩余增量项：插件 panic 重启、多实例配额。
+4. 验证机补跑 `wasm-plugin-probe.sh` / `wasm-behavior-probe.sh` 与 Linux CLI UDS/TAP 行为插件端到端（需 crates.io，或先 vendor wasmi/wat）。
+5. DC 仿真（寄存器 + SYNC0/tick），实现后在测试画像上验证再声明 SII DC。
+6. CA 部分写/子索引顺序语义完善；fuzz 升级。
+7. 性能：TAP/UDS 闭环 32 站 @1 kHz 与 DC 下的长稳测试（B46 未覆盖部分，⚠️ 待验证）。

@@ -38,13 +38,17 @@
 - **性能**：arena 同步与插件调用不得进入实时环关键路径；用现有 `chain_latency`/`uds_latency` 守门。
 - **CI**：Linux clippy 需在 CI 覆盖（验证机未装 clippy），新增探针加入 `run-all-probes.sh`。
 
-## 5. M3 退出条件（草案）
+## 5. M3 退出条件（核对结果）
 
-1. W1–W5 完成且各有探针/单测；W6 人工验收通过；W7/W8 至少产出文档。
-2. 默认配置保持**只读**（写/token/插件均需显式开启）。
-3. `run-all-probes.sh` 在 Linux root 下全绿（含新增探针）；`control-plane-doc-check.py` 覆盖新路由。
-4. 无 GPL/LGPL 代码进核心；无未声明依赖；许可与 NOTICE 复核。
-5. 文档：ADR 0002 更新为 Accepted、CONTROL-PLANE/STATUS/M3 清单互链。
+> 逐条核对见 **[M3 退出清单](M3-exit-checklist.md)**（2026-11-13，HEAD `d7089da`）。
+
+| # | 条件 | 状态 |
+| --- | --- | --- |
+| 1 | W1–W5 完成且各有探针/单测；W6 人工验收通过；W7/W8 至少产出文档 | 🟡 部分（W6 真人点击待补；其余达成） |
+| 2 | 默认配置保持**只读**（写/token/插件均需显式开启） | ✅ |
+| 3 | `run-all-probes.sh` 在 Linux root 下全绿（含新增探针）；`control-plane-doc-check.py` 覆盖新路由 | ✅（20 PASS / 0 FAIL / 0 SKIP） |
+| 4 | 无 GPL/LGPL 代码进核心；无未声明依赖；许可与 NOTICE 复核 | ✅（默认 0 第三方；可选 25 个宽松许可） |
+| 5 | 文档：ADR 0002 更新为 Accepted、CONTROL-PLANE/STATUS/M3 清单互链 | ✅ |
 
 ## 6. 下一步（按优先级）
 
@@ -52,4 +56,6 @@
 2. ✅ W2 arena 同步（W1 依赖）**已完成**（B44）：双缓冲/seqlock + generation（`plugin-host::arena`，`crates/plugin-host/tests/arena_no_alloc.rs` 零分配守卫 + 2 万次发布并发压测零撕裂）；子项 2 **插件独占 worker 线程 + fuel/超时 + 内存上限**（`plugin-host::wasm_worker`：`ArenaSnapshot` 投递 + `recv_timeout` 有界等待 + `StoreLimits`；死循环由 fuel 终止、宿主永不 join 卡住的插件）；子项 3 **实例生命周期接 `esc-node` 非实时线程**（`plugin-host::behavior` + `esc_node::behavior::BehaviorBridge` + manifest `behavior:`；UDS/TAP 帧循环只 publish/poll）；子项 4 **仓库内真实行为画像 + 端到端探针**（`plugins/behavior-counter/`：自写 WAT + manifest `behavior:`，`crates/esc-node/tests/behavior_counter_plugin.rs` 经合成主站帧验证 SM3 = SM2 + 1，探针 `wasm-behavior-probe.sh`；`wasm-runtime` 下 plugin-host 53 / esc-node 73 单测 + 6 集成测试）。增量项（不在 W2 原范围）：插件 panic 重启与多实例配额、Linux CLI UDS/TAP 端到端（需 crates.io）。
 3. ✅ W7 32 从站调研已完成（B45：[M3-W7 瓶颈调研](M3-W7-32slave-1khz-bottleneck.md)）。
 4. ✅ W8 MCP/Agent 桥接已完成（B45 设计/目录/静态校验；B47 实现 `crates/mcp-server` + `mcp-stdio-probe.sh`）；
-   下一步为 **B48 M3 退出条件核对与收尾**（见 `AGENTS.md` §6）。
+   **B48 M3 退出核对已完成（2026-11-13）**：验证机整轮 **20 PASS**、本机 256 单测、许可核对，
+   ADR 0002 → Accepted；见 [M3 退出清单](M3-exit-checklist.md)（M3 = 退出候选，**W6 真人点击验收待补**）。
+   下一步：B44 剩余增量（插件 panic 重启/多实例配额）与 M4（测试报告 + CI 接入 + Agent Skills）。

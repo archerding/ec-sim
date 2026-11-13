@@ -591,10 +591,16 @@ user.email = deepseek-harness@users.noreply.github.com
   `run-all-probes.sh`（`mcp-stdio`，any）。**不含写**。证据：
   [M3-W8 实现说明](docs/plan/M3-W8-mcp-agent-bridge-stub.md) §8/§9。
   ⚠️ 实时模式（UDS/TAP）live-only 工具端到端、token 模式矩阵、调用审计日志未覆盖（待补）。
-- [ ] **B48 M3 退出条件核对与收尾（建议）**：按 [M3 范围](docs/plan/M3-scope.md) §5 逐条核对并落
-  `docs/plan/M3-exit-checklist.md`——W1–W5 探针/单测证据、**W6 浏览器人工验收**（SDO 面板二次确认）、
-  W7/W8 文档与实现、`run-all-probes.sh` 在 Linux 验证机整轮复跑（含 `mcp-tools`/`mcp-stdio`）、
-  ADR 0002 状态（Proposed → Accepted）复核；只写"用例映射/预回归"，**不宣称 CTT/认证**。
+- [x] ~~**B48 M3 退出条件核对与收尾**~~ ✅ **2026-11-13 完成**：新增
+  [docs/plan/M3-exit-checklist.md](docs/plan/M3-exit-checklist.md)——五项退出条件逐条核对（4 达成、1 部分：
+  W6 真人浏览器点击待补）；验证机整轮 `run-all-probes.sh` **20 PASS / 0 FAIL / 0 SKIP**（含 `mcp-tools`/
+  `mcp-stdio`/`tap-live`）；本机 fmt/clippy/test/doc 全 0（**256 passed**）；许可/依赖核对（默认 **0 第三方**，
+  可选 `wasm-runtime` 25 个均宽松许可；无 NOTICE 义务）；ADR 0002 → **Accepted**；STATUS/VERIFICATION/M3
+  清单互链。W6 渲染烟测（无头 Edge 截图）发现"载入区重复渲染"低危缺陷，**Web HMI 冻结**未修，转交 HMI GO 后。
+  只写"用例映射/预回归"，**不宣称 CTT/认证**。
+- [ ] **B49 M4 测试报告与 CI 接入（建议，backlog 顶部）**：脚本生成 JSON/Markdown 测试报告
+  （版本/环境/探针结果/证据链接，对应 ECSIM-PRD `REQ-TST-05`），CI 增加文档一致性检查 +
+  非 root UDS 探针（`REQ-TST-08`）；补 MCP live-only/token 矩阵覆盖（B47 遗留）。不宣称认证。
 
 ## 7. 目录约定
 

@@ -1,5 +1,43 @@
 ---
 
+## 2026-11-13 12:19 班（低峰）— **B48：M3 退出条件核对与收尾（20/20 探针 + 256 单测 + 许可核对，ADR 0002 → Accepted）**
+
+> 调度上下文计划重点（B2b / B8 / B4）均早已完成；按 `AGENTS.md` §5 取 backlog 顶部未完成项 **B48**
+> （M3 退出核对；W6 真人点击验收仍待补）。
+
+**做了什么**
+- 新增 [docs/plan/M3-exit-checklist.md](docs/plan/M3-exit-checklist.md)：M3 五项退出条件逐条核对
+  （4 达成、1 部分——W6 真人浏览器点击）、W1–W8 证据索引、验证机/本机回归、许可与依赖核对、
+  W6 验收记录、遗留项与复现命令。
+- **验证机同步并复跑整轮探针**：源码同步到 `d7089da`，`cargo build --release -p esc-node -p mcp-server`；
+  `bash scripts/spikes/run-all-probes.sh` → **20 PASS / 0 FAIL / 0 SKIP**（含 `mcp-tools`、`mcp-stdio`、
+  `tap-live`；上一轮 B47 前为 18 PASS）。
+- **本机回归**：`cargo fmt --check` / `clippy -D warnings` / `doc` 均 0；`cargo test --workspace`
+  **256 passed / 0 failed**（与基线一致，未删用例）。
+- **许可/依赖核对**：默认依赖树 **0 个第三方 crate**；`wasm-runtime` 可选依赖 25 个，
+  全部宽松许可（MIT / Apache-2.0 / Apache-2.0 WITH LLVM-exception / Unlicense OR MIT），无 GPL/LGPL；
+  无 `NOTICE`（默认零第三方依赖，无需第三方 NOTICE）。
+- **W6 部分验收**：`web-sdo-panel` 静态回归 PASS；补无头 Edge 渲染烟测（1280×900，静态 `--serve --web-root web`）
+  ——页面/SDO 面板/token 提示正常渲染；发现"载入区重复渲染"低危缺陷（HMI 冻结，未改 `web/`，登记给 HMI GO 后）。
+- **文档状态**：ADR 0002 → **Accepted**；`M3-scope` §5/§6、`STATUS`（一句话+下一步）、
+  `VERIFICATION`（整轮状态 20 PASS）、`README` roadmap、`AGENTS` §6（B48 ✅ + 新增 B49 建议）同步互链。
+
+**验证结果**
+- 验证机：**20 PASS / 0 FAIL / 0 SKIP**；本机：fmt/clippy/doc 0、**256 passed**；
+  `git diff --check` PASS（提交前）。
+- ⚠️ 未覆盖：W6 真人点击（SDO 读/写/二次确认）；`wasm-runtime` 在验证机离线不可构建（需 crates.io，
+  本机 wasm 探针 EXIT=0 作为 W1/W2 证据）；MCP live-only/token 矩阵；插件 panic 重启/多实例配额。
+
+**卡点**
+- 无硬阻塞。W6 需真人浏览器验收或 HMI 实现后的 DOM 自动化；`web/` 按冻结规则未改。
+
+**下次开工第一件事**
+- 取 backlog 顶部 **B49（建议）M4 测试报告与 CI 接入**：脚本生成 JSON/Markdown 测试报告
+  （版本/环境/探针结果/证据链接），CI 增加文档一致性 + 非 root UDS 探针；补 MCP live-only/token 矩阵。
+  另：W6 真人点击验收可随时补记为 M3 关闭依据（清单 §6）。
+
+---
+
 ## 2026-11-13 08:57 班（低峰）— **B47：`ec-sim-mcp` stdio 桥接实现（9 个只读工具）+ 端到端探针**
 
 > 调度上下文计划重点（B2b / B8 / B4）均早已完成；按 `AGENTS.md` §5 取 backlog 顶部未完成项

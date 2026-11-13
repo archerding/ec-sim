@@ -1,6 +1,7 @@
 # ADR 0002：M3 插件宿主与写路径边界
 
-- 状态：提议（Accepted for planning；具体实现随 M3 迭代）
+- 状态：**Accepted（2026-11-13）**——D1–D6 已在 M3 实现并有探针/文档证据；逐项核对见
+  [M3 退出清单](../plan/M3-exit-checklist.md)（M3 = 退出候选，W6 真人点击验收待补）。
 - 日期：2026-11-13
 - 关联：[M3 范围](../plan/M3-scope.md)、[控制面文档](../CONTROL-PLANE.md)、[DEVICE-PLUGINS](../DEVICE-PLUGINS.md)、
   [ADR 0001](0001-m1-1khz-p99-limits.md)
