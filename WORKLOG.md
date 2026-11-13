@@ -1,5 +1,41 @@
 ---
 
+## 2026-11-13 团队班 — **task-12（部分）：B52 验收 + CI 观察窗 + M4 退出映射**
+
+> 任务板 `task-12`（Owner `sim-impl`）。VM 不可用（其他任务争用/重启），本班取不依赖 VM 的两项：
+> B52 验收与 CI 观察窗；task-18（验收探针聚合脚本 + VM 整轮）排在 VM 恢复后。
+
+**做了什么**
+- **B52 验收**：新增 `docs/verification/2026-11-13-m4-b52-acceptance.md`——逐项核对 B52 承诺
+  （`docs/skills/README.md`、`ecsim-diagnose/SKILL.md`、2 个示例 `.jsonl`、`agent-skills-check.py`、
+  `run-all-probes` 注册、只读边界、文档同步），记录验证命令与结果
+  （`agent-skills-check.py` **EXIT=0**：1 技能/9 只读工具引用/15 条示例行；`mcp-tools-check.py` EXIT=0；
+  `run-all --list` 含 `agent-skills`，注册表当前 **23 项**）与 ⚠️ 未覆盖（真实 Agent 宿主加载未自动化）。
+- **CI 观察窗**：GitHub Actions `main` 最近 5 次 run（149–153）：**4 success + 1 cancelled（预期）**；
+  152（`8ba9b41`）被 153 以 `concurrency.cancel-in-progress` 取代，非失败/flaky；
+  观察窗内 **0 未解释失败**。局限：当前 token 无 Actions:read，`/actions/runs/{id}/jobs` 404 →
+  以 run 级结论 + workflow 结构判定（矩阵 `fail-fast:false`，success ⇒ 4/4 job 绿）。
+- **M4 退出映射**：在跨仓 `cnc-station/docs/product/ECSIM-ROADMAP.md` **只追加 §13 + §12 v0.4 行**
+  （sim-pm 正文未改）：B52 项可关闭；CI 项"观察窗进行中"；flaky 阶段门槛 4/10；V1 已在 CNC 侧 PASS
+  （引用 cnc-impl 证据）、B55 修复 REQ-CTL-09/10、lcec `enablePV` 事实。不宣称 M4 关闭。
+
+**验证结果**
+- `python3 scripts/spikes/agent-skills-check.py` → **EXIT=0**；`python3 scripts/spikes/mcp-tools-check.py` → **EXIT=0**；
+  `bash scripts/spikes/run-all-probes.sh --list` → 23 项、`agent-skills` READY。
+- CI：run 153（`d3c99a1`）**success**；run 149/150/151 success；run 152 cancelled（预期并发取代）。
+- 本班未改代码（纯验收/文档），未跑 VM 探针。
+
+**卡点**
+- ⚠️ EC-Sim VM 整机不可达（lead 已确认，等用户重启）；task-17 的 `invalid-slave` **TAP 段**复跑与
+  task-18 的 VM 整轮排到 VM 恢复后。
+- ⚠️ CI job 级明细需 Actions:read 权限 token 才能复核（当前仅 run 级）。
+
+**下次开工第一件事**
+- VM 恢复后：补 `invalid-slave-probe.sh` TAP 段 + task-18 `run-acceptance-probes.sh`（B-2 聚合，
+  sim-expert 约定日志格式 `name|kind|EXIT|PASS/FAIL/SKIP|秒` + 自算项数）整轮证据；随后完成 task-12 剩余项。
+
+---
+
 ## 2026-11-13 12:37–13:10 团队班（DSH Agent Teams）— **B55：ACC-27② P1 修复（控制面 `?slave=` 统一校验）+ task-26 二进制交付记录**
 
 > 任务来源：团队任务板 `task-17`（P1 缺陷，Owner `sim-impl`；判据由 `sim-expert` task-19 给出）与
