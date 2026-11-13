@@ -1568,6 +1568,14 @@ document.getElementById("load-api").addEventListener("click", async () => {
       message.textContent = window.ECSIM_I18N && window.ECSIM_I18N.lang === "en" ? e05en : e05;
       return;
     }
+    if (stateResponse.status === 403) {
+      const e06 =
+        "E-06 拒绝访问：服务端返回 403（token 不匹配或对象/路由被策略禁止）。请核对 --serve-token-env 的 token 与访问策略；本页不保存 token。"
+      const e06en =
+        "E-06 forbidden: the server returned 403 (token mismatch or policy-blocked object/route). Check the --serve-token-env token and access policy; this page never stores tokens."
+      message.textContent = window.ECSIM_I18N && window.ECSIM_I18N.lang === "en" ? e06en : e06;
+      return;
+    }
     if (!stateResponse.ok) throw new Error(`/state ${stateResponse.status}`);
     loadJson(await stateResponse.text(), `${base}/state?slave=${slave}`);
     const dictResponse = await fetch(`${base}/dict`);

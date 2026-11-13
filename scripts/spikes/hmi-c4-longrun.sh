@@ -84,6 +84,7 @@ while :; do
   sleep "$SAMPLE_SECONDS"
 done
 
+curl -fsS --max-time 3 "http://127.0.0.1:$PORT/state?slave=0" >"$OUT/last-state.json" 2>"$OUT/last-state.err" || true
 {
   echo "duration_seconds=$(( $(date +%s) - start ))"
   echo "http_fail_total=$http_fail"
