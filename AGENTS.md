@@ -570,10 +570,16 @@ user.email = deepseek-harness@users.noreply.github.com
     全覆盖或显式排除、设计文档/ M3 清单/ run-all 互链）本机 **EXIT=0**；
     M3 scope W8 ✅、VERIFICATION/STATUS/run-all-probes 同步。MCP server 实现（S1/S2）列为 B47。
     ⚠️ 未实现 server、未跑 stdio 探针（B47）。
-- [ ] **B46 原生 32 站 @1 kHz 基准（M3-W7 后续，建议）**：Rust 原生主站按 `clock_nanosleep`
-  1 kHz 发 32 站 LRW 帧，统计 p50/p99/max/jitter（隔离 CPU + `SCHED_FIFO` 对照），
-  并与 [M3-W7 文档](docs/plan/M3-W7-32slave-1khz-bottleneck.md) §4 数据对齐；
-  同时补多 datagram 帧形状的 `chain_latency` 测量。**不承诺对外 SLA**，只做能力证据。
+- [x] ~~**B46 原生 32 站 @1 kHz 基准（M3-W7 后续）**~~ ✅ **2026-11-13 完成**：
+  新增 `crates/esc-node/examples/chain_1khz.rs`（原生 Rust 1 ms 周期循环：`hybrid`/`sleep`/`spin`，
+  Linux 可选 `SCHED_FIFO` 且零第三方依赖）+ `chain_latency` 扩展 `single`/`lrw`/`fprd` 帧形状；
+  新增 2 个单测（多 datagram 链、32 站 LRW WKC 96）。数据见
+  [docs/plan/B46-native-32slave-1khz.md](docs/plan/B46-native-32slave-1khz.md)：
+  32 站 PDO 式 LRW 链处理 **4.27 µs（0.43% 预算，WKC 96）**、最坏多 datagram 13.96 µs；
+  1 kHz 5000 轮 Windows 忙轮询/混合与验证机隔离 CPU 忙轮询均 **0 超限**；`hybrid --rt` 0.10–0.12%
+  超限（VMware 宿主抢占 tail ≈7 ms，非链处理）；**RT 忙轮询被 `sched_rt_runtime_us=950000`
+  节流 → 2.21% 超限**（临时设 -1 后 0/5000，测后已恢复 950000）。
+  **不承诺对外 SLA**；未测 TAP/UDS 闭环 1 kHz、DC、小时级稳定性（⚠️ 待验证）。
 - [ ] **B47 `ec-sim-mcp` stdio 实现（M3-W8 后续，建议）**：新增只读 `ec-sim-mcp` 二进制
   （JSON-RPC 2.0 stdio：`initialize`/`ping`/`tools/list`/`tools/call`），按
   [m3-w8-mcp-tools-v1.json](docs/plan/m3-w8-mcp-tools-v1.json) 映射控制面

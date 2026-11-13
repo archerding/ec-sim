@@ -5,7 +5,7 @@
 
 > 环境基线：Linux 验证机（见 `docs/LINUX-SERVER.md`）上的**未修改** SOEM 2.0.0 与 IgH 1.6.13；
 > IgH 的 ecrt 应用夹具只在验证机本地构建、**不入库**（GPL 边界，见 `AGENTS.md` §3）。
-> 最近的完整验证状态：**2026-11-13 08:00**（详见 `WORKLOG.md` 同日各条目与 [STATUS.md](STATUS.md)）；
+> 最近的完整验证状态：**2026-11-13 08:56**（详见 `WORKLOG.md` 同日各条目与 [STATUS.md](STATUS.md)）；
 > 验证机 `run-all-probes.sh` **18 PASS / 0 FAIL / 0 SKIP**（含 TAP live 与 M3 写路径/token/Web SDO 面板探针）。
 > B45 起新增文档级静态检查 `mcp-tools`（任意平台、无需 root）：本机 **EXIT=0**；
 > 验证机下一轮 `run-all-probes.sh` 覆盖后应为 **19 项**（⚠️ 待验证）。
@@ -78,7 +78,8 @@
 | `dump-state-probe.sh` | `--dump-state`（2 个 manifest 画像 + 内置画像）输出合法 state-v1 JSON：身份/SM/PDO/DC/字典对象数；`web/` 资源存在 | **EXIT=0** |
 | `podman-unprivileged-probe.sh` | 无特权容器（podman，无 `--privileged/--network=host`）内跑 `--slaves 8` UDS shim：容器内启动、广播 WKC/地址分配、UDS 全链路通过 | **EXIT=0** |
 | `tap-multi-slave-probe.sh` | TAP 上 N 从站链（默认 8；B45 用 `N=32`）：SOEM `slaveinfo` 报 N 站/WKC N*3、`simple_ng` 映射 NO+NI 且 WKC 全对；**B45 起统计每轮往返时间**（不再用 iterations/T 估频）：8 站 avg 164 µs、32 站 avg 167 µs；32 站 roundtrip <1 ms | **EXIT=0**（验证机，2026-11-13） |
-| `chain_latency`（example） | ESC 链处理微基准（B45 扩展到 1..64 从站 + 边际成本）：本机 1/8/32/64 = 0.158/0.754/2.992/5.832 µs/帧；验证机 = 0.073/0.461/1.704/3.482 µs/帧（≈52 ns/从站）；32 站仅占 1 ms 的 0.17% | `cargo run --release -p esc-node --example chain_latency -- 20000 1,8,32,64` |
+| `chain_latency`（example） | ESC 链处理微基准（B45：1..64 从站+边际成本；B46：帧形状 `single`/`lrw`/`fprd`）。`single`：本机 1/8/32/64 = 0.133/0.760/2.938/5.853 µs，验证机 = 0.100/0.475/1.720/3.433 µs（≈52 ns/站）；`lrw`（真实 PDO 形状，每站 4B 出+4B 入）：32 站 4.270 µs（WKC 96）、64 站 8.736 µs（WKC 192）；`fprd`（最坏多 datagram）：32 站 13.955 µs、64 站 47.613 µs（O(N²)） | `cargo run --release -p esc-node --example chain_latency -- 20000 1,8,32,64 single,lrw,fprd` |
+| `chain_1khz`（example，B46） | 原生 32 站 @1 kHz 周期基准（`hybrid`/`sleep`/`spin`，Linux 可选 `SCHED_FIFO`）：Windows 32 站 LRW hybrid 帧处理 p50 5.0/p99 17.9 µs、**0/5000 超限**；验证机隔离 CPU 忙轮询 **0/5000 超限**；`hybrid --rt` 0.10–0.12% 超限（VMware 宿主抢占 tail ≈7 ms）；RT 忙轮询被 `sched_rt_runtime_us=950000` 节流 2.21% 超限（临时 -1 后 0/5000）；WKC 96 全轮校验 | `cargo run --release -p esc-node --example chain_1khz -- 32 10 hybrid lrw`；详见 [B46](plan/B46-native-32slave-1khz.md) |
 | `uds_latency`（example，原生 Rust） | UDS shim 往返：默认阻塞 p50≈93µs/p99≈157µs；sim `--poll` + 探测 `spin` 忙轮询 p50≈3.7µs/p99≈9.3µs（1 站）、8 站 p99≈14.6µs | `cargo run --release -p esc-node --example uds_latency -- <sock> 5000 spin` |
 | `shim-latency.sh` | UDS shim 延迟基准（支持 SIM_CPU/PROBE_CPU/RT）：未绑核 p50≈111µs/p99≈196µs；`isolcpus=2,3` + RT（sim CPU2 `-f 50`、probe CPU3 `-f 80`）p50≈101µs/p99≈172µs；8 从站 RT p99≈181µs | **EXIT=0** |
 | `soem-multi-slave-probe.sh` | 未修改 SOEM 经 UDS shim 数到 **8 从站**并 OP：`8 slaves found`、`mapped 8O+8I`、WKC 24 | **EXIT=0** |

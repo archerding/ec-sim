@@ -58,6 +58,22 @@ Windows 开发机（非实时）。均为 `--release`。
   32 站/更大 PDO 下可能多帧/周期，**该形状的链处理成本本轮未测**（下一步：扩展
   `chain_latency` 为每站一个 datagram 的帧形状）。
 
+### 4.1.1 B46 补充（2026-11-13）：多 datagram / PDO 式 LRW 帧形状
+
+B46 已把 `chain_latency` 扩展为三种帧形状（`single` / `lrw` / `fprd`），补齐 §4.1 ⚠️：
+
+| 从站数（验证机，`taskset -c 2`） | `single` µs/帧 | `lrw` µs/帧（WKC） | `fprd` µs/帧（WKC） |
+| --- | --- | --- | --- |
+| 8 | 0.475 | 1.045 (24) | 1.243 (8) |
+| **32** | **1.720** | **4.270 (96)** | **13.955 (32)** |
+| 64 | 3.433 | 8.736 (192) | 47.613 (64) |
+
+- `lrw` 是真实 PDO 帧形状（每站 4B 输出 + 4B 输入，32 站 WKC 96）：32 站 **4.27 µs ≈ 0.43%** 预算，线性。
+- `fprd`（每帧 N 条 datagram）是**最坏形状**：32 站 13.96 µs（1.4%），64 站 47.6 µs（O(N²)）——
+  真实主站不会每周期发 N 条，仅作保守上界。
+- 1 kHz 周期统计（含隔离 CPU + `SCHED_FIFO` 对照）与 RT 带宽节流归因见
+  **[B46 原生 32 站 @1 kHz 基准](B46-native-32slave-1khz.md)**。
+
 ### 4.2 TAP 往返（未修改 SOEM `simple_ng`，8 秒窗口）
 
 | 从站数 | 解析样本 n | roundtrip min / avg / max（µs） | WKC |
@@ -107,16 +123,22 @@ Windows 开发机（非实时）。均为 `--release`。
   - 既有 "425/860 Hz" 记录口径存疑，应复核（§3）。
 - 是否达成 1 kHz 取决于：主站应用实时调度 + 非隔离环境长尾 + 帧形状（多 datagram/多帧）。
   **⚠️ 待验证**：隔离 CPU + `SCHED_FIFO` 下按 1 kHz 实际发帧 32 站的 p50/p99/max。
-- 下一步（建议立项 B46）：原生 32 站 1 kHz 基准（Rust，`clock_nanosleep` + RT），
-  输出 p50/p99/max/jitter 并与本文数据对齐；同时补 §4.1 的多 datagram 帧形状测量。
+- 下一步（B46 已完成，2026-11-13）：原生 32 站 1 kHz 基准（Rust，1 ms 周期 + 隔离 CPU/RT 对照），
+  输出 p50/p99/max/jitter 并与本文数据对齐；结论仍**不承诺 SLA**。见
+  [B46 文档](B46-native-32slave-1khz.md)（32 站 LRW 链处理 4.27 µs≈0.43% 预算；
+  Windows/验证机忙轮询均 0/5000 超限；RT 忙轮询需注意 `sched_rt_runtime_us` 节流）。
 
 ## 8. 复现
 
 ```bash
-# 1) 模拟器侧链处理扩展性（任意平台，零第三方依赖）
-cargo run --release -q -p esc-node --example chain_latency -- 20000 1,2,4,8,16,32,64
+# 1) 模拟器侧链处理扩展性（任意平台，零第三方依赖；B46 起支持帧形状）
+cargo run --release -q -p esc-node --example chain_latency -- 20000 1,2,4,8,16,32,64 single,lrw,fprd
 
-# 2) TAP 往返（Linux 验证机，root；未修改 SOEM 夹具需本机构建）
+# 2) 1 kHz 周期基准（B46；Linux 可加 --rt，验证机建议绑隔离核）
+cargo run --release -q -p esc-node --example chain_1khz -- 32 10 hybrid lrw
+taskset -c 2 cargo run --release -q -p esc-node --example chain_1khz -- 32 10 spin lrw --rt
+
+# 3) TAP 往返（Linux 验证机，root；未修改 SOEM 夹具需本机构建）
 N=8  bash scripts/spikes/tap-multi-slave-probe.sh
 N=32 bash scripts/spikes/tap-multi-slave-probe.sh
 ```

@@ -1,5 +1,52 @@
 ---
 
+## 2026-11-13 08:47 班（低峰）— **B46：原生 32 站 @1 kHz 基准（含隔离 CPU/RT 对照）+ 链处理帧形状扩展**
+
+> 调度上下文计划重点（B2b / B8 / B4）均早已完成；按 `AGENTS.md` §5 取 backlog 顶部未完成项
+> **B46**（上承 M3-W7 的 ⚠️：未测多 datagram 帧形状与隔离 CPU+RT 下 1 kHz 实际发帧 p99）。
+
+**做了什么**
+- 新增 `crates/esc-node/examples/chain_1khz.rs`（零第三方依赖、跨平台）：单进程内建 N 站 `Responder`
+  链，按 1 ms 周期发帧；`hybrid`/`sleep`/`spin` 三种节拍策略，Linux `--rt` 直接声明 libc
+  `sched_setscheduler(SCHED_FIFO, prio=80)`；统计帧处理、唤醒延迟、周期偏差、截止超限的
+  p50/p99/max，并逐轮校验 WKC（帧没打中全链直接退出 1）。
+- `crates/esc-node/examples/chain_latency.rs`：新增 `shape` 维度——`single`（BRD 单 datagram）、
+  **`lrw`**（1 条 LRW 覆盖 PDO：每站 4B 输出 FMMU + 4B 输入 FMMU，32 站 WKC 96，与
+  SOEM `simple_ng` 同形）、**`fprd`**（每站 1 条 datagram 的多 datagram 最坏形状）。
+- 新增 2 个单测：`chain_multi_datagram_frame_hits_each_configured_slave`、
+  `chain_lrw_32_slaves_has_expected_wkc_96`（32 站 LRW WKC=96、输出区回显/输入区为 0 的布局断言）。
+- 新增结论文档 [docs/plan/B46-native-32slave-1khz.md](docs/plan/B46-native-32slave-1khz.md)；
+  `docs/plan/M3-W7-32slave-1khz-bottleneck.md` 增补 §4.1.1/§7/§8；`AGENTS.md`（B46 ✅）、STATUS、
+  VERIFICATION 同步（测试基线 238 → 240）。
+
+**验证结果**
+- 本机（Windows，非 RT）：`chain_1khz 32 5 hybrid lrw` → 帧处理 p50 **5.0** / p99 **17.9** / max 89.5 µs，
+  周期偏差 p99 2.8 µs，**0/5000 超限**；`sleep` 模式因 Windows 计时器粒度 0.28% 超限。
+  `chain_latency`：32 站 `lrw` **4.790 µs**（WKC 96）、`fprd` 14.437 µs、`single` 2.938 µs。
+- 验证机（openEuler，`isolcpus=2-3`，`taskset -c 2`）：`chain_latency` 32 站 `lrw`
+  **4.270 µs（0.43% 预算，WKC 96）**、64 站 8.736 µs；`fprd` 32/64 站 13.955/47.613 µs（O(N²)）。
+  `chain_1khz` 32 站 10 s：`spin`（无 RT）**0/10000 超限**；`hybrid --rt` 0.12% 超限、
+  max 唤醒 6.97 ms（VMware 宿主抢占）；**`spin --rt` 2.21% 超限、12–24 ms 停顿**——定位为
+  `sched_rt_runtime_us=950000`（95%/s）RT 带宽节流：临时设 `-1` 后同配置 **0/5000 超限**，
+  **测后已恢复 950000**（`cat /proc/sys/kernel/sched_rt_runtime_us` 现为 950000）。
+- `cargo fmt --check` OK；`cargo clippy --workspace --all-targets -- -D warnings` OK；
+  `cargo test --workspace` → **240 passed / 0 failed**（含 2 个新测试）。
+- ⚠️ 未测：TAP/UDS 线缆层闭环下的 32 站 1 kHz、DC 同步、小时级长稳、真机（非 VM）RT 表现；
+  不承诺对外 SLA。
+
+**卡点**
+- 虚拟化宿主抢占产生毫秒级 tail（VM 内 RT 无法消除）；RT 忙轮询与默认 RT 带宽上限冲突，
+  需要调 `sched_rt_runtime_us` 或改用 hybrid——均在 B46 文档写清，未改验证机持久配置。
+
+**下次开工第一件事**
+- 取 backlog 顶部 **B47：`ec-sim-mcp` stdio 实现**——按
+  [M3-W8 设计](docs/plan/M3-W8-mcp-agent-bridge-stub.md) 与
+  [m3-w8-mcp-tools-v1.json](docs/plan/m3-w8-mcp-tools-v1.json) 把 9 个只读工具映射到控制面 GET 端点
+  （JSON-RPC 2.0 stdio，零第三方依赖，**不含写**），并配 `mcp-stdio-probe.sh`（tools/list、
+  未知工具、`--serve-write` 下工具表不变）。
+
+---
+
 ## 2026-11-13 08:52 班（低峰）— **B45 收尾（M3-W8）：MCP/Agent 桥接 stub 设计 + 机器可读工具目录 + 静态校验，B45 完成**
 
 > 调度上下文计划重点（B2b / B8 / B4）均早已完成；按 `AGENTS.md` §5 取 backlog 顶部未完成项

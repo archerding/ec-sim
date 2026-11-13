@@ -2536,6 +2536,99 @@ mod tests {
     }
 
     #[test]
+    fn chain_multi_datagram_frame_hits_each_configured_slave() {
+        // B46：一帧 N 条 FPRD（每站一条）的多 datagram 形状——benchmark 用的帧形状必须真的打中全链。
+        let mut slaves = vec![
+            Responder::default(),
+            Responder::default(),
+            Responder::default(),
+        ];
+        for index in 0..slaves.len() {
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Apwr,
+                1,
+                0u16.wrapping_sub(index as u16),
+                reg::STATION_ADDRESS,
+                ((index + 1) as u16).to_le_bytes().to_vec(),
+            )]);
+            handle_frame_chain(&mut slaves, &frame, DEFAULT_SIM_MAC).expect("address");
+        }
+
+        let datagrams: Vec<_> = (0..3)
+            .map(|index| {
+                DatagramData::auto_increment(
+                    Command::Fprd,
+                    1,
+                    (index + 1) as u16,
+                    reg::STATION_ADDRESS,
+                    vec![0u8; 2],
+                )
+            })
+            .collect();
+        let frame = request(&datagrams);
+        let reply = handle_frame_chain(&mut slaves, &frame, DEFAULT_SIM_MAC).expect("reply");
+        let parsed = wire::Frame::parse_ethernet(&reply).expect("parse");
+        assert_eq!(parsed.datagrams.len(), 3);
+        assert_eq!(
+            parsed
+                .datagrams
+                .iter()
+                .map(|datagram| datagram.working_counter)
+                .sum::<u16>(),
+            3,
+            "每条 FPRD 命中 1 站"
+        );
+        for (index, datagram) in parsed.datagrams.iter().enumerate() {
+            assert_eq!(datagram.data, &((index as u16 + 1).to_le_bytes()));
+        }
+    }
+
+    #[test]
+    fn chain_lrw_32_slaves_has_expected_wkc_96() {
+        // B46：32 站 LRW（每站 4B 输出 + 4B 输入，双 FMMU）——与真实主站 PDO 帧、SOEM `simple_ng`
+        // 的 WKC 期望一致（写命中 +2、读命中 +1 → 3*N）。
+        let mut slaves: Vec<Responder> = (0..32).map(|_| Responder::default()).collect();
+        for (index, slave) in slaves.iter_mut().enumerate() {
+            let offset = index as u32 * 8;
+            configure_fmmu(
+                slave,
+                0,
+                fmmu_page(
+                    0x0000_1000 + offset,
+                    4,
+                    (0x1000 + offset) as u16,
+                    0x02,
+                    0x01,
+                ),
+            );
+            configure_fmmu(
+                slave,
+                1,
+                fmmu_page(
+                    0x0000_1000 + offset + 4,
+                    4,
+                    (0x1000 + offset + 4) as u16,
+                    0x01,
+                    0x01,
+                ),
+            );
+        }
+        let frame = logical_frame(Command::Lrw, 0x0000_1000, vec![0x5Au8; 32 * 8]);
+        let reply = handle_frame_chain(&mut slaves, &frame, DEFAULT_SIM_MAC).expect("reply");
+        let parsed = wire::Frame::parse_ethernet(&reply).expect("parse");
+        assert_eq!(parsed.datagrams.len(), 1);
+        assert_eq!(
+            parsed.datagrams[0].working_counter, 96,
+            "32 站 × (写 2 + 读 1)"
+        );
+        // 输出区回显写入值、输入区未接行为逻辑仍为 0（每个从站 4B 0x5A + 4B 0x00）。
+        let expected: Vec<u8> = (0..32)
+            .flat_map(|_| [0x5Au8, 0x5A, 0x5A, 0x5A, 0, 0, 0, 0])
+            .collect();
+        assert_eq!(parsed.datagrams[0].data, expected);
+    }
+
+    #[test]
     fn logical_write_maps_only_the_intersection_with_fmmu_range() {
         // FMMU：逻辑 0x1000..0x1008 → 物理 0x1000。datagram 逻辑 0x0FFC 起 12 字节，
         // 只有后 8 字节落在 FMMU 区间内 → 写到物理 0x1000..0x1008。
