@@ -16,6 +16,9 @@ DURATION="${DURATION:-14400}"
 SAMPLE_SECONDS="${SAMPLE_SECONDS:-60}"
 OUT="${OUT:-/tmp/hmi-c4-v2}"
 mkdir -p "$OUT"
+# 单实例保护（防两个 unit 同时跑）
+exec 9>/tmp/hmi-c4-v2.lock
+if ! flock -n 9; then echo "C4V2 already running"; exit 9; fi
 echo "C4V2 start $(date +%Is) bin=$(sha256sum "$BIN" | cut -d' ' -f1) tap=$TAP" >"$OUT/run.log"
 
 cleanup() {
@@ -48,15 +51,28 @@ done
 curl -fsS --max-time 3 "http://127.0.0.1:$PORT/metrics?slave=0" >"$OUT/metrics-before.txt" 2>&1 || true
 echo "WKC_NOTE: simple_ng WKC 提示为已知夹具现象（EL2008 probe 注释），不作为产品结论；只要 frames_in>0/AL 进 OP 即判主站流量已连通" >"$OUT/wkc-note.txt"
 
-# 持续主站流量（SOEM 循环，保证 frames_in 持续增长、AL 进 OP）
-(
-  while :; do
-    "$SOEM" "$TAP" >>"$OUT/master.log" 2>&1 || true
-    echo "MASTER_LOOP restart $(date +%Is)" >>"$OUT/master.log"
-    sleep 1
-  done
-) &
-MASTER_PID=$!
+# 单一连续主站会话（task-78：禁止 4h 内重启 master）：
+# 优先 /root/ecsim-master-long（长跑 SOEM 主站，一次会话跑满时长）；缺失则回退 SOEM 示例循环并标记 harness_restart。
+HARNESS_MASTER="single_session"
+if [ -x /root/ecsim-master-long ]; then
+  MASTER_HOURS=$(awk -v s="$DURATION" 'BEGIN{printf "%.2f", (s+300)/3600}')
+  "$ (/bin/true)" 2>/dev/null || true
+  (
+    /root/ecsim-master-long "$TAP" "$MASTER_HOURS" >>"$OUT/master.log" 2>&1
+    echo "MASTER_LONG exit=$? $(date -Is)" >>"$OUT/master.log"
+  ) &
+  MASTER_PID=$!
+else
+  HARNESS_MASTER="soem_restart_loop"
+  (
+    while :; do
+      "$SOEM" "$TAP" >>"$OUT/master.log" 2>&1 || true
+      echo "MASTER_LOOP restart $(date -Is)" >>"$OUT/master.log"
+      sleep 1
+    done
+  ) &
+  MASTER_PID=$!
+fi
 
 # SSE 消费计数（真实 /events 推送；断开则记录并重连，统计重连次数）
 (
@@ -109,5 +125,28 @@ curl -sS -o /dev/null -w 'last_state_code=%{http_code} time_total=%{time_total}\
   echo "final_fds=$(ls "/proc/$SIM_PID/fd" 2>/dev/null | wc -l | tr -d ' ')"
   echo "final_threads=$(awk '/Threads/ {print $2}' "/proc/$SIM_PID/status" 2>/dev/null || echo "")"
   echo "last_state_curl=$(cat "$OUT/last-state-curl.txt" 2>/dev/null)"
+  echo "master_mode=$HARNESS_MASTER"
 } >"$OUT/summary.txt"
-cat "$OUT/summary.txt"
+{
+  python3 - "$OUT/samples.csv" >"$OUT/al-summary.txt" 2>&1 <<'PY'
+import csv, sys
+rows = [r for r in csv.DictReader(open(sys.argv[1], encoding="utf-8")) if r.get("al_status")]
+vals = [int(float(r["al_status"])) for r in rows]
+seconds = len(vals)
+counts = {}
+for v in vals: counts[v] = counts.get(v, 0) + 1
+segments = []
+for v in vals:
+    if segments and segments[-1][0] == v: segments[-1][1] += 1
+    else: segments.append([v, 1])
+op = [v for v in vals if v & 0x0F == 8]
+longest = max((n for v, n in segments if v & 0x0F == 8), default=0)
+print("samples=%d" % seconds)
+print("distribution=%s" % {hex(k): f"{v}/{seconds}" for k, v in sorted(counts.items())})
+print("segments=%d" % len(segments))
+print("op_samples=%d op_pct=%.2f%%" % (len(op), 100.0 * len(op) / seconds if seconds else 0))
+print("longest_op_segment=%d" % longest)
+print("op_ge_99pct=%s" % (len(op) >= 0.99 * seconds))
+PY
+  echo "al_summary_written=$(wc -l <"$OUT/al-summary.txt" 2>/dev/null || echo 0)"
+} >>"$OUT/summary.txt" 2>&1cat "$OUT/summary.txt"
