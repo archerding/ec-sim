@@ -30,6 +30,14 @@ pub mod sii_gen;
 #[cfg(feature = "wasm-runtime")]
 pub mod wasm;
 
+/// WASM 插件**独占 worker 线程**（B44 子项 2 / M3-W2）。
+///
+/// 仅在 `wasm-runtime` feature 下编译。把插件实例整体搬进独立线程：宿主投递
+/// PDO arena 快照、有界等待结果；插件死循环/崩溃由 wasmi fuel 与内存上限兜底，
+/// 宿主线程**永不阻塞**。见 [`wasm_worker`] 模块文档与「已知限制」。
+#[cfg(feature = "wasm-runtime")]
+pub mod wasm_worker;
+
 /// 设备插件的最小契约。
 ///
 /// 真实实现由声明式 `plugin.yaml` 生成（或 WASM 导出），宿主按此 trait 分发；

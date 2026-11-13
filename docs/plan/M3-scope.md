@@ -49,5 +49,5 @@
 ## 6. 下一步（按优先级）
 
 1. ✅ W1 spike 已完成（B43，wasmi 0.31.2 + 最小宿主，见 [spike-6](../spikes/spike-6-wasm-host.md)）。
-2. 🟡 W2 arena 同步（W1 依赖）：双缓冲/seqlock + generation **已完成**（`plugin-host::arena`，`crates/plugin-host/tests/arena_no_alloc.rs` 零分配守卫 + 2 万次发布并发压测零撕裂）；剩余插件 worker 线程、fuel/超时与内存上限（**M3 当前主阻塞项**）。
+2. 🟡 W2 arena 同步（W1 依赖）：双缓冲/seqlock + generation **已完成**（`plugin-host::arena`，`crates/plugin-host/tests/arena_no_alloc.rs` 零分配守卫 + 2 万次发布并发压测零撕裂）；子项 2 **插件独占 worker 线程 + fuel/超时 + 内存上限** 已完成（`plugin-host::wasm_worker`：`ArenaSnapshot` 投递 + `recv_timeout` 有界等待 + `StoreLimits`；死循环由 fuel 终止、宿主永不 join 卡住的插件；`wasm-runtime` 下 52 测试）；剩余**把实例生命周期接到 `esc-node` 非实时线程、插件 panic 重启与多实例配额**。
 3. W7 32 从站调研 / W8 MCP stub（文档级交付）。

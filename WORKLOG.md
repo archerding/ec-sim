@@ -1,5 +1,54 @@
 ---
 
+## 2026-11-13 08:45 班（低峰）— **B44：M3-W2 子项 2 WASM 插件独占 worker 线程 + fuel/超时/内存上限**
+
+> 调度上下文计划重点（B2b 最小 ESC 应答器 / B8 双主站冒烟 / B4 wire crate）均已完成，
+> 按 `AGENTS.md` §5 取 backlog 顶部未完成项 **B44**，本班只做其中可独立验证的子项 2
+> （worker 线程隔离；与 `esc-node` 接线留后续班）。
+
+**做了什么**
+- `plugin-host::wasm` 扩展（仍在可选 `wasm-runtime` feature 下，默认构建零第三方依赖不变）：
+  - 新增 `HostConfig{pdo_len, max_memory_bytes, fuel_per_tick}` 与
+    `WasmPlugin::from_wat_with_config` / `from_wasm_bytes_with_config`：
+    wasmi `Config::consume_fuel`（每 tick `add_fuel` 追加预算，单调累积）、`StoreLimits`
+    （`Store::limiter`，**初始内存分配**与 `memory.grow` 都受检）；默认值仍等于 B43 行为。
+  - 新增 `WasmHostError::OutOfFuel`：`trap_code() == Some(TrapCode::OutOfFuel)` 单独识别。
+- 新增 `plugin-host::wasm_worker`（feature 门控）：`WasmWorker::spawn_wat/spawn_wasm_bytes`
+  把**编译 + 实例化整体放进独占线程**（模块/Store 不跨线程），宿主经命令通道投递
+  `ArenaSnapshot`（插件可见映像 = `[SM2 | SM3]`），`tick(snapshot, timeout)` 用
+  `recv_timeout` **有界等待**：超时 → `WorkerError::Timeout`（迟到结果按请求 id 丢弃，
+  worker 不受影响）；死循环 → fuel 耗尽 `WorkerError::OutOfFuel`；`Drop`/`shutdown`
+  **只发信号并 detach，绝不 join 卡住的插件** → 宿主实时/控制面线程永不被拖死。
+- 9 个单测：快照往返 → SM3 输出与 fuel 统计、连续 tick 状态/日志、**死循环 <2s 内被 fuel
+  终止且 worker 可继续**、**宿主 1ms 超时不被阻塞 + 下一 tick 正常恢复（按 id 丢弃迟到事件、
+  calls=2 证明 worker 未死）**、内存上限拒绝 4 页/放行 1 页、缺 `tick` 导出、非法限制、
+  **drop 繁忙 worker <200ms 返回**、`pdo_len` 布局。
+- 文档同步：`AGENTS.md`（B44 进度）、`docs/plan/M3-scope.md`（W2 状态 + 剩余项）、
+  `docs/STATUS.md`（测试基线/插件宿主段/下一步）。
+
+**验证结果**
+- 本机（Windows）：`cargo fmt --all -- --check` OK；
+  `cargo clippy --workspace --all-targets -- -D warnings` OK；
+  `cargo clippy -p plugin-host --features wasm-runtime --all-targets -- -D warnings` OK；
+  `cargo test --workspace` → **236 passed / 0 failed**（默认 feature，与上一条持平）；
+  `cargo test -p plugin-host --features wasm-runtime` → **52 passed / 0 failed**（新增 9）。
+- ⚠️ 未在 Linux 验证机跑：需 `wasm-runtime` feature（首次构建要从 crates.io 拉 wasmi/wat），
+  验证机源码树是普通拷贝且网络受限；验证方法：同步仓库后
+  `cargo test -p plugin-host --features wasm-runtime`。
+
+**卡点**
+- wasmi 0.31 **无异步中断**：单次 tick 内不可抢占，`Timeout` 只是"宿主不再等"，
+  CPU 上界仍依赖有限的 `fuel_per_tick`（文档已写明两者必须配对使用）。
+- 插件 panic 会杀掉 worker 线程（后续 tick → `Stopped`），未做 panic 捕获/自动重启；
+  arena 仍未与 `esc-node` 实时环接线，也未做多插件配额。
+
+**下次开工第一件事**
+- **B44 子项 3**：把 `WasmWorker` 接到 `esc-node` 非实时线程（每周期 publish arena →
+  按超时 tick → 插件输出回写 SM3），并给 `--manifest` 画像加 `behavior:` 声明；
+  顺带在验证机补跑 `wasm-plugin-probe.sh`（需 crates.io）。
+
+---
+
 ## 2026-11-13 08:35 班（低峰）— **B44：M3-W2 子项 1 PDO arena 双缓冲/seqlock + generation**
 
 > 调度上下文计划重点（B2b 最小 ESC 应答器 / B8 双主站冒烟 / B4 wire crate）均已完成，

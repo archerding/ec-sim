@@ -506,6 +506,20 @@ user.email = deepseek-harness@users.noreply.github.com
     `crates/plugin-host/tests/arena_no_alloc.rs` 计数分配器守卫（发布与失败路径 **0 次分配**）。
     测试 **236 passed**。⚠️ W2 剩余：插件独占 worker 线程、fuel/超时、内存上限、崩溃隔离、
     接 `esc-node` 非实时线程。
+  - 进度（2026-11-13 08:45 班）：**W2 子项 2：worker 线程隔离 + fuel/超时 + 内存上限已实现**——
+    `plugin-host::wasm` 增加 `HostConfig{pdo_len,max_memory_bytes,fuel_per_tick}` 与
+    `from_wat_with_config`/`from_wasm_bytes_with_config`（wasmi `consume_fuel` + `StoreLimits`；
+    默认值仍等于 B43 行为）、`WasmHostError::OutOfFuel`；新增 feature 门控的
+    `plugin-host::wasm_worker`：`WasmWorker::spawn_*` 把编译/实例化整体放进**独占线程**，
+    宿主投递 `ArenaSnapshot`（`[SM2|SM3]`）并用 `recv_timeout` 有界等待——超时
+    `WorkerError::Timeout`（迟到事件按请求 id 丢弃，worker 继续服务）、死循环由 fuel 终止为
+    `OutOfFuel`、`Drop`/`shutdown` **只发信号并 detach（绝不 join 卡住的插件）**。
+    9 个新单测（含「死循环 <2s 内被 fuel 终止」「宿主 1ms 超时不被阻塞且下一 tick 恢复」
+    「drop 繁忙 worker <200ms 返回」「4 页内存被 64KiB 上限拒绝」）；`wasm-runtime` 下
+    **52 passed**，默认 `cargo test --workspace` 仍 **236 passed**。
+    ⚠️ 未在 Linux 验证机跑（需 crates.io 拉 wasmi）；wasmi 0.31 无异步中断 →
+    `Timeout` 只是宿主不再等，CPU 上界仍须配有限 `fuel_per_tick`；插件 panic 会杀线程；
+    未接 `esc-node`、未做多插件配额。
 
 ## 7. 目录约定
 
