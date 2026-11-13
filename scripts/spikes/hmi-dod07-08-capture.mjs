@@ -53,12 +53,15 @@ try {
   const cdp = new Cdp(socket);
   await cdp.send("Page.enable"); await cdp.send("Runtime.enable");
 
-  // DOD-08：21 张（3 分辨率 × 7 视图）
+  const domJson = [];
+  // DOD-08：21 张（3 分辨率 × 7 视图）+ 机器可读 DOM JSON
   for (const res of resolutions) {
     await loadPage(cdp, res.width, res.height, res.scale);
     for (const [view, targetId] of views) {
       const scrolled = await evaluate(cdp, `(async () => { const el = document.getElementById(${JSON.stringify(targetId)}); if (!el) return {found:false, scrollY: window.scrollY}; el.scrollIntoView({block:"start"}); await new Promise(r => requestAnimationFrame(r)); await new Promise(r => requestAnimationFrame(r)); return {found:true, scrollY: window.scrollY, top: Math.round(el.getBoundingClientRect().top), overflowX: document.scrollingElement.scrollWidth - window.innerWidth}; })()`);
+      const dom = JSON.parse(await evaluate(cdp, `(() => { const t = document.getElementById(${JSON.stringify(targetId)}); const r = t ? t.getBoundingClientRect() : null; const sc = document.scrollingElement; const under44 = Array.from(document.querySelectorAll("button,a[href],input,select,[role=button]")).filter(el => { const b = el.getBoundingClientRect(); return b.width > 0 && b.height > 0 && (b.width < 44 || b.height < 44); }).map(el => ({ id: el.id, testid: el.getAttribute("data-testid") || "", w: Math.round(b => b)(el.getBoundingClientRect().width), h: Math.round(el.getBoundingClientRect().height) })).slice(0, 20); return JSON.stringify({ view: ${JSON.stringify(view)}, resolution: ${JSON.stringify(res.label)}, hash: location.hash, scroll: { scrollWidth: sc.scrollWidth, clientWidth: sc.clientWidth, overflowX: sc.scrollWidth - sc.clientWidth, overflowY: sc.scrollHeight - sc.clientHeight }, target: t ? { id: ${JSON.stringify(targetId)}, rect: { top: Math.round(r.top), left: Math.round(r.left), width: Math.round(r.width), height: Math.round(r.height) }, in_viewport: r.top >= -8 && r.top < window.innerHeight * 0.6 } : null, interactive_under44: under44 }); })()`));
       const shot = await cdp.send("Page.captureScreenshot", { format: "png" });
+      domJson.push(dom);
       const file = path.join(out, `${res.label}-${view}.png`);
       await writeFile(file, Buffer.from(shot.data, "base64"));
       console.log(`OK DOD-08 ${res.label} ${view} found=${scrolled.found} scrollY=${scrolled.scrollY} top=${scrolled.top} overflowX=${scrolled.overflowX}`);
@@ -99,6 +102,7 @@ try {
   }
   await writeFile(path.join(out, "dod07-perf.json"), JSON.stringify(perf, null, 2));
   await writeFile(path.join(out, "dod08-layout.json"), JSON.stringify({ resolutions, views }, null, 2));
+  await writeFile(path.join(out, "DOD-08-dom.json"), JSON.stringify({ meta: { master_attached: true, frames_in_last: null, zoom_method: "device_scale_factor(2) 非真实 200%", note: "真实 200% 需浏览器/系统缩放，另行记录" }, views: domJson }, null, 2));
   console.log("DONE:", out);
   socket.close();
 } finally {

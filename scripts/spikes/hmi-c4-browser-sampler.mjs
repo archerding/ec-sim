@@ -3,7 +3,7 @@
 // heap 优先 performance.memory + CDP Performance 兜底；连续 3 次失败才判 crashed；sse_opens 与 sse_errors 分列。
 // 用法：node scripts/spikes/hmi-c4-browser-sampler.mjs <url> <outJsonl> [durationSeconds=14400] [interval=60]
 import { spawn } from "node:child_process";
-import { appendFile, mkdir } from "node:fs/promises";
+import { appendFile, mkdir, open, unlink } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 
@@ -14,6 +14,17 @@ const interval = Number(process.argv[5] || 60);
 if (!url || !outFile) { console.error("usage: hmi-c4-browser-sampler.mjs <url> <out.jsonl> [duration] [interval]"); process.exit(2); }
 const edge = process.env.EDGE_BIN || "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 await mkdir(path.dirname(outFile), { recursive: true });
+// 单实例保护（防第二 sampler 冲突）
+const lockPath = `${outFile}.lock`;
+let lockHandle;
+try {
+  lockHandle = await open(lockPath, "wx");
+} catch (error) {
+  console.error("SAMPLER_LOCKED", lockPath);
+  process.exit(9);
+}
+process.on("exit", () => { try { if (lockHandle) lockHandle.close(); } catch (e) {} try { unlinkSync(lockPath); } catch (e) {} });
+import { unlinkSync } from "node:fs";
 const port = 9666;
 const child = spawn(edge, ["--headless=new", "--enable-precise-memory-info", `--remote-debugging-port=${port}`, `--user-data-dir=${path.join(path.dirname(outFile), ".edge")}`, "--no-first-run", "--disable-gpu", "about:blank"], { stdio: "ignore" });
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
