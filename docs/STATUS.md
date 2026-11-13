@@ -8,7 +8,7 @@
 核心 ESC（寄存器/SM/FMMU/AL/EEPROM-SII/邮箱/watchdog）+ CoE（SDO 加速/分段/SDO Info/
 Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/CST，Tier0 简化）
 + 声明式设备画像已实现；**未修改的 SOEM 2.0.0 与 IgH 1.6.13** 可发现从站并进入 OP
-（IgH 无应用时到 PREOP）。测试基线 **259 passed**（另 `wasm-runtime` feature 下 plugin-host **56 单测 + 5 集成** / esc-node **77 单测 + 1 集成**：WASM 宿主 + arena + worker 线程 + 行为桥 + 仓库内真实行为画像 + B51 重启/配额 + B54 多实例接线）。**M3 = 退出候选**：Linux 验证机整轮 `run-all-probes.sh` **20 PASS / 0 FAIL / 1 SKIP**（`tap-live` 单独补跑 PASS）、本机 259 passed、许可核对完成、ADR 0002 → Accepted，见 [M3 退出清单](plan/M3-exit-checklist.md)（W6 真人浏览器点击验收待补）。**B54（2026-11-13 团队班）**：新增 `plugins/cnc-csp-servo/`（与 lcec `basic_cia402` 的 PP/CSP PDO 布局一致）+ 多实例行为插件接线 + TAP 多 CiA402 从站探针，作为 CNC 虚拟闭环 V1/V2 的 EC-Sim 侧对接包（见 [CNC-V1-integration](plan/CNC-V1-integration.md)）。
+（IgH 无应用时到 PREOP）。测试基线 **261 passed**（另 `wasm-runtime` feature 下 plugin-host **56 单测 + 5 集成** / esc-node **77 单测 + 1 集成**：WASM 宿主 + arena + worker 线程 + 行为桥 + 仓库内真实行为画像 + B51 重启/配额 + B54 多实例接线）。**M3 = 退出候选**：Linux 验证机整轮 `run-all-probes.sh` **20 PASS / 0 FAIL / 1 SKIP**（`tap-live` 单独补跑 PASS）、本机 261 passed、许可核对完成、ADR 0002 → Accepted，见 [M3 退出清单](plan/M3-exit-checklist.md)（W6 真人浏览器点击验收待补）。**B54（2026-11-13 团队班）**：新增 `plugins/cnc-csp-servo/`（与 lcec `basic_cia402` 的 PP/CSP PDO 布局一致）+ 多实例行为插件接线 + TAP 多 CiA402 从站探针，作为 CNC 虚拟闭环 V1/V2 的 EC-Sim 侧对接包（见 [CNC-V1-integration](plan/CNC-V1-integration.md)）。**B55（同班）**：修复 ACC-27② P1——控制面 `?slave=` 统一校验（0-based；非法/越界 → 404 JSON，不再静默回退站 0），静态/UDS/TAP 三路径探针 `invalid-slave-probe.sh`。
 
 ## 代码与测试
 
@@ -18,7 +18,7 @@ Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/
 | `esc-node` | 从站应答器、PDI 内存、邮箱处理、CiA 402 行为、`ec-sim-esc` 二进制；WASM 行为桥（可选 feature）；链处理/1 kHz 基准示例（B46） | 73（另 `wasm-runtime` 下 73 单测 + 1 行为画像集成） |
 | `plugin-host` | plugin.yaml 解析/校验、SII/字典/ESI 生成；PDO arena 同步（W2）；WASM 宿主 + 行为运行时（可选 feature） | 33 + 5 集成（另 `wasm-runtime` 下 53 + 5 集成） |
 | `wire` | EtherCAT 帧/datagram 编解码 + WKC 语义 | 23 |
-| `control-plane` | 只读快照 API：state-v1 / dict-v1 JSON + 路由表（`/state`、`/dict`） | 20 |
+| `control-plane` | 只读快照 API：state-v1 / dict-v1 JSON + 路由表（`/state`、`/dict`）+ 站号校验（`validate_slave_param`，0-based，非法/越界 404） | 22 |
 | `mcp-server` | MCP/Agent 桥接（B47）：JSON-RPC 2.0 stdio + 9 个只读工具（只发 GET），零第三方依赖；B50 增调用审计 JSON Lines | 18 |
 
 `cargo fmt --check`、`cargo clippy --workspace --all-targets -D warnings`、`cargo test --workspace`
@@ -134,7 +134,12 @@ cargo test --workspace
    对接文档 [plan/CNC-V1-integration.md](plan/CNC-V1-integration.md)；release 二进制交付给 CNC 侧
    （`.local/artifacts/`，sha256 `878712fe…88b8ee`，⚠️ 不入库）。⚠️ 验证机上 csp 画像的 IgH ecrt 夹具在
    `ecrt_master_sdo_download` 内核 D 状态卡死（PV-01/PV-14 类环境问题）→ 该项仅以 SOEM/TAP 与本侧 TAP 探针为证据。
-7. **B53（建议）DC 仿真 Tier1**：寄存器 + SYNC0/tick（帧驱动）；实现后在测试画像上验证再声明 SII DC。
+7. ~~**B55（团队班）ACC-27② P1：控制面 `?slave=` 统一校验**~~ ✅ 2026-11-13 完成——`control-plane::validate_slave_param`
+   （0-based；非数字/负数/空串/越界 → 404 JSON，不再静默回退站 0）；`/state` `/pdo` `/metrics` `/events`
+   `/sdo` `/dict` `/sdo-audit` + `POST /sdo`/`POST /pdo` 全部接线（静态/UDS/TAP），全局路由带 `?slave` 显式 404；
+   `/sdo-audit?slave=N` 按站过滤；新增探针 `scripts/spikes/invalid-slave-probe.sh`（证书矩阵，
+   登记 run-all → 注册表 **23 项**）与 2 条 control-plane 单测；CONTROL-PLANE §2.1 写明站号语义。
+8. **B53（建议）DC 仿真 Tier1**：寄存器 + SYNC0/tick（帧驱动）；实现后在测试画像上验证再声明 SII DC。
    **不承诺**真实同步精度/抖动（需真机/HIL）。
 7. 验证机补跑 `wasm-plugin-probe.sh` / `wasm-behavior-probe.sh` 与 Linux CLI UDS/TAP 行为插件端到端（需 crates.io，或先 vendor wasmi/wat）。
 8. CA 部分写/子索引顺序语义完善；fuzz 升级。

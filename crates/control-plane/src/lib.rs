@@ -262,6 +262,37 @@ pub fn not_found_json(message: &str) -> HttpResponse {
     json_response("HTTP/1.1 404 Not Found", body)
 }
 
+/// 校验 `?slave=` 查询参数并返回 **0-based** 从站索引（ACC-27② / P1 修复）。
+///
+/// - 缺省（`None`）→ `Ok(0)`（保持既有默认行为；`slave_count == 0` 时同样 404）；
+/// - 合法（`0..slave_count`）→ `Ok(index)`；
+/// - 非数字、负数、空串、越界（`>= slave_count`）→ `Err(404 JSON)`。
+///
+/// **不允许静默回退到站 0**：调用方必须把 `Err` 原样作为 HTTP 响应返回。
+/// 语义是 0-based（`slave=0..N-1`，与 `/topology` 的 `count` 对齐），文档见 CONTROL-PLANE。
+///
+/// 返回 `Result`（本身必须使用），故不加 `#[must_use]`。
+pub fn validate_slave_param(
+    value: Option<&str>,
+    slave_count: usize,
+) -> Result<usize, HttpResponse> {
+    if slave_count == 0 {
+        return Err(not_found_json("没有可用从站（slave_count=0）"));
+    }
+    match value {
+        None => Ok(0),
+        Some(raw) => match raw.parse::<usize>() {
+            Ok(index) if index < slave_count => Ok(index),
+            _ => Err(not_found_json(&format!(
+                "slave {} 不存在（共 {} 个从站；slave 为 0-based，取值 0..={}）",
+                raw,
+                slave_count,
+                slave_count.saturating_sub(1)
+            ))),
+        },
+    }
+}
+
 /// 需要鉴权的控制面 API 路由（B41：可选静态 Bearer token）。
 ///
 /// 静态资源（`/`、`/index.html`、`/app.js`、`/health`）不在列表内：它们用于加载 WebUI 外壳，
@@ -1277,5 +1308,47 @@ mod tests {
         let forbidden = forbidden_token_json();
         assert_eq!(forbidden.status_line, "HTTP/1.1 403 Forbidden");
         assert!(forbidden.body.contains("token"));
+    }
+
+    #[test]
+    fn validate_slave_param_accepts_absent_and_in_range() {
+        // 缺省 = 站 0（既有默认行为）。
+        assert_eq!(validate_slave_param(None, 3), Ok(0));
+        assert_eq!(validate_slave_param(None, 1), Ok(0));
+        // 0-based 合法边界：0 与 N-1。
+        assert_eq!(validate_slave_param(Some("0"), 3), Ok(0));
+        assert_eq!(validate_slave_param(Some("2"), 3), Ok(2));
+    }
+
+    #[test]
+    fn validate_slave_param_rejects_invalid_with_404_json() {
+        // 非数字 / 负数 / 空串 / 越界 / 溢出 / 浮点 / 带空白：一律 404 JSON，绝不静默回退 0。
+        for raw in [
+            "abc",
+            "-1",
+            "",
+            "3",
+            "4",
+            "18446744073709551616",
+            "1.0",
+            " 1",
+        ] {
+            let response = match validate_slave_param(Some(raw), 3) {
+                Ok(index) => panic!("raw={raw:?} 应被拒绝，实际 Ok({index})"),
+                Err(response) => response,
+            };
+            assert_eq!(
+                response.status_line, "HTTP/1.1 404 Not Found",
+                "raw={raw:?}"
+            );
+            assert_eq!(
+                response.content_type, "application/json; charset=utf-8",
+                "raw={raw:?}"
+            );
+            assert!(response.body.contains("\"error\""), "raw={raw:?}");
+            assert!(response.body.contains("0-based"), "raw={raw:?}");
+        }
+        // slave_count=0 时缺省也不得返回 Ok(0)（无站可指）。
+        assert!(validate_slave_param(None, 0).is_err());
     }
 }

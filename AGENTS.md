@@ -640,6 +640,14 @@ user.email = deepseek-harness@users.noreply.github.com
   ⚠️ `tap-cia402` 整轮因验证机被 B-1 验收占用未跑（登记为下一轮证据）。
   二进制交付：release `ec-sim-esc`（openEuler 24.03 SP4 / glibc 2.38 / rustc 1.99.1，
   sha256 `878712fe…88b8ee`）放 `.local/artifacts/`（gitignored，不入库）。不宣称一致/认证。
+- [x] ~~**B55 ACC-27② P1 修复：控制面 `?slave=` 统一校验（0-based）**~~ ✅ **2026-11-13 团队班完成**：
+  `control-plane::validate_slave_param`（缺省=0；`0..=N-1` 合法；非数字/负数/空串/越界 → **404 JSON**，
+  **不静默回退站 0**）；`esc-node` 实时/静态两模式接线：按站路由 `/state` `/pdo` `/metrics` `/events`
+  `/sdo` `/dict` `/sdo-audit` + `POST /sdo`/`POST /pdo`；全局路由（`/topology` 等）带 `?slave` 显式 404；
+  `/sdo-audit?slave=N` 按站过滤（事件体保留 `slave` 字段）；新增探针 `scripts/spikes/invalid-slave-probe.sh`
+  （静态/UDS/TAP × {非数字,负,空,越界,0,N-1}，写路由按站隔离）并登记 run-all（注册表 **23 项**）；
+  2 条 control-plane 单测；CONTROL-PLANE §2.1 写明 0-based 语义与静态模式仅 `slave=0`。
+  证据：WORKLOG 2026-11-13 团队班（B55 段）、`docs/VERIFICATION.md`。不宣称认证。
 
 ## 7. 目录约定
 

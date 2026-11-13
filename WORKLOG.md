@@ -1,5 +1,53 @@
 ---
 
+## 2026-11-13 12:37–13:10 团队班（DSH Agent Teams）— **B55：ACC-27② P1 修复（控制面 `?slave=` 统一校验）+ task-26 二进制交付记录**
+
+> 任务来源：团队任务板 `task-17`（P1 缺陷，Owner `sim-impl`；判据由 `sim-expert` task-19 给出）与
+> `task-26`（二进制交付，Owner `sim-impl`）。`task-8`（B54）已在同班完成并推送（`182147d`）。
+
+**做了什么**
+- **B55（task-17）`?slave=` 统一校验（0-based）**：
+  - `control-plane::validate_slave_param(value, slave_count)`：缺省 = 站 0；合法 `0..=N-1`；
+    非数字/负数/空串/越界 → **404 JSON**（复用 `not_found_json` 形状），**不再静默回退站 0**；
+    `slave_count == 0` 时缺省也 404；
+  - `esc-node` 实时模式接线：按站路由 `/state` `/pdo`（含 `history=1`）`/metrics` `/events` `/sdo`
+    `/dict` `/sdo-audit` + `POST /sdo`/`POST /pdo` 统一先校验；**全局路由**（`/topology`、`/`、`/health`）
+    带 `?slave` → 显式 404（不静默忽略）；`/sdo-audit?slave=N` 改为**按站过滤**（事件体仍含 `slave` 字段）；
+  - 静态模式（无 UDS/TAP）：`/state` `/dict` `/sdo` 同样校验（静态快照仅站 0，`slave=0`/缺省 200，其它 404）；
+  - 文档：`docs/CONTROL-PLANE.md` 路由表逐条标注 `?slave` 支持 + 新增 **§2.1 站号语义（0-based/404/静态模式）**；
+  - 测试：control-plane +2 单测（合法缺省/0/N-1；非数字/负数/空/越界/溢出/浮点/空白全 404 JSON）；
+    新增探针 `scripts/spikes/invalid-slave-probe.sh`（静态 / UDS(`--slaves 3`) / TAP(root) 三路径 ×
+    {非数字,负,空串,越界} × 全部按站路由 + 写路由按站隔离；`SKIP_TAP=1` 可跳 TAP），登记 `run-all-probes.sh`
+    （`invalid-slave`，any → 注册表 **23 项**）。
+- **task-26 二进制交付记录**：新增 `docs/verification/2026-11-13-ecsim-binary-delivery.md`
+  （文件名/字节数/sha256/ELF 头/构建环境/构建命令/共享盘路径/CNC 侧落盘分工/校验矩阵/边界）；
+  二进制 = B54 提交 `182147d` 的 release 构建（sha256 `878712fe…88b8ee`，1,053,952 B，ELF64 x86-64，
+  openEuler 24.03 SP4 / glibc 2.38 / rustc 1.99.1），置于 `.local/artifacts/`（gitignored）。
+  交付分工：EC-Sim 侧只提供产物+哈希；**CNC 验证机落盘由 `cnc-impl`（CNC VM owner）执行**，
+  EC-Sim 侧不登录 CNC VM（与 cnc-expert/cnc-impl 对齐）。
+
+**验证结果**
+- `cargo fmt --all -- --check` **0**；`cargo clippy --workspace --all-targets -- -D warnings` **0**；
+  `cargo test --workspace` **261 passed / 0 failed**（control-plane 20 → 22）；
+  `python scripts/spikes/control-plane-doc-check.py` **EXIT=0**（14 条路由 / 17 个探针文档引用一致）。
+- `invalid-slave-probe.sh`：本机（Windows）静态段 **EXIT=0**（合法 0/缺省 200；非数字/负数/空串/越界
+  404 JSON — `/state` `/dict` `/sdo`）；UDS/TAP 段需 Linux（见卡点）。
+- `tap-live-state-probe.sh` 打印 bug（sim-expert 报 P2）同班修复（成功日志不再把 `/pdo` 的 HTTP 200
+  当 AL 打印）。
+
+**卡点**
+- ⚠️ EC-Sim VM 同班被多个任务争用：B54 的 csp IgH 探针把 ecrt 夹具卡进内核 D 状态（PV-01/PV-14），
+  我 reboot 一次；之后 sim-expert（task-22）配对实验再次触发同类 D 状态并二次 reboot。
+  因此 `invalid-slave-probe.sh` 的 **UDS/TAP 两段**与 task-26 的 `--version/--help` 实测在本班收尾时
+  尚未取到（VM 恢复后补；补跑命令见脚本注释与交付文档）。
+- ⚠️ 二进制交付最终落盘 CNC VM 由 `cnc-impl` 执行（EC-Sim 侧边界：不登录 CNC VM）。
+
+**下次开工第一件事**
+- VM 恢复后：跑 `invalid-slave-probe.sh` 全三路径 + `ec-sim-esc --version/--help` 回填证据；随后
+  task-12（M4 收尾：B52 验收 + CI 观察窗）→ task-18（B-2 验收探针聚合脚本）。
+
+---
+
 ## 2026-11-13 12:37–13:10 团队班（DSH Agent Teams）— **B54：CNC 虚拟闭环对接包（task-8）**
 
 > 任务来源：团队任务板 `task-8`「EC-Sim 实现：M3 收尾 + 与 CNC 闭环对接准备」（Owner `sim-impl`）。

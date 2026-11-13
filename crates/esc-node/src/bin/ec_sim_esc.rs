@@ -470,8 +470,24 @@ fn serve_http(
         }
         let response = if let Some(response) = static_web_response(&path, web_root) {
             response
-        } else if path_only == "/sdo" {
-            sdo_response(&path, dict_for_decode.as_ref())
+        } else if matches!(path_only, "/state" | "/dict" | "/sdo") {
+            // ACC-27②：静态快照只有站 0，但仍校验 `?slave=`（非法/越界 → 404 JSON，
+            // 不因"无 live 数据"而静默忽略参数）。
+            match control_plane::validate_slave_param(query_param(&path, "slave"), 1) {
+                Err(response) => response,
+                Ok(_index) => {
+                    if path_only == "/sdo" {
+                        sdo_response(&path, dict_for_decode.as_ref())
+                    } else {
+                        control_plane::handle_get(&path, &state, dict_json.as_deref())
+                    }
+                }
+            }
+        } else if query_param(&path, "slave").is_some() {
+            // 全局路由（/、/health）收到 `slave` 参数 → 显式 404，不静默忽略。
+            control_plane::not_found_json(
+                "该路由是全局路由，不支持 ?slave 参数（静态模式按站路由：/state /dict /sdo，仅 slave=0）",
+            )
         } else {
             control_plane::handle_get(&path, &state, dict_json.as_deref())
         };
@@ -667,7 +683,7 @@ fn serve_live_http(
     println!("SERVE (live) http://{addr} routes=/state,/dict");
     let _ = std::io::stdout().flush();
     let mut sdo_writes: u64 = 0;
-    let mut sdo_audit: std::collections::VecDeque<String> =
+    let mut sdo_audit: std::collections::VecDeque<(usize, String)> =
         std::collections::VecDeque::with_capacity(64);
     for stream in listener.incoming() {
         let mut stream = match stream {
@@ -692,16 +708,31 @@ fn serve_live_http(
         }
         let slave_param = query_param(&path, "slave");
         let slave_count = responders.lock().unwrap().len();
-        let slave_index = match slave_param {
-            Some(value) => value
-                .parse::<usize>()
-                .ok()
-                .filter(|index| *index < slave_count),
-            None => Some(0),
+        // ACC-27②（P1 修复）：凡"按站"的路由都校验 `?slave=`（0-based，取值 0..=count-1）；
+        // 非数字/负数/越界 → 404 JSON，**不静默回退到站 0**。POST /sdo、POST /pdo 同样适用。
+        // 非按站路由（/topology、/、/health 等）收到 `slave` 参数 → 显式 404（不静默忽略）。
+        let per_slave_route = matches!(
+            path_only,
+            "/state" | "/pdo" | "/metrics" | "/events" | "/sdo" | "/dict" | "/sdo-audit"
+        );
+        let slave_index = if per_slave_route {
+            match control_plane::validate_slave_param(slave_param, slave_count) {
+                Ok(index) => index,
+                Err(response) => {
+                    write_http_response(&mut stream, &response, "");
+                    continue;
+                }
+            }
+        } else {
+            if slave_param.is_some() {
+                let response = control_plane::not_found_json(
+                    "该路由是全局路由，不支持 ?slave 参数（按站路由：/state /pdo /metrics /events /sdo /dict /sdo-audit）",
+                );
+                write_http_response(&mut stream, &response, "");
+                continue;
+            }
+            0
         };
-        let invalid_slave = matches!(path_only, "/state" | "/pdo" | "/metrics" | "/events")
-            && slave_index.is_none();
-        let slave_index = slave_index.unwrap_or(0);
         if method == "POST" && path_only == "/sdo" {
             let response = if !serve_write {
                 control_plane::HttpResponse {
@@ -744,7 +775,7 @@ fn serve_live_http(
                                             "{{\"ts_ms\": {}, \"slave\": {slave_index}, \"index\": \"0x{index:04X}\", \"sub\": {sub}, \"old_hex\": \"{old_hex}\", \"new_hex\": \"{written}\"}}",
                                             now_ms()
                                         );
-                                        sdo_audit.push_back(event);
+                                        sdo_audit.push_back((slave_index, event));
                                         if sdo_audit.len() > 64 {
                                             sdo_audit.pop_front();
                                         }
@@ -927,7 +958,7 @@ fn serve_live_http(
                 control_plane::pdo_json_decoded(&pdo, &decoded)
             }
         });
-        if path_only == "/events" && !invalid_slave {
+        if path_only == "/events" {
             let interval_ms = query_param(&path, "interval_ms")
                 .and_then(|value| value.parse::<u64>().ok())
                 .unwrap_or(500)
@@ -998,17 +1029,18 @@ fn serve_live_http(
         } else if path_only == "/sdo" {
             sdo_response_with_override(&path, dict_for_decode.as_ref(), &responders, slave_index)
         } else if path_only == "/sdo-audit" {
-            let events: Vec<String> = sdo_audit.iter().cloned().collect();
+            // 审计按站过滤（`?slave=N` 已校验；缺省 = 站 0）；`/sdo-audit` 的 `slave` 字段
+            // 仍保留在事件体里，便于跨站排查时用 `?slave=N` 逐站取。
+            let events: Vec<String> = sdo_audit
+                .iter()
+                .filter(|(slave, _)| *slave == slave_index)
+                .map(|(_, event)| event.clone())
+                .collect();
             control_plane::HttpResponse {
                 status_line: "HTTP/1.1 200 OK",
                 content_type: "application/json; charset=utf-8",
                 body: control_plane::sdo_audit_json(&events),
             }
-        } else if invalid_slave {
-            control_plane::not_found_json(&format!(
-                "slave {} 不存在（共 {slave_count} 个从站）",
-                slave_param.unwrap_or("")
-            ))
         } else {
             match topology_body {
                 Some(body) => control_plane::HttpResponse {

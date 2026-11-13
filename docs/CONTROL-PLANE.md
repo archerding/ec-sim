@@ -48,20 +48,33 @@ cargo run -q -p esc-node --bin ec-sim-esc -- \
 | `GET /app.js` | 全部 | JavaScript | Web 前端脚本（仅在 `--web-root` 有效时） |
 | `GET /health` | 全部 | （内联 JSON） | 同上（健康检查） |
 | `GET /state` | 全部 | `ec-sim/state-v1` | 只读状态快照；实时模式额外含 `live` 字段 |
-| `GET /dict` | 全部 | `ec-sim/dict-v1` | 运行时对象字典（无 manifest 时 404） |
+| `GET /dict` | 全部 | `ec-sim/dict-v1` | 运行时对象字典（无 manifest 时 404）；支持 `?slave=N`（校验站号，字典当前对同画像各站相同） |
 | `GET /pdo` | 实时 | `ec-sim/pdo-v1` | SM2/SM3 原始字节 + `decoded` 具名解码 |
-| `GET /sdo?index=0x6040&sub=0` | 全部 | `ec-sim/sdo-v1` | 运行时对象字典只读浏览（不经过 mailbox；未知对象 404） |
-| `POST /sdo?index=0x6040&sub=0` | 实时（需 `--serve-write`） | （内联 JSON） | 受控写对象值（白名单/长度/审计；默认 405、非白名单 403、未知 404、长度错 400） |
-| `GET /sdo-audit` | 实时 | `ec-sim/sdo-audit-v1` | 最近 64 条 SDO 写审计事件 |
+| `GET /sdo?index=0x6040&sub=0` | 全部 | `ec-sim/sdo-v1` | 运行时对象字典只读浏览（不经过 mailbox；未知对象 404）；支持 `?slave=N` |
+| `POST /sdo?index=0x6040&sub=0` | 实时（需 `--serve-write`） | （内联 JSON） | 受控写对象值（白名单/长度/审计；默认 405、非白名单 403、未知 404、长度错 400）；支持 `?slave=N` |
+| `GET /sdo-audit` | 实时 | `ec-sim/sdo-audit-v1` | 最近 64 条 SDO 写审计事件；`?slave=N` 按站过滤（缺省 = 站 0） |
 | `GET /pdo?history=1` | 实时 | `ec-sim/pdo-history-v1` | 按变化去重的 PDO 时间序列（每站 256 条） |
-| `GET /topology` | 实时 | `ec-sim/topology-v1` | 链上所有从站摘要 |
+| `GET /topology` | 实时 | `ec-sim/topology-v1` | 链上所有从站摘要（**全局路由**，不接受 `?slave`） |
 | `GET /metrics` | 实时 | Prometheus 文本 | 每站计数器/状态，`text/plain; version=0.0.4` |
 | `GET /state?slave=N` | 实时 | `ec-sim/state-v1` | 指定从站（默认 0；越界/非法 → 404） |
 | `GET /pdo?slave=N`（可叠加 `history=1`） | 实时 | 同上 | 指定从站的 PDO/历史（各站独立缓冲） |
 | `GET /metrics?slave=N` | 实时 | Prometheus 文本 | 仅导出指定从站（默认全量） |
 | `GET /events` | 实时 | `text/event-stream` | SSE 推送 state-v1（默认 500ms，可 `?interval_ms=100..5000`；支持 `?slave=N`） |
-| `POST /pdo` | 实时（需 `--serve-write`） | （内联 JSON） | 写 SM2 原始字节（调试用；默认 405，见 §5） |
+| `POST /pdo` | 实时（需 `--serve-write`） | （内联 JSON） | 写 SM2 原始字节（调试用；默认 405，见 §5）；支持 `?slave=N` |
 | 其他路径 | 全部 | `{"error": ..., "routes": [...]}` | 404 |
+
+### 2.1 站号语义（`?slave=`，ACC-27②）
+
+- **0-based**：`slave=0` 是链上第一个从站，合法范围 `0..=N-1`（`N` = `/topology` 的 `count`）。
+  缺省 = 站 0（保持既有默认行为）。
+- **统一校验，不静默回退**：按站路由（`/state`、`/pdo`、`/metrics`、`/events`、`/sdo`、`/dict`、
+  `/sdo-audit`，含 `POST /sdo`、`POST /pdo`）对 非数字（`abc`）、负数（`-1`）、空串、越界（`>= N`）
+  一律返回 **HTTP 404 + `application/json`**（`{"error": ...}`）；**不会**回退到站 0 或返回他站数据。
+- **静态模式**（无 `--uds`/`--tap`）只有站 0 的快照：`slave=0`/缺省 → 200；其它 → 404。
+- **全局路由**（`/topology`、`/`、`/health`）不接受 `?slave`：带了 → 404（不静默忽略）。
+- 历史背景（P1 缺陷）：修复前 `/sdo`、`/dict` 对非法/越界 slave 返回 200 + 站 0 数据，
+  静态 `/sdo` 直接忽略参数 → 诊断可能被误导；修复见 `scripts/spikes/invalid-slave-probe.sh`
+  （静态/UDS/TAP 三路径矩阵）与 `control-plane::validate_slave_param` 单测。
 
 > 开启 token（§6）后，上表除 `/`、`/index.html`、`/app.js`、`/health` 外的**全部 API 路由**
 > （含 `POST /pdo`、`POST /sdo`）都要求 `Authorization: Bearer <token>`；静态资源不鉴权，
@@ -217,7 +230,8 @@ token 模式下 `fetch` 不能自动带 `Authorization`，页面提示经反向�
 
 | 检查 | 方式 |
 | --- | --- |
-| 路由/JSON schema/鉴权判定 | `cargo test -p control-plane`（20 个单测） |
+| 路由/JSON schema/鉴权判定 | `cargo test -p control-plane`（22 个单测，含 `validate_slave_param` 合法/非法矩阵） |
+| 站号校验（ACC-27②，静态/UDS/TAP 三路径） | `scripts/spikes/invalid-slave-probe.sh` |
 | 静态服务 | `scripts/spikes/http-state-probe.sh` |
 | 同源托管 web/ | `scripts/spikes/serve-web-probe.sh` |
 | SSE 推送 | `scripts/spikes/events-probe.sh` |
