@@ -1,23 +1,25 @@
 # M3-W8：MCP/Agent 桥接 stub 设计（只读端点映射，**不含写**）
 
-> 对应 backlog B45 的 **M3-W8**；关联 [M3 范围](M3-scope.md)、[CONTROL-PLANE](../CONTROL-PLANE.md)、
+> 对应 backlog **B45 / B47** 的 **M3-W8**；关联 [M3 范围](M3-scope.md)、[CONTROL-PLANE](../CONTROL-PLANE.md)、
 > [ADR 0002](../adr/0002-m3-plugin-host-and-write-paths.md)、[M3-W7 瓶颈调研](M3-W7-32slave-1khz-bottleneck.md)。
-> 本文是**设计/stub 文档**，不是 MCP server 实现；"将实现"均为计划，未落地项标 ⚠️。
+> **实现状态（2026-11-13，B47）**：S0（设计 + 工具目录 + 静态校验）与 S1/S2（`crates/mcp-server`
+> 的 `ec-sim-mcp` 二进制 + `mcp-stdio-probe.sh`）已完成；本文兼作实现说明。
+> **仍然只读**：工具目录里没有写工具，桥接代码只发 HTTP GET。
 > 机器可读的工具清单在 [m3-w8-mcp-tools-v1.json](m3-w8-mcp-tools-v1.json)，
-> 一致性由 `python3 scripts/spikes/mcp-tools-check.py` 静态校验（本班已跑通）。
-> MCP 协议细节按公开规范（JSON-RPC 2.0 + tools 子集）整理，**落地前需按规范原文复核**，
-> 本文不宣称通过任何 MCP/一致性认证（AGENTS §4）。
+> 一致性由 `python3 scripts/spikes/mcp-tools-check.py` 静态校验（S0/S1 均跑通）。
+> MCP 协议按公开规范（JSON-RPC 2.0 + tools 子集）实现，**未做**规范对照测试或一致性认证（AGENTS §4）。
 
 ## 1. 问题与范围
 
 - 目标：让 Agent（MCP client：IDE/Agent 框架等）用**标准工具调用**读取 EC-Sim 的观测面，
   而不是让每个 Agent 自己拼 HTTP/curl；同时把"只能看、不能写"作为桥接层的硬边界。
-- 本班交付（可独立验证）：
-  1. 本设计文档（架构决策、工具清单、错误映射、安全边界、实现计划）；
-  2. 机器可读目录 `docs/plan/m3-w8-mcp-tools-v1.json`（9 个只读工具 + 排除项）；
-  3. 静态一致性检查 `scripts/spikes/mcp-tools-check.py`（目录 ↔ `CONTROL-PLANE.md` 路由表逐项核对）。
-- 非目标（本 stub 明确不做）：
-  - **不实现** MCP server（下一实现项；见 §8 阶段 S1/S2）；
+- 本轮交付（可独立验证，已完成）：
+  1. 本设计文档（架构决策、工具清单、错误映射、安全边界、实现状态）；
+  2. 机器可读目录 `docs/plan/m3-w8-mcp-tools-v1.json`（9 个只读工具 + 6 个排除项）；
+  3. 静态一致性检查 `scripts/spikes/mcp-tools-check.py`（目录 ↔ `CONTROL-PLANE.md` 路由表逐项核对）；
+  4. 实现 `crates/mcp-server`（`ec-sim-mcp` 二进制，JSON-RPC 2.0 over stdio，零第三方依赖）
+     + 端到端探针 `scripts/spikes/mcp-stdio-probe.sh`（B47）。
+- 非目标（本桥接明确不做）：
   - **不含任何写**：`POST /sdo`、`POST /pdo` 永不映射，即使控制面开了 `--serve-write`；
   - 不映射 `/events`（SSE 长连接）、静态资源（`/`、`/index.html`、`/app.js`）；
   - 不做鉴权体系/TLS/多租户；不改变 ESC 实时环任何行为。
@@ -30,8 +32,8 @@
   （与 ADR 0002"插件/工具不进实时环"同向）；可对接静态 `--serve` 与 UDS/TAP 实时 `--serve`。
 - **D3 只读 allowlist 写死在桥接层**：工具表在编译期常量/目录中，代码路径只允许 `GET`；
   这是**第二道**边界——控制面本身的写路由默认关闭，桥接层连工具都不提供。
-- **D4 零第三方依赖**：目标与主仓一致（默认构建无第三方依赖）；JSON 复用 `control-plane` 的
-  手写助手（实现时确认 `pub` 可见性），HTTP 用 `std::net::TcpStream` 的最小请求即可（仅 http）。
+- **D4 零第三方依赖**：MCP 侧自带最小 JSON 解析/序列化（`crate::json`）与 HTTP GET 客户端
+  （`crate::http`，仅 `std::net`）；不复用控制面内部 JSON 助手（未公开为稳定 API），避免与实时侧耦合。
 - **D5 原样透传端点 JSON**：工具返回端点原始响应（`content[0].text` 为 JSON 字符串），
   不重新解释字段、不改 schema 版本；`/metrics` 返回 Prometheus 文本原样。
 - **D6 一工具一端点，命名 `ecsim_*`**：不做隐藏的聚合/缓存，避免"工具语义 ≠ 端点语义"。
@@ -128,30 +130,48 @@
   （与控制面文档一致）；需要严格因果的测试应走现有 UDS/TAP 探针，而不是 MCP 工具。
 - 实时模式下 HTTP 请求只加锁读快照；MCP 侧并发上限 1，可避免观测流量放大。
 
-## 8. 实现计划（后续班次，本班只做 stub）
+## 8. 实现状态（原计划的 S0–S3）
 
-- **S0（本班）**：本文 + 工具目录 + `mcp-tools-check.py` 静态校验；M3 清单/验证索引同步。✅
-- **S1（建议下一实现项，预估 1–1.5 班）**：新增 `ec-sim-mcp` 二进制（放 `crates/cli` 或
-  `crates/control-plane` 的模块 + bin）：JSON-RPC 2.0 stdio 最小实现（`initialize`、`ping`、
-  `tools/list`、`tools/call`），HTTP GET 客户端用 `std::net`，零第三方依赖；只读 allowlist 与目录同源
-  （可用 `include_str!` 或代码常量，目录文件作为单一事实源）。
-- **S2（0.5 班）**：探针 `scripts/spikes/mcp-stdio-probe.sh`（python 合成 MCP client）：
-  断言 `tools/list` 恰好是目录里的 9 个工具、全是 GET、无写工具、未知工具报错；
-  对静态 `--serve` 跑 `/state`、`/dict`、`/sdo`；对 UDS 实时跑 `/topology`、`/pdo`、`/metrics`；
-  再用 `--serve-write` 起服务确认工具表**不变**（写路径不可达）。
-- **S3**：加入 `run-all-probes.sh`（Linux 项）与 VERIFICATION/STATUS 行；人工/CI 回归。
+- **S0（B45）✅**：本文 + 工具目录 + `mcp-tools-check.py` 静态校验；M3 清单/验证索引同步。
+- **S1（B47）✅**：新增 crate `crates/mcp-server`（bin `ec-sim-mcp`，零第三方依赖）：
+  `initialize`/`ping`/`tools/list`/`tools/call`；工具表 `include_str!` 嵌入
+  `m3-w8-mcp-tools-v1.json`（单一事实来源）；`input_schema` 严格校验（未知参数/必填/整数范围）；
+  HTTP 仅 GET、默认只连回环、`--token-env` 读 Bearer token、5 s 超时、1 MiB 响应上限；
+  错误码映射 §5；16 个单测（JSON/HTTP/目录/参数/JSON-RPC）。
+- **S2（B47）✅**：`scripts/spikes/mcp-stdio-probe.sh` + `mcp-stdio-probe.py`（python 合成 MCP client）：
+  起真实静态 `--serve`，断言 9 工具、`state/dict/sdo` 读取、未知工具/缺参/静态模式 live-only 工具/
+  未知方法/坏 JSON 错误路径，再以 `--serve-write` 起服务确认工具表**不变**（18 项断言）。
+  本机（Windows）与 Linux 验证机均 **EXIT=0**。
+- **S3（部分完成）**：`mcp-stdio` 已登记进 `run-all-probes.sh`（类别 `any`，无需 root）；
+  Linux 验证机整轮 `run-all-probes.sh` 实跑留待下一轮回归（⚠️ 待验证）。
 
-## 9. 验收（stub 本班）
+## 9. 验收（当前实现）
 
-- `python3 scripts/spikes/mcp-tools-check.py` → **OK**：9 个只读工具、文档全部 GET 路由有归宿、
-  POST 只出现在排除项、设计文档与清单/验证索引互链。
-- 无新增第三方依赖、无代码路径改动（本班是纯文档 + 静态检查）。
-- 明确未做：MCP server 实现、stdio 探针、`run-all-probes.sh` 的 Linux 实跑（⚠️ 待验证，S2/S3）。
+- `python3 scripts/spikes/mcp-tools-check.py` → **OK**（9 个只读工具、文档全部 GET 路由有归宿、
+  POST 只出现在排除项、设计文档与清单/验证索引互链）。
+- `bash scripts/spikes/mcp-stdio-probe.sh` → **PASS**（本机与验证机）：9 个只读工具、
+  `tools/list` 与目录一致、无写工具、`--serve-write` 下表不变、错误码符合 §5。
+- `cargo test --workspace` 含 `mcp-server` 16 个单测；`fmt`/`clippy -D warnings` 全绿。
+- 明确未做：实时模式（UDS/TAP）下 live-only 工具（`/topology`、`/pdo`、`/metrics`、`/sdo-audit`）
+  的端到端（探针当前只跑静态控制面）；token 模式矩阵；调用审计日志（设计 §6 的 stderr JSON Lines
+  目前只打印 `tools/call <name>`）；`/events` 订阅。以上均标 ⚠️ 待验证/待做。
 
 ## 10. 复现
 
 ```bash
+# 静态工具目录与端点一致性（任意平台，无 root）
 python3 scripts/spikes/mcp-tools-check.py
-# 验证机（Linux）下一轮：
-#   bash scripts/spikes/run-all-probes.sh   # 新增 mcp-tools 一项（静态检查，无需 root）
+
+# 端到端：真实控制面（静态）+ MCP stdio 客户端
+cargo build --release -p esc-node -p mcp-server
+bash scripts/spikes/mcp-stdio-probe.sh
+
+# 手动试用（两个终端）
+cargo run -q --release -p esc-node --bin ec-sim-esc -- --serve 127.0.0.1:8091 \
+  --manifest plugins/generic-cia402-cst-servo/plugin.yaml
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ecsim_sdo_read","arguments":{"index":"0x6040"}}}' \
+  | target/release/ec-sim-mcp --api http://127.0.0.1:8091
 ```

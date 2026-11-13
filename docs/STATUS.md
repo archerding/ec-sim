@@ -1,4 +1,4 @@
-# EC-Sim 当前状态快照（2026-11-13 08:56）
+# EC-Sim 当前状态快照（2026-11-13 09:12）
 
 > 本页是**项目状态索引**，不是规范或认证结论。所有"已验证"都指仓库内脚本/单测的
 > 可复现结果，**不构成**一致性测试或认证（见 `AGENTS.md` §3/§4）。
@@ -8,7 +8,7 @@
 核心 ESC（寄存器/SM/FMMU/AL/EEPROM-SII/邮箱/watchdog）+ CoE（SDO 加速/分段/SDO Info/
 Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/CST，Tier0 简化）
 + 声明式设备画像已实现；**未修改的 SOEM 2.0.0 与 IgH 1.6.13** 可发现从站并进入 OP
-（IgH 无应用时到 PREOP）。测试基线 **240 passed**（另 `wasm-runtime` feature 下 plugin-host **58** / esc-node **74**：WASM 宿主 + arena + worker 线程 + 行为桥 + 仓库内真实行为画像）。
+（IgH 无应用时到 PREOP）。测试基线 **256 passed**（另 `wasm-runtime` feature 下 plugin-host **58** / esc-node **74**：WASM 宿主 + arena + worker 线程 + 行为桥 + 仓库内真实行为画像）。
 
 ## 代码与测试
 
@@ -18,7 +18,8 @@ Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/
 | `esc-node` | 从站应答器、PDI 内存、邮箱处理、CiA 402 行为、`ec-sim-esc` 二进制；WASM 行为桥（可选 feature）；链处理/1 kHz 基准示例（B46） | 73（另 `wasm-runtime` 下 73 单测 + 1 行为画像集成） |
 | `plugin-host` | plugin.yaml 解析/校验、SII/字典/ESI 生成；PDO arena 同步（W2）；WASM 宿主 + 行为运行时（可选 feature） | 33 + 4 集成（另 `wasm-runtime` 下 53 + 5 集成） |
 | `wire` | EtherCAT 帧/datagram 编解码 + WKC 语义 | 23 |
-| `control-plane` | 只读快照 API：state-v1 / dict-v1 JSON + 路由表（`/state`、`/dict`） | 4 |
+| `control-plane` | 只读快照 API：state-v1 / dict-v1 JSON + 路由表（`/state`、`/dict`） | 20 |
+| `mcp-server` | MCP/Agent 桥接（B47）：JSON-RPC 2.0 stdio + 9 个只读工具（只发 GET），零第三方依赖 | 16 |
 
 `cargo fmt --check`、`cargo clippy --workspace --all-targets -D warnings`、`cargo test --workspace`
 均为 0 失败；`cargo doc --workspace --no-deps` 0 警告。
@@ -55,7 +56,7 @@ Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/
 
 ## 控制面与 WebUI
 
-- 控制面（`--serve`）：只读 API（`/state`、`/dict`、`/pdo`、`/topology`、`/metrics`，支持 `?slave=N`）+ M3 写路径（`--serve-write` 下的 `POST /sdo`/`POST /pdo`、SDO 只读浏览、`/sdo-audit`）+ 可选静态 Bearer token（`--serve-token-env`，默认关闭）；零依赖 Web 页含 **SDO 面板**（`GET /sdo` 浏览 + 勾选/`confirm` 二次确认的受控写；⚠️ 无 DOM 自动化，静态回归 + 人工验收）：见 **[CONTROL-PLANE.md](CONTROL-PLANE.md)**、[web/README.md](../web/README.md)；M2 退出条件核对见 **[M2 退出清单](plan/M2-exit-checklist.md)**；M3 范围见 **[M3 范围](plan/M3-scope.md)** 与 **[ADR 0002](adr/0002-m3-plugin-host-and-write-paths.md)**；MCP/Agent 桥接 **stub 设计**（9 个只读工具映射，不含写）见 **[M3-W8 设计](plan/M3-W8-mcp-agent-bridge-stub.md)**（实现留待 B47）。
+- 控制面（`--serve`）：只读 API（`/state`、`/dict`、`/pdo`、`/topology`、`/metrics`，支持 `?slave=N`）+ M3 写路径（`--serve-write` 下的 `POST /sdo`/`POST /pdo`、SDO 只读浏览、`/sdo-audit`）+ 可选静态 Bearer token（`--serve-token-env`，默认关闭）；零依赖 Web 页含 **SDO 面板**（`GET /sdo` 浏览 + 勾选/`confirm` 二次确认的受控写；⚠️ 无 DOM 自动化，静态回归 + 人工验收）：见 **[CONTROL-PLANE.md](CONTROL-PLANE.md)**、[web/README.md](../web/README.md)；M2 退出条件核对见 **[M2 退出清单](plan/M2-exit-checklist.md)**；M3 范围见 **[M3 范围](plan/M3-scope.md)** 与 **[ADR 0002](adr/0002-m3-plugin-host-and-write-paths.md)**；MCP/Agent 桥接（B47）**已实现只读** `ec-sim-mcp`（JSON-RPC 2.0 stdio，9 个只读工具映射，只发 GET、不含写，默认只连回环；探针 `mcp-stdio-probe.sh` 18 项断言本机/验证机 EXIT=0），设计与实现说明见 **[M3-W8 文档](plan/M3-W8-mcp-agent-bridge-stub.md)**。
 
 ## 验证证据（详见 [docs/VERIFICATION.md](VERIFICATION.md)）
 
@@ -101,8 +102,9 @@ cargo test --workspace
 
 ## 下一步（按优先级）
 
-1. **B47（backlog 顶部）**：`ec-sim-mcp` stdio 实现——按 [M3-W8 设计](plan/M3-W8-mcp-agent-bridge-stub.md)
-   与 `m3-w8-mcp-tools-v1.json` 映射 9 个只读工具到控制面 GET 端点；配 `mcp-stdio-probe.sh`，不含写。
+1. **B48（backlog 顶部）**：M3 退出条件核对与收尾——W6 浏览器人工验收、ADR 0002 状态复核、
+   `run-all-probes.sh` 验证机整轮复跑（含 `mcp-tools`/`mcp-stdio`）、落 `docs/plan/M3-exit-checklist.md`。
+   B47（`ec-sim-mcp` stdio）已于 2026-11-13 完成（`crates/mcp-server` + `mcp-stdio-probe.sh`）。
 2. B44 剩余增量项：插件 panic 重启、多实例配额。
 3. 验证机补跑 `wasm-plugin-probe.sh` / `wasm-behavior-probe.sh` 与 Linux CLI UDS/TAP 行为插件端到端（需 crates.io，或先 vendor wasmi/wat）。
 4. DC 仿真（寄存器 + SYNC0/tick），实现后在测试画像上验证再声明 SII DC。

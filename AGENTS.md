@@ -580,12 +580,21 @@ user.email = deepseek-harness@users.noreply.github.com
   超限（VMware 宿主抢占 tail ≈7 ms，非链处理）；**RT 忙轮询被 `sched_rt_runtime_us=950000`
   节流 → 2.21% 超限**（临时设 -1 后 0/5000，测后已恢复 950000）。
   **不承诺对外 SLA**；未测 TAP/UDS 闭环 1 kHz、DC、小时级稳定性（⚠️ 待验证）。
-- [ ] **B47 `ec-sim-mcp` stdio 实现（M3-W8 后续，建议）**：新增只读 `ec-sim-mcp` 二进制
-  （JSON-RPC 2.0 stdio：`initialize`/`ping`/`tools/list`/`tools/call`），按
-  [m3-w8-mcp-tools-v1.json](docs/plan/m3-w8-mcp-tools-v1.json) 映射控制面
-  `--api http://127.0.0.1:<port>` 的 GET 端点；零第三方依赖；配 `mcp-stdio-probe.sh`
-  （`tools/list` 恰好 9 个只读工具、未知工具报错、`--serve-write` 下工具表不变）并加入
-  run-all-probes（Linux）。**不含写**。
+- [x] ~~**B47 `ec-sim-mcp` stdio 实现（M3-W8 后续）**~~ ✅ **2026-11-13 完成**：
+  新增 crate `crates/mcp-server`（bin `ec-sim-mcp`，**零第三方依赖**）：JSON-RPC 2.0 over stdio
+  （`initialize`/`ping`/`tools/list`/`tools/call`），工具表 `include_str!` 嵌入
+  [m3-w8-mcp-tools-v1.json](docs/plan/m3-w8-mcp-tools-v1.json)（单一事实来源）；HTTP 客户端只发 GET、
+  默认只连回环地址、`--token-env` 读 Bearer token、5 s 超时/1 MiB 上限；16 个单测。
+  端到端探针 `scripts/spikes/mcp-stdio-probe.sh` + `mcp-stdio-probe.py`：9 个只读工具、
+  state/dict/sdo 读取、未知工具/缺参/静态模式 live-only 工具/未知方法/坏 JSON、以及
+  `--serve-write` 下工具表不变（18 项断言）——**本机与 Linux 验证机均 EXIT=0**；已登记进
+  `run-all-probes.sh`（`mcp-stdio`，any）。**不含写**。证据：
+  [M3-W8 实现说明](docs/plan/M3-W8-mcp-agent-bridge-stub.md) §8/§9。
+  ⚠️ 实时模式（UDS/TAP）live-only 工具端到端、token 模式矩阵、调用审计日志未覆盖（待补）。
+- [ ] **B48 M3 退出条件核对与收尾（建议）**：按 [M3 范围](docs/plan/M3-scope.md) §5 逐条核对并落
+  `docs/plan/M3-exit-checklist.md`——W1–W5 探针/单测证据、**W6 浏览器人工验收**（SDO 面板二次确认）、
+  W7/W8 文档与实现、`run-all-probes.sh` 在 Linux 验证机整轮复跑（含 `mcp-tools`/`mcp-stdio`）、
+  ADR 0002 状态（Proposed → Accepted）复核；只写"用例映射/预回归"，**不宣称 CTT/认证**。
 
 ## 7. 目录约定
 

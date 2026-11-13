@@ -16,6 +16,7 @@ members = [
     "crates/plugin-host",
     "crates/esc-node",
     "crates/control-plane",
+    "crates/mcp-server",
     "crates/cli",
 ]
 

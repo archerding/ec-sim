@@ -85,6 +85,7 @@
       "description": "读取按变化去重的 PDO 时间序列 pdo-history-v1（/pdo?history=1；仅实时模式，slave 可叠加）。",
       "http": {"method": "GET", "endpoint": "/pdo"},
       "queries": ["slave", "history"],
+      "fixed_query": {"history": "1"},
       "mode": "live",
       "response_schema": "ec-sim/pdo-history-v1",
       "input_schema": {

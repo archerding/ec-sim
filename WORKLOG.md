@@ -1,5 +1,52 @@
 ---
 
+## 2026-11-13 08:57 班（低峰）— **B47：`ec-sim-mcp` stdio 桥接实现（9 个只读工具）+ 端到端探针**
+
+> 调度上下文计划重点（B2b / B8 / B4）均早已完成；按 `AGENTS.md` §5 取 backlog 顶部未完成项
+> **B47**（M3-W8 后续：按设计把只读工具映射到控制面 GET 端点，不含写）。
+
+**做了什么**
+- 新增 crate **`crates/mcp-server`**（bin `ec-sim-mcp`，**零第三方依赖**）：
+  - `json.rs`：最小 JSON 解析/序列化（含 `\uXXXX` 与代理对），供 JSON-RPC 与目录使用；
+  - `http.rs`：只读 HTTP/1.1 GET 客户端（仅 `http://`、默认只允许回环、`--token-env` 读 Bearer、
+    5 s 超时、1 MiB 响应上限、`Content-Length`/EOF 解析）；**没有写方法**；
+  - `tools.rs`：`include_str!` 嵌入 `docs/plan/m3-w8-mcp-tools-v1.json`（单一事实来源，
+    目录不合法/含非 GET 直接失败），严格参数校验（未知参数/必填/整数范围）与 URL 构造；
+  - `rpc.rs`：JSON-RPC 2.0 `initialize`/`ping`/`tools/list`/`tools/call`，MCP 工具错误映射
+    （NOT_FOUND / MODE_UNAVAILABLE / AUTH_REQUIRED / FORBIDDEN / TIMEOUT / RESPONSE_TOO_LARGE 等）；
+  - `bin/ec_sim_mcp.rs`：stdio 逐行处理、stderr 记录 `tools/call <name>`、`--help/--version`。
+  - **16 个单测**（JSON/HTTP/目录/参数/JSON-RPC 全链路，含"tools/list 不含写工具"）。
+- 工具目录 `m3-w8-mcp-tools-v1.json`：为 `ecsim_pdo_history` 增加 `fixed_query`（`history=1`）；
+  `scripts/spikes/mcp-tools-check.py` 相应校验（固定参数必须在文档参数中、不可被调用方覆盖）。
+- 新增端到端探针 `scripts/spikes/mcp-stdio-probe.sh` + `mcp-stdio-probe.py`（**18 项断言**）：
+  起真实静态 `--serve` → 合成 MCP client → `initialize`/通知/`tools/list`（恰好 9 个只读工具）/
+  `health`/`state`/`dict`/`sdo` 读取、未知工具/缺参/静态模式 live-only 工具/未知方法/坏 JSON，
+  再以 `--serve-write` 起服务断言工具表**完全不变**；已登记 `run-all-probes.sh`（`mcp-stdio`，any）。
+- 文档：`M3-W8` 增实现状态/验收/复现；`AGENTS.md`（B47 ✅、新增 **B48 M3 退出条件核对**）、
+  `M3-scope`（W8 实现）、`STATUS.md`（测试 256、`mcp-server` crate 行）、`VERIFICATION.md`（新探针行）。
+
+**验证结果**
+- `cargo fmt --all -- --check` OK；`cargo clippy --workspace --all-targets -- -D warnings` OK；
+  `cargo test --workspace` → **256 passed / 0 failed**（`mcp-server` 16）；`cargo doc --workspace --no-deps` 0 警告。
+- `bash scripts/spikes/mcp-stdio-probe.sh` → **PASS**（本机 Windows，18/18 断言）。
+- Linux 验证机（openEuler；源码同步后 `cargo build --release --offline -p esc-node -p mcp-server`）
+  同脚本 → **PASS**（18/18）。
+- `python3 scripts/spikes/mcp-tools-check.py` 与 `control-plane-doc-check.py` → **EXIT=0**。
+- ⚠️ 未覆盖：实时模式（UDS/TAP）下 live-only 工具（`/topology`、`/pdo`、`/metrics`、`/sdo-audit`）
+  的端到端；token 模式矩阵；验证机整轮 `run-all-probes.sh`（新增后共 20 项，待下一轮复跑）；
+  调用审计仅打印工具名（设计中的结构化 stderr JSON Lines 未做）。
+
+**卡点**
+- 无硬阻塞。上述覆盖缺口已写入 M3-W8 §9 与 B48。
+
+**下次开工第一件事**
+- 取 backlog 顶部 **B48：M3 退出条件核对与收尾**——按 `docs/plan/M3-scope.md` §5 逐条核对
+  （W1–W5 证据、W6 浏览器人工验收、W7/W8 文档与实现），在验证机整轮跑 `run-all-probes.sh`
+  （含 `mcp-tools`/`mcp-stdio`），复核 ADR 0002 状态，落 `docs/plan/M3-exit-checklist.md`；
+  只写"用例映射/预回归"，**不宣称 CTT/认证**。
+
+---
+
 ## 2026-11-13 08:47 班（低峰）— **B46：原生 32 站 @1 kHz 基准（含隔离 CPU/RT 对照）+ 链处理帧形状扩展**
 
 > 调度上下文计划重点（B2b / B8 / B4）均早已完成；按 `AGENTS.md` §5 取 backlog 顶部未完成项

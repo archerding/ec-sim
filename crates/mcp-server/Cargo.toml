@@ -1,0 +1,13 @@
+[package]
+name = "mcp-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "EC-Sim MCP/Agent 桥接（只读工具，JSON-RPC 2.0 over stdio；零第三方依赖）"
+
+[[bin]]
+name = "ec-sim-mcp"
+path = "src/bin/ec_sim_mcp.rs"
+
+[dependencies]

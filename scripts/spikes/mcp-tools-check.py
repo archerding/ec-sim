@@ -159,6 +159,20 @@ for index, tool in enumerate(tools):
             if minimum > maximum:
                 fail(f"{name}.input_schema.properties[{key!r}] minimum > maximum")
 
+    fixed = tool.get("fixed_query", {})
+    if fixed and not isinstance(fixed, dict):
+        fail(f"{name}.fixed_query 必须是对象")
+    for key, value in fixed.items():
+        if key not in queries:
+            fail(f"{name}.fixed_query 参数 {key!r} 未在 queries 中声明")
+        if key not in doc_routes[endpoint]:
+            fail(f"{name}.fixed_query 参数 {key!r} 不在文档路由参数中")
+        if not isinstance(value, str) or not value:
+            fail(f"{name}.fixed_query.{key!r} 必须是非空字符串")
+        if key in props:
+            fail(f"{name}.fixed_query.{key!r} 不应出现在 input_schema.properties（固定值不可被调用方覆盖）")
+        query_union[endpoint].add(key)
+
 if write_tools:
     fail(f"发现写工具（禁止）：{', '.join(write_tools)}")
 
