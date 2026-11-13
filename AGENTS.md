@@ -498,6 +498,14 @@ user.email = deepseek-harness@users.noreply.github.com
 - [x] ~~**B42 M3-W6：Web SDO 面板（M3）**~~ ✅ **2026-11-13 08:00 完成**：`web/` 新增 SDO 面板——按 `index`/`sub` 调 `GET /sdo` 只读浏览（对象名/条目名/类型/位长/访问/值大端+原始小端 hex，`cache: no-store`）；写入默认关闭：勾选“允许写入”→ 填小端 hex → `window.confirm()` **二次确认**后才 `POST /sdo`（`Uint8Array` 原始字节体），并映射 405（未开 `--serve-write`）/401（token 需反向代理或 curl）/403/404/400；页面提示 token 模式限制、不保存 token。验证：`node --check web/app.js`、新增 `scripts/spikes/web-sdo-panel-check.py`（静态资源回归：控件 id + 逻辑标记 + README 断言 + node 语法；⚠️ 无 DOM 自动化）、`serve-web-probe.sh` 增加同源资源断言；验证机 `run-all-probes.sh` **18 PASS / 0 FAIL / 0 SKIP**；CONTROL-PLANE/web/README/M3 清单/VERIFICATION/STATUS/README 同步。⚠️ 浏览器人工点击验收待补。
 - [x] ~~**B43 M3-W1：WASM 插件宿主 spike（M3 主阻塞项）**~~ ✅ **2026-11-13 08:05 完成**：选型 **wasmi 0.31.2**（MIT/Apache-2.0 解释器；MSRV 兼容 workspace 1.75，wasmtime 50 需 Rust ≥1.97/依赖数百包）；`plugin-host` 新增**默认关闭**的 `wasm-runtime` feature——`env.read_pdo`/`env.write_pdo`/`env.log` + `tick` 导出、PDO arena 快照（64B）、日志上限 64KiB、`WasmHostError`；WAT 夹具 `fixtures/wasm/counter.wat` + 示例 `wasm_plugin_demo` + 探针 `wasm-plugin-probe.sh`；+7 feature 单测（plugin-host 34）、release 实测实例化 605µs / tick 179.5ns / 20 依赖包；默认 `cargo test --workspace` 仍 **230 passed** 且零第三方依赖。证据：[spike-6](docs/spikes/spike-6-wasm-host.md)。⚠️ 无 fuel/超时/arena 同步（W2）、验证机未跑该探针（需 crates.io）。
 - [ ] **B44 M3-W2：PDO arena 同步与插件隔离（M3）**：双缓冲/seqlock + generation；wasm 插件跑独立 worker 线程（不阻塞实时环）；fuel/超时 + 内存上限校验；压测无撕裂、实时环零阻塞；把实例生命周期接到 `esc-node` 非实时线程。
+  - 进度（2026-11-13 08:35 班）：**W2 子项 1：arena 双缓冲/seqlock + generation 已实现**——
+    `plugin-host::arena`（默认编译、零第三方依赖、模块内无 `unsafe`）：`PdoArena::new`（容量固定）/
+    `publish`（写者：长度预检 + 单写者 CAS + 双缓冲原子拷贝，**不分配、不等待读者**）/
+    `snapshot`/`try_snapshot`（读者：前后序列号一致才接受）+ `ArenaSnapshot`（含 generation / 陈旧判断）；
+    4 个单测（往返/非法容量/并发写拒绝/2 万次发布 × 并发读者**零撕裂**压测）+
+    `crates/plugin-host/tests/arena_no_alloc.rs` 计数分配器守卫（发布与失败路径 **0 次分配**）。
+    测试 **236 passed**。⚠️ W2 剩余：插件独占 worker 线程、fuel/超时、内存上限、崩溃隔离、
+    接 `esc-node` 非实时线程。
 
 ## 7. 目录约定
 

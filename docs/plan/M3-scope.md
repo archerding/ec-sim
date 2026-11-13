@@ -23,7 +23,7 @@
 | # | 工作流 | 关键交付 | 验收（可独立验证） | 状态 |
 | --- | --- | --- | --- | --- |
 | W1 | WASM 插件宿主 spike | wasmi/wasmtime 选型对比（启动/体积/许可/MSRV）；最小 `read_pdo/write_pdo/log` 宿主 | spike 文档 + 可运行示例；不改变现有实时环 | ✅ 已完成（B43：选型 **wasmi 0.31.2**（MIT/Apache-2.0，兼容 workspace MSRV 1.75）；`plugin-host` 默认关闭的 `wasm-runtime` feature + WAT 夹具 + `wasm_plugin_demo` + `wasm-plugin-probe.sh`；7 个 feature 单测；release 实例化 605µs / tick 179.5ns）；[spike-6](../spikes/spike-6-wasm-host.md) |
-| W2 | PDO arena 同步 | 双缓冲/generation 或 seqlock；插件崩溃隔离 | 单测 + 压测（无撕裂、无实时环阻塞） | ❌ 未开始 |
+| W2 | PDO arena 同步 | 双缓冲/generation 或 seqlock；插件崩溃隔离 | 单测 + 压测（无撕裂、无实时环阻塞） | 🟡 子项 1 完成（B44 进度：`plugin-host::arena` 双缓冲/seqlock + generation，2 万次发布并发压测**零撕裂**、发布路径**零分配**；worker 线程/fuel/崩溃隔离未做） |
 | W3 | SDO 只读浏览 | `GET /sdo?index&sub` 从运行时字典读值（不 mailbox） | 探针：已知对象值/名称/类型；未知 404 | ✅ 已完成（B39：`sdo-read-probe.sh`；sdo-v1 schema） |
 | W4 | SDO 受控写 | `POST /sdo`（`--serve-write` + manifest `writable` 白名单 + 审计） | 探针：默认拒绝、白名单成功、非白名单 403、审计记录 | ✅ 已完成（B40：`sdo-write-probe.sh`；`/sdo-audit`、`ecsim_sdo_writes_total`） |
 | W5 | 可选 token | `--serve-token-env VAR`（`Authorization: Bearer`）；空 = 现状 | 探针：带/不带 token 的 200/401 行为 | ✅ 已完成（B41：`serve-token-probe.sh`；401/403/200、静态资源豁免、写路径同保护） |
@@ -49,5 +49,5 @@
 ## 6. 下一步（按优先级）
 
 1. ✅ W1 spike 已完成（B43，wasmi 0.31.2 + 最小宿主，见 [spike-6](../spikes/spike-6-wasm-host.md)）。
-2. W2 arena 同步（W1 依赖）：双缓冲/seqlock + generation、插件 worker 线程、fuel/超时与内存上限（**M3 当前主阻塞项**）。
+2. 🟡 W2 arena 同步（W1 依赖）：双缓冲/seqlock + generation **已完成**（`plugin-host::arena`，`crates/plugin-host/tests/arena_no_alloc.rs` 零分配守卫 + 2 万次发布并发压测零撕裂）；剩余插件 worker 线程、fuel/超时与内存上限（**M3 当前主阻塞项**）。
 3. W7 32 从站调研 / W8 MCP stub（文档级交付）。

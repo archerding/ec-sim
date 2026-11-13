@@ -11,6 +11,11 @@
 //! [`dict_gen`] 由 manifest 生成运行时对象字典（身份/SM 类型/PDO 分配与映射/用户对象）。
 //! [`esi`] 提供 **ESI XML → SII** 的解析子集（B6 子项，零第三方依赖的最小 XML 解析器）。
 
+/// PDO arena 同步（M3-W2 子项 1，B44）：实时环 → 插件 worker 的双缓冲/seqlock 快照。
+///
+/// 默认编译、零第三方依赖；不含 `unsafe`。写者（实时环）发布不分配内存、
+/// 不等待读者，读者（插件 worker）拿到的 SM2/SM3 永远来自同一次发布。
+pub mod arena;
 pub mod dict_gen;
 pub mod esi;
 pub mod manifest;

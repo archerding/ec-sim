@@ -1,5 +1,43 @@
 ---
 
+## 2026-11-13 08:35 班（低峰）— **B44：M3-W2 子项 1 PDO arena 双缓冲/seqlock + generation**
+
+> 调度上下文计划重点（B2b 最小 ESC 应答器 / B8 双主站冒烟 / B4 wire crate）均已完成，
+> 按 `AGENTS.md` §5 取 backlog 顶部未完成项 **B44**，本班只做其中可独立验证的子项 1
+> （arena 同步；worker 线程/fuel/超时留后续班）。
+
+**做了什么**
+- `plugin-host` 新增**默认编译、零第三方依赖、模块内无 `unsafe`** 的 `arena` 模块：
+  `PdoArena::new(sm2_capacity, sm3_capacity)`（容量固定、0/超 65535 拒绝）、
+  `publish(&[u8], &[u8]) -> u64`（写者：长度预检 → 单写者 CAS → 序列号变奇数 → 写非活动槽
+  → 发布活动槽 + generation → 序列号变偶数；**不分配、不等待读者**）、
+  `snapshot()` / `try_snapshot(retries)`（读者：前后序列号一致且偶数才接受，否则重试）、
+  `latest_generation()` / `ArenaSnapshot{generation,sm2,sm3}` / `ArenaSnapshot::is_stale()`。
+  数据用 `AtomicU8` 承载（每字节 relaxed 原子访问），避免 `unsafe` 共享可变内存。
+- 4 个单测：往返（含空快照/长度跟随/超容量拒绝且 generation 不变）、非法容量、并发写拒绝
+  且不污染状态、**2 万次发布 × 并发读者零撕裂压测**（每帧字节/长度必须整体来自同一 generation，
+  generation 单调不回退）。
+- 新增 `crates/plugin-host/tests/arena_no_alloc.rs`：计数 `GlobalAlloc` 守卫——发布成功路径
+  1000 次与失败路径 1000 次均 **0 次堆分配**（doc 测试同时覆盖基本用法）。
+- 文档同步：`AGENTS.md`（B44 进度）、`docs/plan/M3-scope.md`（W2 状态 🟡 + 下一步）、
+  `docs/STATUS.md`（测试基线 236、插件宿主段、下一步）。
+
+**验证结果**
+- 本机（Windows）：`cargo fmt --all -- --check` OK；`cargo clippy --workspace --all-targets -- -D warnings` OK；
+  `cargo test --workspace` → **236 passed / 0 failed**（新增 4 单测 + 1 集成 + 1 doctest）；
+  arena 压测与零分配守卫均通过；`wasm-runtime` feature 本轮未重跑（未改 `wasm.rs`）。
+- ⚠️ 未在 Linux 验证机跑：纯 `std` 线程/原子并发测试，非 Linux 专用能力（Windows 本机已覆盖）。
+
+**卡点**
+- W2 剩余：WASM 插件独占 worker 线程、fuel/超时、内存上限、实例崩溃隔离、接 `esc-node`
+  非实时线程——均未做；arena 仍未被 `HostState`/`esc-node` 接线（当前仅库 + 测试）。
+
+**下次开工第一件事**
+- **B44 子项 2**：`wasm-runtime` 下把 `WasmPlugin` 放进独占 worker 线程（通道传 `ArenaSnapshot`），
+  加 fuel/超时与线性内存页上限校验，并补一个"插件死循环不阻塞宿主"的测试。
+
+---
+
 ## 2026-11-13 08:05 班（低峰）— **B43：M3-W1 WASM 行为插件宿主 spike（wasmi 0.31）**
 
 > 调度上下文计划重点（B2b 最小 ESC 应答器 / B8 双主站冒烟 / B4 wire crate）均已完成，

@@ -1,4 +1,4 @@
-# EC-Sim 当前状态快照（2026-11-13 08:00）
+# EC-Sim 当前状态快照（2026-11-13 08:35）
 
 > 本页是**项目状态索引**，不是规范或认证结论。所有"已验证"都指仓库内脚本/单测的
 > 可复现结果，**不构成**一致性测试或认证（见 `AGENTS.md` §3/§4）。
@@ -8,7 +8,7 @@
 核心 ESC（寄存器/SM/FMMU/AL/EEPROM-SII/邮箱/watchdog）+ CoE（SDO 加速/分段/SDO Info/
 Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/CST，Tier0 简化）
 + 声明式设备画像已实现；**未修改的 SOEM 2.0.0 与 IgH 1.6.13** 可发现从站并进入 OP
-（IgH 无应用时到 PREOP）。测试基线 **230 passed**（另 `wasm-runtime` feature 下 7 个 WASM 单测）。
+（IgH 无应用时到 PREOP）。测试基线 **236 passed**（另 `wasm-runtime` feature 下 7 个 WASM 单测）。
 
 ## 代码与测试
 
@@ -16,7 +16,7 @@ Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/
 | --- | --- | --- |
 | `esc-core` | 寄存器、SM/FMMU、AL 状态机、EEPROM-SII 生成、邮箱解析、watchdog | 86 |
 | `esc-node` | 从站应答器、PDI 内存、邮箱处理、CiA 402 行为、`ec-sim-esc` 二进制 | 71 |
-| `plugin-host` | plugin.yaml 解析/校验、SII/字典/ESI 生成；WASM 宿主（可选 feature） | 27 + 3 集成（另 `wasm-runtime` 下 +7） |
+| `plugin-host` | plugin.yaml 解析/校验、SII/字典/ESI 生成；PDO arena 同步（W2）；WASM 宿主（可选 feature） | 31 + 4 集成（另 `wasm-runtime` 下 +7） |
 | `wire` | EtherCAT 帧/datagram 编解码 + WKC 语义 | 23 |
 | `control-plane` | 只读快照 API：state-v1 / dict-v1 JSON + 路由表（`/state`、`/dict`） | 4 |
 
@@ -45,7 +45,8 @@ Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/
 - **插件宿主（M3-W1 spike）**：`plugin-host` 的 `wasm-runtime` feature（**默认关闭**，默认构建仍零第三方
   依赖）提供 wasmi 0.31 最小宿主——`env.read_pdo`/`env.write_pdo`/`env.log` + `tick` 导出、PDO arena
   快照、日志上限 64KiB；WAT 夹具 + `wasm-plugin-probe.sh`；release 实测实例化 605µs / tick 179.5ns。
-  插件**不进入实时环**；arena 同步/fuel 超时/崩溃隔离属 W2。见 [spike-6](spikes/spike-6-wasm-host.md)。
+  插件**不进入实时环**；W2 子项 1（arena 双缓冲/seqlock + generation）已完成——`plugin-host::arena`
+  零撕裂并发压测 + 发布路径零分配守卫，剩余 worker 线程/fuel 超时/崩溃隔离。见 [spike-6](spikes/spike-6-wasm-host.md)。
 
 ## 控制面与 WebUI
 
@@ -95,7 +96,7 @@ cargo test --workspace
 
 ## 下一步（按优先级）
 
-1. B44（M3-W2）：PDO arena 同步（双缓冲/seqlock + generation）+ WASM 插件独占 worker 线程 + fuel/超时/内存上限。
+1. B44（M3-W2 剩余）：WASM 插件独占 worker 线程 + fuel/超时/内存上限 + 崩溃隔离，接 `esc-node` 非实时线程（arena 同步子项 1 已完成）。
 2. 验证机补跑 `wasm-plugin-probe.sh`（需 crates.io；同步依赖后执行）。
 3. B11：固定映射（0x1701..0x1705/0x1B01..0x1B04）生成与位长逐项核对；厂商扩展对象核对。
 4. DC 仿真（寄存器 + SYNC0/tick），实现后在测试画像上验证再声明 SII DC。
