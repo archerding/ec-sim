@@ -15,7 +15,7 @@
       "under44": 0
     },
     "renderedSections": 7,
-    "appTextLength": 3999,
+    "appTextLength": 4052,
     "under44": [],
     "paint": [
       {
@@ -28,24 +28,24 @@
       }
     ],
     "navigation": {
-      "domContentLoaded": 49.9,
-      "load": 90.5,
-      "transferSize": 16622
+      "domContentLoaded": 46,
+      "load": 88.6,
+      "transferSize": 16644
     },
     "resources": [
       {
         "name": "i18n.js",
-        "duration": 6.1,
-        "transferSize": 5545
+        "duration": 4.7,
+        "transferSize": 9672
       },
       {
         "name": "app.js",
-        "duration": 6.4,
-        "transferSize": 73248
+        "duration": 5,
+        "transferSize": 74015
       },
       {
         "name": "state.json",
-        "duration": 2.3,
+        "duration": 2.2,
         "transferSize": 1600
       },
       {
@@ -60,11 +60,11 @@
       },
       {
         "name": "favicon.ico",
-        "duration": 4.9,
+        "duration": 2,
         "transferSize": 635
       }
     ],
-    "screenshot": ".local\\hmi-capture\\en\\1024x768.png"
+    "screenshot": ".local\\hmi-capture\\en2\\1024x768.png"
   },
   {
     "label": "1280x900",
@@ -82,51 +82,51 @@
       "under44": 0
     },
     "renderedSections": 7,
-    "appTextLength": 3999,
+    "appTextLength": 4052,
     "under44": [],
     "paint": [
       {
         "name": "first-paint",
-        "startTime": 40
+        "startTime": 28
       },
       {
         "name": "first-contentful-paint",
-        "startTime": 40
+        "startTime": 28
       }
     ],
     "navigation": {
-      "domContentLoaded": 9.6,
-      "load": 11.1,
+      "domContentLoaded": 9.8,
+      "load": 11.2,
       "transferSize": 0
     },
     "resources": [
       {
         "name": "i18n.js",
-        "duration": 2.4,
+        "duration": 3,
         "transferSize": 300
       },
       {
         "name": "app.js",
-        "duration": 0,
-        "transferSize": 0
+        "duration": 3.2,
+        "transferSize": 300
       },
       {
         "name": "state.json",
-        "duration": 0.6,
+        "duration": 0.9,
         "transferSize": 0
       },
       {
         "name": "dict.json",
-        "duration": 0.7,
+        "duration": 0.9,
         "transferSize": 0
       },
       {
         "name": "pdo.json",
-        "duration": 2.1,
+        "duration": 4.4,
         "transferSize": 635
       }
     ],
-    "screenshot": ".local\\hmi-capture\\en\\1280x900.png"
+    "screenshot": ".local\\hmi-capture\\en2\\1280x900.png"
   },
   {
     "label": "1920x1080",
@@ -144,51 +144,51 @@
       "under44": 0
     },
     "renderedSections": 7,
-    "appTextLength": 3999,
+    "appTextLength": 4052,
     "under44": [],
     "paint": [
       {
         "name": "first-paint",
-        "startTime": 80
+        "startTime": 48
       },
       {
         "name": "first-contentful-paint",
-        "startTime": 80
+        "startTime": 48
       }
     ],
     "navigation": {
-      "domContentLoaded": 40.7,
-      "load": 45.2,
+      "domContentLoaded": 12.9,
+      "load": 15.6,
       "transferSize": 300
     },
     "resources": [
       {
         "name": "i18n.js",
-        "duration": 3.9,
+        "duration": 1.9,
         "transferSize": 300
       },
       {
         "name": "app.js",
-        "duration": 4.3,
+        "duration": 2.6,
         "transferSize": 300
       },
       {
         "name": "state.json",
-        "duration": 3.7,
+        "duration": 1.1,
         "transferSize": 0
       },
       {
         "name": "dict.json",
-        "duration": 3.8,
+        "duration": 1.2,
         "transferSize": 0
       },
       {
         "name": "pdo.json",
-        "duration": 7,
+        "duration": 2.6,
         "transferSize": 635
       }
     ],
-    "screenshot": ".local\\hmi-capture\\en\\1920x1080.png"
+    "screenshot": ".local\\hmi-capture\\en2\\1920x1080.png"
   },
   {
     "label": "1024x768@125",
@@ -206,50 +206,50 @@
       "under44": 0
     },
     "renderedSections": 7,
-    "appTextLength": 3999,
+    "appTextLength": 4052,
     "under44": [],
     "paint": [
       {
         "name": "first-paint",
-        "startTime": 44
+        "startTime": 56
       },
       {
         "name": "first-contentful-paint",
-        "startTime": 44
+        "startTime": 56
       }
     ],
     "navigation": {
-      "domContentLoaded": 15.4,
-      "load": 17.5,
+      "domContentLoaded": 22.9,
+      "load": 26.3,
       "transferSize": 0
     },
     "resources": [
       {
         "name": "i18n.js",
-        "duration": 2.6,
+        "duration": 4,
         "transferSize": 300
       },
       {
         "name": "app.js",
-        "duration": 0,
-        "transferSize": 0
+        "duration": 3.3,
+        "transferSize": 300
       },
       {
         "name": "state.json",
-        "duration": 1,
+        "duration": 1.9,
         "transferSize": 0
       },
       {
         "name": "dict.json",
-        "duration": 1,
+        "duration": 1.9,
         "transferSize": 0
       },
       {
         "name": "pdo.json",
-        "duration": 2,
+        "duration": 4.8,
         "transferSize": 635
       }
     ],
-    "screenshot": ".local\\hmi-capture\\en\\1024x768@125.png"
+    "screenshot": ".local\\hmi-capture\\en2\\1024x768@125.png"
   }
 ]

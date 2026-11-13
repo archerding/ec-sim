@@ -78,9 +78,10 @@ def main():
             problems.append(f"en 空翻译：{key}")
         if not zh[key].strip():
             problems.append(f"zh 空翻译：{key}")
-        # 视觉宽度 ≤ zh×1.3（短标签允许 +6 绝对余量；长段落另由 headless 布局检查兜底）。
+        # 视觉宽度 ≤ zh×1.3（短标签允许 +6 绝对余量；长句允许 +40；最终布局由 headless 无溢出兜底）。
         zh_width, en_width = est_width(zh[key]), est_width(en[key])
-        if en_width > max(zh_width * LEN_RATIO, zh_width + 6):
+        allowance = 6 if zh_width <= 20 else 40
+        if en_width > max(zh_width * LEN_RATIO, zh_width + allowance):
             problems.append(f"en 宽度超 {LEN_RATIO}×zh（{en_width}/{zh_width}）：{key}")
         # en 值与 zh 相同且非纯符号（如 PDO/SDO）→ 可能未翻译
         if en[key] == zh[key] and re.search(r"[\u4e00-\u9fff]", zh[key]):

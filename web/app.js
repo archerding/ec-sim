@@ -7,6 +7,8 @@
 "use strict";
 
 const app = document.getElementById("app");
+// DOD-09：动态文案翻译（无 i18n.js 时回退中文）。
+const tr = (key, fallback) => (window.ECSIM_I18N ? window.ECSIM_I18N.t(key) : fallback);
 const message = document.getElementById("message");
 
 let currentState = null;
@@ -135,21 +137,21 @@ function alChip(statusHex) {
 function connBadgeText(mode) {
   switch (mode) {
     case "LIVE_SSE":
-      return "LIVE · SSE";
+      return tr("conn.liveSse", "LIVE · SSE");
     case "LIVE_POLL":
-      return "LIVE · 轮询";
+      return tr("conn.livePoll", "LIVE · 轮询");
     case "STALE":
-      return "STALE（数据陈旧）";
+      return tr("conn.stale", "STALE（数据陈旧）");
     case "STOPPED":
-      return "未连接";
+      return tr("conn.stopped", "未连接");
     case "PAUSED":
-      return "已暂停";
+      return tr("conn.paused", "已暂停");
     case "CONNECTING":
-      return "连接中…";
+      return tr("conn.connecting", "连接中…");
     case "RECONNECTING":
-      return "重连中…";
+      return tr("conn.reconnecting", "重连中…");
     default:
-      return "未连接";
+      return tr("conn.idle", "未连接");
   }
 }
 
@@ -231,19 +233,19 @@ function updateConnUi() {
     let level = "error";
     if (conn.mode === "LIVE_POLL") {
       text =
-        "E-10：SSE 推送已中断，页面已降级为轮询（LIVE · 轮询）；数据可能落后 1 个刷新周期。恢复后自动回到 LIVE · SSE。";
+        tr("banner.livePoll", "E-10：SSE 推送已中断，页面已降级为轮询（LIVE · 轮询）；数据可能落后 1 个刷新周期。恢复后自动回到 LIVE · SSE。");
       level = "warn";
     } else if (conn.mode === "STOPPED") {
       text =
-        "E-10：连续 3 次请求失败，已停止自动刷新（未连接）。请确认服务已启动后点“重新连接”；当前显示的是最后一次数据，可能已过期。";
+        tr("banner.stopped", "E-10：连续 3 次请求失败，已停止自动刷新（未连接）。请确认服务已启动后点“重新连接”；当前显示的是最后一次数据，可能已过期。");
     } else if (conn.mode === "STALE") {
-      text = "数据陈旧（STALE）：超过 2 个刷新周期没有新数据；以下所有数值都带陈旧标记，请勿当作实时值。";
+      text = tr("banner.stale", "数据陈旧（STALE）：超过 2 个刷新周期没有新数据；以下所有数值都带陈旧标记，请勿当作实时值。");
       level = "warn";
     } else if (conn.mode === "PAUSED") {
-      text = "已暂停：页面停止发请求，显示最后一次数据与时间戳；点“继续”会立即拉取一次。";
+      text = tr("banner.paused", "已暂停：页面停止发请求，显示最后一次数据与时间戳；点“继续”会立即拉取一次。");
       level = "info";
     } else if (conn.mode === "RECONNECTING") {
-      text = "正在重连：已发起一次探测请求…";
+      text = tr("banner.reconnecting", "正在重连：已发起一次探测请求…");
       level = "info";
     }
     banner.setAttribute("data-testid", `shell-banner-${level}`);
@@ -281,8 +283,7 @@ function setStaticModeNotice(visible) {
   if (!notice) return;
   notice.classList.toggle("visible", visible);
   notice.textContent = visible
-    ? "静态快照模式：当前 state 没有 live 字段（来自 --dump-state 的静态快照或文件载入），不提供实时/离线数据刷新。" +
-      "需要实时视图请用 ec-sim-esc --serve <addr> --uds <sock>（或 --tap）启动同进程实时模式。"
+    ? tr("notice.static", "静态快照模式：当前 state 没有 live 字段（来自 --dump-state 的静态快照或文件载入），不提供实时/离线数据刷新。需要实时视图请用 ec-sim-esc --serve <addr> --uds <sock>（或 --tap）启动同进程实时模式。")
     : "";
 }
 
@@ -363,7 +364,7 @@ function renderState(state) {
   app.append(
     sectionT(
       "slave-identity",
-      "身份与画像",
+      tr("section.slaveIdentity", "身份与画像"),
       kvGrid([
         ["Vendor ID", identity.vendor_id || "-"],
         ["Product Code", identity.product_code || "-"],
@@ -414,7 +415,7 @@ function renderState(state) {
     app.append(
       sectionT(
         "slave-live",
-        "实时状态（--serve 实时模式）",
+        tr("section.slaveLive", "实时状态（--serve 实时模式）"),
         kvGrid([
           ["站地址", live.station_address],
           ["AL 状态", `${live.al_status}${live.al_status_code !== "0x0000" ? ` / ${live.al_status_code}` : ""}`],
@@ -446,7 +447,7 @@ function renderState(state) {
     sm.status,
     sm.enable,
   ]);
-  app.append(sectionT("slave-sm-table", "Sync Manager", table(["#", "起始地址", "长度", "Control", "Status", "Enable"], smRows)));
+  app.append(sectionT("slave-sm-table", tr("section.sm", "Sync Manager"), table(["#", "起始地址", "长度", "Control", "Status", "Enable"], smRows)));
 
   for (const [label, key] of [
     ["RxPDO（主站 → 从站）", "pdo_rx"],
@@ -467,7 +468,7 @@ function renderState(state) {
     app.append(
       sectionT(
         "slave-dc",
-        "分布式时钟（DC）",
+        tr("section.dc", "分布式时钟（DC）"),
         kvGrid([
           ["cycleTime0", `${dc.cycle_time0_ns} ns`],
           ["shiftTime0", `${dc.shift_time0_ns} ns`],
@@ -596,7 +597,7 @@ function renderDict(dict) {
   app.append(
     sectionT(
       "dict-table",
-      "对象字典",
+      tr("section.dict", "对象字典"),
       el(
         "p",
         { class: "sub", "data-testid": "dict-meta" },
@@ -668,7 +669,7 @@ function renderPdo(pdo) {
   app.append(
     sectionT(
       "pdo-current-table",
-      "过程数据（PDO，只读快照）",
+      tr("section.pdoCurrent", "过程数据（PDO，只读快照）"),
       el(
         "p",
         { class: "sub" },
@@ -696,7 +697,7 @@ function renderPdo(pdo) {
     app.append(
       sectionT(
         "pdo-decoded-table",
-        "PDO 具名解码（按映射顺序）",
+        tr("section.pdoDecoded", "PDO 具名解码（按映射顺序）"),
         el(
           "p",
           { class: "sub" },
@@ -750,7 +751,7 @@ function renderPdoHistory(history) {
   app.append(
     sectionT(
       "pdo-waveform-summary",
-      "PDO 历史（最近 " + samples.length + " 个变化采样）",
+      tr("section.pdoHistory", "PDO 历史") + "（" + samples.length + "）",
       el(
         "p",
         { class: "sub", "data-testid": "pdo-sample-info" },
@@ -856,7 +857,7 @@ function renderTopology(topology) {
   app.append(
     sectionT(
       "overview-topology",
-      "总线拓扑（" + String(topology.count) + " 个从站，实时摘要）",
+      tr("section.topology", "总线拓扑") + "（" + String(topology.count) + " 个从站）",
       el(
         "p",
         { class: "sub" },
@@ -918,7 +919,7 @@ function renderMetrics(metrics) {
   ];
   app.append(
     section(
-      "指标（/metrics）",
+      tr("section.metrics", "指标（/metrics）"),
       el("p", { class: "sub" }, `AL 状态色：${alClass === "ok" ? "正常（PREOP/SAFEOP/OP）" : "异常或 INIT"}`),
       el(
         "div",
@@ -956,7 +957,7 @@ function renderOverview(topology) {
   app.append(
     sectionT(
       "overview-health",
-      "总线总览（health）",
+      tr("section.overview", "总线总览（health）"),
       el("p", { class: "sub" }, `${health}（AL 派生：state & 0x0F，bit4=error，bit5=ID 请求）`),
       problemRows.length === 0
         ? el(
@@ -1004,7 +1005,7 @@ function buildEvidenceMarkdown() {
     lines.push("");
   };
   const live = currentState && currentState.live;
-  pick("identity", "身份与画像", currentState && currentState.identity);
+  pick("identity", tr("section.slaveIdentity", "身份与画像"), currentState && currentState.identity);
   pick(
     "al",
     "AL / 实时",
@@ -1049,7 +1050,7 @@ function renderEvidence() {
     history: "PDO 历史",
     topology: "拓扑",
     metrics: "指标",
-    dict: "对象字典",
+    dict: tr("section.dict", "对象字典"),
     audit: "SDO 审计",
   }).map(([key, label]) =>
     el(
@@ -1066,7 +1067,7 @@ function renderEvidence() {
   app.append(
     sectionT(
       "evidence-boundaries",
-      "证据导出（只读；S-11 / V-06）",
+      tr("section.evidence", "证据导出（只读；S-11 / V-06）"),
       el(
         "p",
         { class: "sub", "data-testid": "evidence-meta" },
@@ -1106,7 +1107,7 @@ function renderAbout() {
   app.append(
     sectionT(
       "about-boundaries",
-      "关于 / 边界（V-07）",
+      tr("section.about", "关于 / 边界（V-07）"),
       el(
         "p",
         { class: "sub", "data-testid": "about-version" },
