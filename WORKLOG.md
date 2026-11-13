@@ -62,7 +62,10 @@
 - 文档：`docs/verification/2026-11-13-gate-b2-acceptance-probes.md` §4 写入轮次 B 结果与作废轮次记录；
   `docs/VERIFICATION.md`、`AGENTS.md`（B58/B59）同步。
 - **DOD-13 采集**：`/tmp/dod13-capture.sh` 修掉 `set -u` 下 trap 早于 PID 赋值的 `EC_PID: unbound variable`；
-  VM 后来 SSH 不稳定，`DOD13_RESULT` 待从 `/tmp/dod13.log` 复核（若未取到由 sim-expert/Lead 从 VM 日志读）。
+  重跑结果 **`DOD13_RESULT op_error_0x18_seen=False all_al_status=['0x01','0x08']`** —— 即 `--al-error 0x0024`
+  启动注入后，SOEM 建链时主站按 ESM 语义 Error ACK 清错，到 OP 时观测为 **`0x08`（OP 无 error）**，
+  **未稳定出现 `0x18`**；`0x11`（INIT|error）在无主站/早期窗口可见（见 al-error 探针）。
+  结论已可直接回填 DOD-13（"能否稳定派生 0x18" = 否，需运行期再次注入才可能）。
 
 **卡点**
 - ✅ 轮次 B 全部 PASS；⚠️ DOD-13 的 `al_status` 实测值在 VM SSH 抖动期间未回传（日志已落 `/tmp/dod13.log`）。
