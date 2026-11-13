@@ -12,7 +12,7 @@ if [ -z "$LIBS" ]; then LIBS="$(find "$SOEM_ROOT" -name 'libsoem.a' 2>/dev/null 
 if [ -z "$LIBS" ] || [ ! -f "$(echo "$LIBS" | awk '{print $1}')" ]; then
   echo "FAIL: libsoem.a not found under $SOEM_ROOT"; exit 2
 fi
-cc $CFLAGS -I"$SOEM_ROOT/include" -I"$SOEM_ROOT/osal" -I"$SOEM_ROOT/osal/linux" \
+cc $CFLAGS -I"$SOEM_ROOT/build/include" -I"$SOEM_ROOT/include" -I"$SOEM_ROOT/osal" -I"$SOEM_ROOT/osal/linux" \
   -I"$SOEM_ROOT/oshw" -I"$SOEM_ROOT/oshw/linux" -o "$OUT" "$SRC" $LIBS
 echo "BUILT $OUT"
 sha256sum "$OUT"
