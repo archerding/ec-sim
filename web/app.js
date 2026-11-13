@@ -1561,9 +1561,11 @@ document.getElementById("load-api").addEventListener("click", async () => {
     const slave = selectedSlave();
     const stateResponse = await fetch(`${base}/state?slave=${slave}`);
     if (stateResponse.status === 401) {
-      message.textContent = window.ECSIM_I18N && window.ECSIM_I18N.lang === "en"
-        ? "E-05 unauthorized: the server requires Authorization: Bearer token (--serve-token-env). Configure a reverse proxy or use curl -H \\"Authorization: Bearer <token>\\"; this page never stores tokens."
-        : "E-05 鉴权失败：服务端要求 Authorization: Bearer token（--serve-token-env）。请经反向代理注入请求头，或改用 curl -H \\"Authorization: Bearer <token>\\"；本页不保存 token。";
+      const e05 =
+        'E-05 鉴权失败：服务端要求 Authorization: Bearer token（--serve-token-env）。请经反向代理注入请求头，或改用 curl -H "Authorization: Bearer <token>"；本页不保存 token。';
+      const e05en =
+        'E-05 unauthorized: the server requires Authorization: Bearer token (--serve-token-env). Configure a reverse proxy or use curl -H "Authorization: Bearer <token>"; this page never stores tokens.';
+      message.textContent = window.ECSIM_I18N && window.ECSIM_I18N.lang === "en" ? e05en : e05;
       return;
     }
     if (!stateResponse.ok) throw new Error(`/state ${stateResponse.status}`);
