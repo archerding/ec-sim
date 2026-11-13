@@ -22,6 +22,7 @@ const SIZES = [
   { label: "1280x900", width: 1280, height: 900, scale: 1 },
   { label: "1920x1080", width: 1920, height: 1080, scale: 1 },
   { label: "1024x768@125", width: 1024, height: 768, scale: 1.25 },
+  { label: "512x384@200", width: 512, height: 384, scale: 2 },
 ];
 
 const port = 9333;
@@ -171,7 +172,10 @@ try {
       mobile: false,
     });
     await cdp.send("Page.navigate", { url });
-    await sleep(2500); // 等自动载入 state.json/dict.json + 渲染 + 首帧
+    await sleep(1500);
+    // H3：对 live/API 页面自动点“从 API 载入”，使 8 站实时数据进入渲染后再测量。
+    await cdp.send("Runtime.evaluate", { expression: `(() => { const input = document.getElementById("api"); if (input) input.value = location.origin; const button = document.getElementById("load-api"); if (button) button.click(); })()` });
+    await sleep(1500);
     const evaluation = await cdp.send("Runtime.evaluate", {
       expression: measureExpression(),
       returnByValue: true,
