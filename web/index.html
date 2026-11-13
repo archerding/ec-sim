@@ -42,7 +42,15 @@
       min-height: 44px; min-width: 44px; padding: 8px 10px; font: inherit;
       background: #0f1115; color: #e6e8ee; border: 1px solid #5f6b82; border-radius: 8px;
     }
-    input[type=checkbox] { width: 44px; height: 44px; accent-color: #6ea8fe; }
+    input[type=checkbox] {
+      width: 44px; height: 44px; appearance: none; -webkit-appearance: none;
+      border: 2px solid #5f6b82; border-radius: 8px; background: #0f1115; cursor: pointer;
+    }
+    input[type=checkbox]:checked {
+      border-color: #6ea8fe; background: #6ea8fe no-repeat center/30px 30px;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%230f1115' d='M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z'/></svg>");
+    }
+    label { white-space: nowrap; }
     .row label { min-height: 44px; }
     a { color: #8fbfe3; min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; }
     .skip-link { position: absolute; left: -999px; top: 8px; background: #24304a; color: #e6e8ee; padding: 10px 14px; border-radius: 8px; z-index: 10; }
@@ -69,8 +77,8 @@
     #shell-context { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 16px; color: #b9c6e0; }
     #shell-context span { min-height: 44px; display: inline-flex; align-items: center; }
     #sdo-audit-box table { font-size: 13px; }
-    #toast { display: none; margin-bottom: 12px; padding: 10px 14px; border-radius: 8px; background: #16261c; color: #8fe3a8; border: 1px solid #2c5a3c; }
-    #toast.visible { display: block; }
+    #toast { display: none !important; margin-bottom: 12px; padding: 10px 14px; border-radius: 8px; background: #16261c; color: #8fe3a8; border: 1px solid #2c5a3c; }
+    #toast.visible { display: block !important; }
     footer { margin-top: 24px; color: #9aa3b2; border-top: 1px solid #262b36; padding-top: 12px; }
     .al-chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-weight: 600; }
     .al-chip[data-sev="ok"] { background: #1f3b2a; color: #8fe3a8; }
@@ -125,14 +133,15 @@
   <section>
     <h2>载入状态</h2>
     <input id="file" data-testid="shell-load-file" type="file" accept="application/json,.json" multiple />
-    <div class="sub" style="margin-top:10px">
-      或从只读 API 载入：
-      <input id="api" type="text" value="http://127.0.0.1:8090" size="28" />
+    <div class="row" style="margin-top:10px">
+      <label>API 地址 <input id="api" type="text" value="http://127.0.0.1:8090" size="28" /></label>
       <button id="load-api" type="button">从 API 载入</button>
-      （从站在上方“shell-context”里选择 0-based，0..N-1）
-      <label style="margin-left:12px"><input id="live" type="checkbox" /> 实时刷新</label>
-      （<code>ec-sim-esc --serve 127.0.0.1:8090 --manifest plugins/…</code>；
-      实时还可用 <code>--uds/--tap</code> 同进程提供 <code>/pdo</code>、<code>/topology</code>、<code>/metrics</code>、<code>/events</code>）
+      <label><input id="live" type="checkbox" /> 实时刷新</label>
+    </div>
+    <div class="sub" style="margin-top:8px">
+      从站在上方“从站”处选择（0-based，0..N-1）；实时还可用
+      <code>ec-sim-esc --serve 127.0.0.1:8090 --uds &lt;sock&gt; --manifest plugins/…</code>
+      （同进程提供 <code>/pdo</code>、<code>/topology</code>、<code>/metrics</code>、<code>/events</code>）。
     </div>
     <div id="message" class="sub"></div>
   </section>

@@ -159,20 +159,22 @@ function ageText() {
   return age < 1000 ? `${age} ms 前` : `${(age / 1000).toFixed(1)} s 前`;
 }
 
+// 脱敏：只显示 host:port（不含 scheme/路径/token/凭据）。
+function sourceHostPort() {
+  if (!liveBase) return "";
+  try {
+    const url = new URL(liveBase);
+    return url.host;
+  } catch (error) {
+    return "";
+  }
+}
+
 function updateShellContext() {
   const source = document.getElementById("api-source");
   if (source) {
-    // 脱敏：只显示 scheme://host:port（不含 token/凭据/路径）。
-    let display = "未连接";
-    if (liveBase) {
-      try {
-        const url = new URL(liveBase);
-        display = `${url.protocol}//${url.host}`;
-      } catch (error) {
-        display = "已连接（地址无法解析）";
-      }
-    }
-    source.textContent = display;
+    const hostPort = sourceHostPort();
+    source.textContent = `数据源：${hostPort || "-"}`;
   }
   const address = document.querySelector('[data-testid="shell-context-address"]');
   const alChipNode = document.querySelector('[data-testid="shell-context-al-chip"]');
@@ -313,7 +315,7 @@ function summaryText() {
   const parts = [
     `EC-Sim 摘要 ${new Date().toISOString()}`,
     `站=${selectedSlave()} 模式=${connBadgeText(conn.mode)} 数据=${ageText()}`,
-    `API=${liveBase || "-"}`,
+    `API=${sourceHostPort() || "-"}`,
   ];
   if (live) {
     const derived = deriveAl(live.al_status);
@@ -980,7 +982,7 @@ function buildEvidenceMarkdown() {
   lines.push(`# EC-Sim 证据导出（ecsim-evidence-v1）`);
   lines.push("");
   lines.push(`- 生成时间：${new Date().toISOString()}`);
-  lines.push(`- 模式：${connBadgeText(conn.mode)}；站：${selectedSlave()}（0-based）；API：${liveBase || "-"}`);
+  lines.push(`- 模式：${connBadgeText(conn.mode)}；站：${selectedSlave()}（0-based）；API：${sourceHostPort() || "-"}`);
   lines.push(`- 数据年龄：${ageText()}`);
   lines.push("");
   lines.push("## 边界（必读）");
@@ -1248,7 +1250,7 @@ function updateSdoCurrent() {
     el(
       "span",
       {},
-      `当前站：${selectedSlave()}（0-based，0..N-1） · API：${base || "未填写"} · 数据：${age}${staleNote}`,
+      `当前站：${selectedSlave()}（0-based，0..N-1） · API：${sourceHostPort() || "未填写"} · 数据：${age}${staleNote}`,
     ),
   );
 }

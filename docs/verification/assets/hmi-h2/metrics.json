@@ -20,23 +20,23 @@
     "paint": [
       {
         "name": "first-paint",
-        "startTime": 112
+        "startTime": 108
       },
       {
         "name": "first-contentful-paint",
-        "startTime": 112
+        "startTime": 108
       }
     ],
     "navigation": {
-      "domContentLoaded": 49.2,
-      "load": 100.3,
-      "transferSize": 15551
+      "domContentLoaded": 48.6,
+      "load": 94.9,
+      "transferSize": 16055
     },
     "resources": [
       {
         "name": "app.js",
-        "duration": 4.6,
-        "transferSize": 72751
+        "duration": 3.9,
+        "transferSize": 72754
       },
       {
         "name": "state.json",
@@ -45,7 +45,7 @@
       },
       {
         "name": "dict.json",
-        "duration": 2.6,
+        "duration": 2.4,
         "transferSize": 7129
       },
       {
@@ -55,11 +55,11 @@
       },
       {
         "name": "favicon.ico",
-        "duration": 2.9,
+        "duration": 1.9,
         "transferSize": 635
       }
     ],
-    "screenshot": ".local\\hmi-capture\\out3\\1024x768.png"
+    "screenshot": ".local\\hmi-capture\\out4\\1024x768.png"
   },
   {
     "label": "1280x900",
@@ -82,41 +82,41 @@
     "paint": [
       {
         "name": "first-paint",
-        "startTime": 32
+        "startTime": 36
       },
       {
         "name": "first-contentful-paint",
-        "startTime": 32
+        "startTime": 36
       }
     ],
     "navigation": {
-      "domContentLoaded": 9.7,
-      "load": 12.1,
-      "transferSize": 0
+      "domContentLoaded": 13.4,
+      "load": 15,
+      "transferSize": 300
     },
     "resources": [
       {
         "name": "app.js",
-        "duration": 0,
-        "transferSize": 0
+        "duration": 2.5,
+        "transferSize": 300
       },
       {
         "name": "state.json",
-        "duration": 4.2,
-        "transferSize": 300
+        "duration": 1,
+        "transferSize": 0
       },
       {
         "name": "dict.json",
-        "duration": 4.4,
-        "transferSize": 300
+        "duration": 1.1,
+        "transferSize": 0
       },
       {
         "name": "pdo.json",
-        "duration": 5.1,
+        "duration": 2.2,
         "transferSize": 635
       }
     ],
-    "screenshot": ".local\\hmi-capture\\out3\\1280x900.png"
+    "screenshot": ".local\\hmi-capture\\out4\\1280x900.png"
   },
   {
     "label": "1920x1080",
@@ -139,41 +139,41 @@
     "paint": [
       {
         "name": "first-paint",
-        "startTime": 56
+        "startTime": 48
       },
       {
         "name": "first-contentful-paint",
-        "startTime": 56
+        "startTime": 48
       }
     ],
     "navigation": {
-      "domContentLoaded": 18.5,
-      "load": 21.2,
+      "domContentLoaded": 17.2,
+      "load": 19.3,
       "transferSize": 300
     },
     "resources": [
       {
         "name": "app.js",
-        "duration": 0,
-        "transferSize": 0
+        "duration": 3.1,
+        "transferSize": 300
       },
       {
         "name": "state.json",
-        "duration": 4.2,
-        "transferSize": 300
+        "duration": 1.7,
+        "transferSize": 0
       },
       {
         "name": "dict.json",
-        "duration": 4,
-        "transferSize": 300
+        "duration": 1.7,
+        "transferSize": 0
       },
       {
         "name": "pdo.json",
-        "duration": 4.3,
+        "duration": 3.9,
         "transferSize": 635
       }
     ],
-    "screenshot": ".local\\hmi-capture\\out3\\1920x1080.png"
+    "screenshot": ".local\\hmi-capture\\out4\\1920x1080.png"
   },
   {
     "label": "1024x768@125",
@@ -196,40 +196,40 @@
     "paint": [
       {
         "name": "first-paint",
-        "startTime": 44
+        "startTime": 40
       },
       {
         "name": "first-contentful-paint",
-        "startTime": 44
+        "startTime": 40
       }
     ],
     "navigation": {
-      "domContentLoaded": 11,
-      "load": 13.8,
-      "transferSize": 0
+      "domContentLoaded": 17.3,
+      "load": 19.5,
+      "transferSize": 300
     },
     "resources": [
       {
         "name": "app.js",
-        "duration": 0,
-        "transferSize": 0
+        "duration": 2,
+        "transferSize": 300
       },
       {
         "name": "state.json",
-        "duration": 3,
-        "transferSize": 300
+        "duration": 1.4,
+        "transferSize": 0
       },
       {
         "name": "dict.json",
-        "duration": 3.4,
-        "transferSize": 300
+        "duration": 1.5,
+        "transferSize": 0
       },
       {
         "name": "pdo.json",
-        "duration": 3.9,
+        "duration": 2.5,
         "transferSize": 635
       }
     ],
-    "screenshot": ".local\\hmi-capture\\out3\\1024x768@125.png"
+    "screenshot": ".local\\hmi-capture\\out4\\1024x768@125.png"
   }
 ]
