@@ -32,6 +32,8 @@ ip link del "$TAP" 2>/dev/null || true
   >"$OUT/sim.log" 2>&1 &
 SIM_PID=$!
 
+ip link set "$TAP" up 2>/dev/null || true
+ip link set "$TAP" promisc on 2>/dev/null || true
 for _ in $(seq 1 100); do
   if curl -fsS --max-time 1 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then break; fi
   sleep 0.2
