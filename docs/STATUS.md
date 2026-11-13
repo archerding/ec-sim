@@ -8,7 +8,7 @@
 核心 ESC（寄存器/SM/FMMU/AL/EEPROM-SII/邮箱/watchdog）+ CoE（SDO 加速/分段/SDO Info/
 Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/CST，Tier0 简化）
 + 声明式设备画像已实现；**未修改的 SOEM 2.0.0 与 IgH 1.6.13** 可发现从站并进入 OP
-（IgH 无应用时到 PREOP）。测试基线 **256 passed**（另 `wasm-runtime` feature 下 plugin-host **58** / esc-node **74**：WASM 宿主 + arena + worker 线程 + 行为桥 + 仓库内真实行为画像）。**M3 = 退出候选**：Linux 验证机整轮 `run-all-probes.sh` **20 PASS / 0 FAIL / 0 SKIP**（含 `mcp-tools`/`mcp-stdio`/TAP）、本机 256 passed、许可核对完成、ADR 0002 → Accepted，见 [M3 退出清单](plan/M3-exit-checklist.md)（W6 真人浏览器点击验收待补）。
+（IgH 无应用时到 PREOP）。测试基线 **258 passed**（另 `wasm-runtime` feature 下 plugin-host **58** / esc-node **74**：WASM 宿主 + arena + worker 线程 + 行为桥 + 仓库内真实行为画像）。**M3 = 退出候选**：Linux 验证机整轮 `run-all-probes.sh` **20 PASS / 0 FAIL / 0 SKIP**（含 `mcp-tools`/`mcp-stdio`/TAP）、本机 258 passed、许可核对完成、ADR 0002 → Accepted，见 [M3 退出清单](plan/M3-exit-checklist.md)（W6 真人浏览器点击验收待补）。
 
 ## 代码与测试
 
@@ -19,7 +19,7 @@ Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/
 | `plugin-host` | plugin.yaml 解析/校验、SII/字典/ESI 生成；PDO arena 同步（W2）；WASM 宿主 + 行为运行时（可选 feature） | 33 + 4 集成（另 `wasm-runtime` 下 53 + 5 集成） |
 | `wire` | EtherCAT 帧/datagram 编解码 + WKC 语义 | 23 |
 | `control-plane` | 只读快照 API：state-v1 / dict-v1 JSON + 路由表（`/state`、`/dict`） | 20 |
-| `mcp-server` | MCP/Agent 桥接（B47）：JSON-RPC 2.0 stdio + 9 个只读工具（只发 GET），零第三方依赖 | 16 |
+| `mcp-server` | MCP/Agent 桥接（B47）：JSON-RPC 2.0 stdio + 9 个只读工具（只发 GET），零第三方依赖；B50 增调用审计 JSON Lines | 18 |
 
 `cargo fmt --check`、`cargo clippy --workspace --all-targets -D warnings`、`cargo test --workspace`
 均为 0 失败；`cargo doc --workspace --no-deps` 0 警告。
@@ -103,15 +103,18 @@ cargo test --workspace
 ## 下一步（按优先级）
 
 1. ~~**B48（backlog 顶部）**：M3 退出条件核对与收尾~~ ✅ 2026-11-13 完成——验证机整轮 **20 PASS**、
-   本机 256 passed、许可/依赖核对（默认 0 第三方；可选 25 个宽松许可）、ADR 0002 → Accepted；
+   本机 258 passed、许可/依赖核对（默认 0 第三方；可选 25 个宽松许可）、ADR 0002 → Accepted；
    见 [M3 退出清单](plan/M3-exit-checklist.md)。**M3 = 退出候选，W6 真人浏览器点击验收待补**。
 2. ~~**B49（backlog 顶部）M4 测试报告与 CI 接入**~~ ✅ 2026-11-13 完成——新增
    `scripts/spikes/gen-test-report.py`（JSON/Markdown 报告：环境/HEAD/检查/探针/证据链接，零第三方依赖）；
    CI 新增 `docs-and-probes` job（文档一致性 + 非 root UDS 探针 + 报告 artifact）；`run-all-probes.sh`
-   的 Python 探测修正为 `python3 || python`（Windows/Git Bash）。⚠️ CI 首次运行待推送后观察。
-3. **B50（建议）MCP 覆盖矩阵**：live-only 工具（topology/pdo/history/metrics/sdo-audit）实时模式端到端、
-   token 模式矩阵（200/401/403）、调用审计结构化日志（B47 遗留）。
-4. B44 剩余增量项：插件 panic 重启、多实例配额。
+   的 Python 探测修正为 `python3 || python`（Windows/Git Bash）。CI 首跑已 **全绿**（4/4 jobs）。
+3. ~~**B50（backlog 顶部）MCP 覆盖矩阵**~~ ✅ 2026-11-13 完成——`mcp-stdio-probe` 扩展至 **31 项断言**：
+   token 矩阵（缺 token→AUTH_REQUIRED / 错 token→FORBIDDEN / 正确→200）、调用审计 **JSON Lines**、
+   Linux 实时模式（`--uds`+`--serve`）live-only 工具端到端（topology/pdo/history/metrics/sdo_audit，
+   含受控写产生审计）；本机与验证机 PASS，验证机整轮 20 PASS；`mcp-server` 单测 16→18。
+4. **B51（建议）B44 增量：插件 panic 重启 + 多实例配额**：worker 线程崩溃后的隔离/重启与实例配额；
+   需先补对应单测与探针。仍不宣称认证。
 5. 验证机补跑 `wasm-plugin-probe.sh` / `wasm-behavior-probe.sh` 与 Linux CLI UDS/TAP 行为插件端到端（需 crates.io，或先 vendor wasmi/wat）。
 6. DC 仿真（寄存器 + SYNC0/tick），实现后在测试画像上验证再声明 SII DC。
 7. CA 部分写/子索引顺序语义完善；fuzz 升级。

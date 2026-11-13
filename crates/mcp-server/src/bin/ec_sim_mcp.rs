@@ -86,8 +86,13 @@ fn main() {
                 continue;
             }
         };
-        log_call(&request);
-        let Some(response) = mcp_server::rpc::handle(&request, &catalog, &mut upstream) else {
+        let started_ms = now_ms();
+        let response = mcp_server::rpc::handle(&request, &catalog, &mut upstream);
+        let duration_ms = now_ms().saturating_sub(started_ms);
+        if let Some(response) = &response {
+            log_tool_call(&request, response, duration_ms);
+        }
+        let Some(response) = response else {
             continue;
         };
         if writeln!(stdout, "{}", response.to_json()).is_err() {
@@ -97,16 +102,84 @@ fn main() {
     }
 }
 
-fn log_call(request: &Json) {
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// 调用审计：每次 `tools/call` 向 stderr 写一行 **JSON Lines**（B50）。
+///
+/// 字段：`ts_ms` / `event` / `tool` / `duration_ms` / `ok` / `error_code`（仅失败时）。
+/// 这是**只读调用**审计，不含参数值/响应体，避免把 PDO/SDO 值写入日志。
+fn log_tool_call(request: &Json, response: &Json, duration_ms: u64) {
     let method = request.get("method").and_then(Json::as_str).unwrap_or("?");
-    if method == "tools/call" {
-        let name = request
-            .get("params")
-            .and_then(|params| params.get("name"))
-            .and_then(Json::as_str)
-            .unwrap_or("?");
-        eprintln!("ec-sim-mcp: tools/call {name}");
+    if method != "tools/call" {
+        return;
     }
+    let name = request
+        .get("params")
+        .and_then(|params| params.get("name"))
+        .and_then(Json::as_str)
+        .unwrap_or("?");
+    let result = response.get("result");
+    let is_error = result
+        .and_then(|result| result.get("isError"))
+        .and_then(|value| match value {
+            Json::Bool(value) => Some(*value),
+            _ => None,
+        })
+        .unwrap_or(false);
+    let error_code = if is_error {
+        tool_error_code(result)
+    } else {
+        None
+    };
+    eprintln!(
+        "{}",
+        audit_line(
+            name,
+            duration_ms,
+            !is_error,
+            error_code.as_deref(),
+            now_ms()
+        )
+    );
+}
+
+fn tool_error_code(result: Option<&Json>) -> Option<String> {
+    let text = result?
+        .get("content")?
+        .as_array()?
+        .first()?
+        .get("text")?
+        .as_str()?;
+    let parsed = json::parse(text).ok()?;
+    parsed
+        .get("code")
+        .and_then(Json::as_str)
+        .map(str::to_string)
+}
+
+fn audit_line(
+    tool: &str,
+    duration_ms: u64,
+    ok: bool,
+    error_code: Option<&str>,
+    ts_ms: u64,
+) -> String {
+    let mut entries: Vec<(&str, Json)> = vec![
+        ("ts_ms", Json::Number(ts_ms as f64)),
+        ("event", Json::String("tools/call".to_string())),
+        ("tool", Json::String(tool.to_string())),
+        ("duration_ms", Json::Number(duration_ms as f64)),
+        ("ok", Json::Bool(ok)),
+    ];
+    if let Some(code) = error_code {
+        entries.push(("error_code", Json::String(code.to_string())));
+    }
+    Json::object(entries).to_json()
 }
 
 fn parse_options() -> Result<Options, String> {
@@ -163,4 +236,40 @@ fn parse_options() -> Result<Options, String> {
         }
     }
     Ok(options)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audit_line_is_valid_json_lines() {
+        let line = audit_line("ecsim_state", 12, true, None, 1_700_000_000_000);
+        let parsed = json::parse(&line).expect("audit line 必须是合法 JSON");
+        assert_eq!(
+            parsed.get("event").and_then(Json::as_str),
+            Some("tools/call")
+        );
+        assert_eq!(
+            parsed.get("tool").and_then(Json::as_str),
+            Some("ecsim_state")
+        );
+        assert_eq!(parsed.get("ok").and_then(Json::as_str), None);
+        assert_eq!(parsed.get("duration_ms").and_then(Json::as_i64), Some(12));
+    }
+
+    #[test]
+    fn audit_line_escapes_tool_name_and_marks_error_code() {
+        let line = audit_line("bad\"tool\\name", 3, false, Some("TOOL_NOT_FOUND"), 1);
+        let parsed = json::parse(&line).expect("audit line 必须是合法 JSON");
+        assert_eq!(
+            parsed.get("tool").and_then(Json::as_str),
+            Some("bad\"tool\\name")
+        );
+        assert_eq!(
+            parsed.get("error_code").and_then(Json::as_str),
+            Some("TOOL_NOT_FOUND")
+        );
+        assert_eq!(parsed.get("ok").and_then(Json::as_str), None);
+    }
 }

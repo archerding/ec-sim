@@ -605,9 +605,14 @@ user.email = deepseek-harness@users.noreply.github.com
   （ubuntu 非 root：文档一致性 + UDS 探针 + artifact 上传）；`run-all-probes.sh` 的 Python 探测改为
   `python3 || python`（修复 Windows/Git Bash 下 `python3` 不存在导致探针整体 exit 1 的问题）。
   本机整轮报告 **PASS**（cargo 4 项 + 探针 any 项）；⚠️ CI 首次运行待推送后观察。
-- [ ] **B50 MCP 覆盖矩阵（建议，backlog 顶部）**：live-only 工具（topology/pdo/history/metrics/
-  sdo-audit）在实时模式下端到端、token 模式矩阵（200/401/403）、调用审计结构化 JSON Lines
-  （B47 遗留）；不宣称认证。
+- [x] ~~**B50 MCP 覆盖矩阵**~~ ✅ **2026-11-13 完成**：`ec-sim-mcp` 每次 `tools/call` 向 stderr 写
+  **JSON Lines 审计**（ts_ms/event/tool/duration_ms/ok[/error_code]；不含参数值与响应体；2 个单测，
+  `mcp-server` 16→18）。`mcp-stdio-probe` 扩至 **31 项断言**：token 矩阵（缺→AUTH_REQUIRED / 错→FORBIDDEN /
+  对→200）、审计字段与失败码、Linux 实时模式（`--uds`+`--serve`）live-only 工具端到端
+  （topology/pdo/history/metrics/sdo_audit；先受控写 0x6040 产生审计）。本机与验证机 PASS；
+  验证机整轮 **20 PASS / 0 FAIL / 0 SKIP**；`cargo test --workspace` **258 passed**。只写预回归，不宣称认证。
+- [ ] **B51 B44 增量：插件 panic 重启 + 多实例配额（建议，backlog 顶部）**：worker 线程崩溃后的隔离/
+  重启与实例配额；需先补单测与探针；`wasm-runtime` 依赖获取后补 Linux 端到端。仍不宣称认证。
 
 ## 7. 目录约定
 

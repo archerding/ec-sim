@@ -1,5 +1,41 @@
 ---
 
+## 2026-11-13 12:28 班（低峰）— **B50：MCP 覆盖矩阵（31 项断言 + 审计 JSONL + 实时 live-only 工具）**
+
+> 调度上下文计划重点（B2b / B8 / B4）均早已完成；按 `AGENTS.md` §6 取 backlog 顶部 **B50**
+> （B47 遗留：live-only 工具端到端 + token 矩阵 + 调用审计）。
+
+**做了什么**
+- `ec-sim-mcp` **调用审计**：每次 `tools/call` 向 stderr 写一行 **JSON Lines**
+  （`ts_ms`/`event`/`tool`/`duration_ms`/`ok`[/`error_code`]；不含参数值与响应体，避免 PDO/SDO 值入日志）；
+  新增 2 个单测（合法 JSON、工具名转义、失败码），`mcp-server` 单测 **16 → 18**。
+- `mcp-stdio-probe` 扩展至 **31 项断言**（原 18）：
+  - token 矩阵：缺 token → `AUTH_REQUIRED`、错 token → `FORBIDDEN`、正确 token → `state-v1`；
+  - 审计：≥3 条 JSON Lines、字段完整、失败调用 `ok=false + error_code=TOOL_NOT_FOUND`；
+  - **Linux 实时模式**（`--uds` + `--serve`）：`state.live` 非空、`topology`/`pdo`/`pdo_history`/`metrics`/
+    `sdo_audit` 全部经 MCP 工具端到端；先受控写 0x6040（`--serve-write`）使 `sdo_audit` 含事件。
+    Windows 上该段打印 SKIP（不计失败）。
+- 文档同步：`M3-W8` §8/§9（S1/S2/S3 状态、31 断言、18 单测）；`STATUS`（258 passed、`mcp-server` 18、
+  B50 ✅ + B51 建议）；`VERIFICATION`（整轮 20 PASS、mcp-stdio 31 断言）；`AGENTS` §6（B50 ✅ + B51）。
+
+**验证结果**
+- 本机：`mcp-stdio-probe` **PASS**（静态/token/审计 24 项，live 段 SKIP）；`cargo fmt --check` / `clippy -D warnings` /
+  `doc` 全 0；`cargo test --workspace` **258 passed / 0 failed**（新增 2 个审计单测）。
+- Linux 验证机（同步源码 + `cargo build --release`）：`mcp-stdio-probe.sh` **PASS**（含 live 段 7 项）；
+  整轮 `run-all-probes.sh` **20 PASS / 0 FAIL / 0 SKIP**。
+- 无 root/TAP 依赖新增；探针仍可任意平台跑（Windows 跳 live 段）。
+
+**卡点**
+- 无硬阻塞。未做：`/events` 订阅类能力（非工具，后续可单列）、TAP 下重复实时探测（UDS 与 TAP 共用同一
+  只读控制面语义，本次以 UDS 覆盖）。
+
+**下次开工第一件事**
+- 取 backlog 顶部 **B51（建议）B44 增量：插件 panic 重启 + 多实例配额**——worker 线程崩溃后的隔离/重启
+  与实例配额，先补单测与探针；`wasm-runtime` 依赖获取后补 Linux 端到端。或先补 W6 真人点击关闭 M3。
+  仍不宣称一致性/认证。
+
+---
+
 ## 2026-11-13 12:23 班（低峰）— **B49：M4 测试报告生成器 + CI 文档/探针 job**
 
 > 调度上下文计划重点（B2b / B8 / B4）均早已完成；按 `AGENTS.md` §6 取 backlog 顶部未完成项 **B49**

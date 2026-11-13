@@ -1,21 +1,28 @@
 #!/usr/bin/env python3
-"""B47 / M3-W8：`ec-sim-mcp` stdio 桥接端到端探针（无第三方依赖）。
+"""B47 / M3-W8 / B50：`ec-sim-mcp` stdio 桥接端到端探针（无第三方依赖）。
 
 覆盖：
 1. `initialize` / `notifications/initialized` / `tools/list`（恰好 9 个只读工具）；
 2. 只读工具实调：/health、/state、/dict、/sdo（经真实控制面 `--serve`）；
 3. 错误路径：未知工具、缺必填参数、静态模式下 live-only 工具、未知方法、坏 JSON；
 4. 安全边界：`--serve-write` 开启后 `tools/list` **完全不变**（无写工具）。
+5. **B50 增量**：token 模式矩阵（缺 token → AUTH_REQUIRED / 错 token → FORBIDDEN / 正确 token → 200）；
+   调用审计 **JSON Lines**（stderr 每行含 ts_ms/event/tool/duration_ms/ok[/error_code]）；
+   Linux 实时模式（`--uds` + `--serve`）下 live-only 工具端到端（topology/pdo/history/metrics/sdo_audit，
+   并先经 `--serve-write` 写一次 0x6040 以产生审计事件）。非 Linux 平台该段 SKIP。
 
 退出码：0 = 全部通过；1 = 失败；2 = 前置缺失（SKIP）。
 """
 
 import argparse
 import json
+import os
 import queue
+import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.request
@@ -64,13 +71,14 @@ def wait_health(port, timeout=8.0):
 
 
 class ControlPlane:
-    def __init__(self, binary, manifest, extra=()):
+    def __init__(self, binary, manifest, extra=(), env=None):
         self.port = free_port()
         self.proc = subprocess.Popen(
             [binary, "--serve", f"127.0.0.1:{self.port}", "--manifest", manifest, *extra],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=env,
         )
         if not wait_health(self.port):
             self.stop()
@@ -90,9 +98,9 @@ class ControlPlane:
 
 
 class McpClient:
-    def __init__(self, binary, api):
+    def __init__(self, binary, api, extra_args=(), env=None):
         self.proc = subprocess.Popen(
-            [binary, "--api", api],
+            [binary, "--api", api, *extra_args],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -100,6 +108,7 @@ class McpClient:
             encoding="utf-8",
             errors="replace",
             bufsize=1,
+            env=env,
         )
         self.lines = queue.Queue()
         reader = threading.Thread(target=self._read_lines, daemon=True)
@@ -330,7 +339,264 @@ def main():
         client.stop()
         server.stop()
 
-    # 4) --serve-write 下工具表必须完全不变
+    # 4) token 模式矩阵（B50）：缺 token → AUTH_REQUIRED；错 token → FORBIDDEN；正确 token → 200
+    token_env = "ECSIM_MCP_TEST_TOKEN"
+    token_value = "ecsim-token-test"
+    server = ControlPlane(
+        args.server,
+        args.manifest,
+        extra=("--serve-token-env", token_env),
+        env={**os.environ, token_env: token_value},
+    )
+    try:
+        client = McpClient(args.mcp, server.api)
+        try:
+            response = client.request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 40,
+                    "method": "tools/call",
+                    "params": {"name": "ecsim_state", "arguments": {}},
+                }
+            )
+            result, text = tool_result(response)
+            check(
+                result.get("isError") is True and "AUTH_REQUIRED" in text,
+                "token 模式：缺 token → AUTH_REQUIRED",
+            )
+        finally:
+            client.stop()
+
+        client = McpClient(
+            args.mcp,
+            server.api,
+            extra_args=("--token-env", token_env),
+            env={**os.environ, token_env: "wrong-token"},
+        )
+        try:
+            response = client.request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 41,
+                    "method": "tools/call",
+                    "params": {"name": "ecsim_state", "arguments": {}},
+                }
+            )
+            result, text = tool_result(response)
+            check(
+                result.get("isError") is True and "FORBIDDEN" in text,
+                "token 模式：错 token → FORBIDDEN",
+            )
+        finally:
+            client.stop()
+
+        client = McpClient(
+            args.mcp,
+            server.api,
+            extra_args=("--token-env", token_env),
+            env={**os.environ, token_env: token_value},
+        )
+        try:
+            response = client.request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 42,
+                    "method": "tools/call",
+                    "params": {"name": "ecsim_state", "arguments": {}},
+                }
+            )
+            result, text = tool_result(response)
+            state = json.loads(text) if result.get("isError") is False else {}
+            check(
+                result.get("isError") is False and state.get("schema") == "ec-sim/state-v1",
+                "token 模式：正确 token → state-v1",
+            )
+        finally:
+            client.stop()
+    finally:
+        server.stop()
+
+    # 5) 调用审计 JSON Lines（B50）：每次 tools/call 一行，失败带 error_code
+    server = ControlPlane(args.server, args.manifest)
+    client = McpClient(args.mcp, server.api)
+    try:
+        client.request(
+            {
+                "jsonrpc": "2.0",
+                "id": 50,
+                "method": "tools/call",
+                "params": {"name": "ecsim_state", "arguments": {}},
+            }
+        )
+        client.request(
+            {
+                "jsonrpc": "2.0",
+                "id": 51,
+                "method": "tools/call",
+                "params": {"name": "ecsim_nope", "arguments": {}},
+            }
+        )
+        client.request(
+            {
+                "jsonrpc": "2.0",
+                "id": 52,
+                "method": "tools/call",
+                "params": {"name": "ecsim_health", "arguments": {}},
+            }
+        )
+        time.sleep(0.2)
+    finally:
+        client.stop()
+    stderr_text = client.stderr_text()
+    audit_lines = []
+    for line in stderr_text.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            parsed = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if parsed.get("event") == "tools/call":
+            audit_lines.append(parsed)
+    check(len(audit_lines) >= 3, "审计：至少 3 条 tools/call JSON Lines")
+    check(
+        all("ts_ms" in item and "duration_ms" in item and "ok" in item for item in audit_lines),
+        "审计：每行含 ts_ms/duration_ms/ok",
+    )
+    failed = [item for item in audit_lines if item.get("tool") == "ecsim_nope"]
+    check(
+        len(failed) == 1
+        and failed[0].get("ok") is False
+        and failed[0].get("error_code") == "TOOL_NOT_FOUND",
+        "审计：失败调用 ok=false + error_code=TOOL_NOT_FOUND",
+    )
+    server.stop()
+
+    # 6) Linux 实时模式：live-only 工具端到端（B50；非 Linux 平台 SKIP）
+    if sys.platform.startswith("linux"):
+        tmpdir = tempfile.mkdtemp(prefix="ecsim-mcp-live-")
+        sock = os.path.join(tmpdir, "ecsim.sock")
+        server = ControlPlane(
+            args.server,
+            args.manifest,
+            extra=("--uds", sock, "--esm-lax", "--serve-write"),
+        )
+        client = McpClient(args.mcp, server.api)
+        try:
+            response = client.request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 60,
+                    "method": "tools/call",
+                    "params": {"name": "ecsim_state", "arguments": {}},
+                }
+            )
+            result, text = tool_result(response)
+            state = json.loads(text) if result.get("isError") is False else {}
+            check(
+                result.get("isError") is False and state.get("live") is not None,
+                "实时模式：ecsim_state 含 live 字段",
+            )
+
+            response = client.request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 61,
+                    "method": "tools/call",
+                    "params": {"name": "ecsim_topology", "arguments": {}},
+                }
+            )
+            result, text = tool_result(response)
+            topology = json.loads(text) if result.get("isError") is False else {}
+            check(
+                result.get("isError") is False
+                and topology.get("schema") == "ec-sim/topology-v1"
+                and topology.get("count", 0) >= 1,
+                "实时模式：ecsim_topology 返回 topology-v1",
+            )
+
+            response = client.request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 62,
+                    "method": "tools/call",
+                    "params": {"name": "ecsim_pdo", "arguments": {"slave": 0}},
+                }
+            )
+            result, text = tool_result(response)
+            pdo = json.loads(text) if result.get("isError") is False else {}
+            check(
+                result.get("isError") is False and pdo.get("schema") == "ec-sim/pdo-v1",
+                "实时模式：ecsim_pdo 返回 pdo-v1",
+            )
+
+            response = client.request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 63,
+                    "method": "tools/call",
+                    "params": {"name": "ecsim_pdo_history", "arguments": {"slave": 0}},
+                }
+            )
+            result, text = tool_result(response)
+            history = json.loads(text) if result.get("isError") is False else {}
+            check(
+                result.get("isError") is False
+                and history.get("schema") == "ec-sim/pdo-history-v1",
+                "实时模式：ecsim_pdo_history 返回 pdo-history-v1",
+            )
+
+            response = client.request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 64,
+                    "method": "tools/call",
+                    "params": {"name": "ecsim_metrics", "arguments": {"slave": 0}},
+                }
+            )
+            result, text = tool_result(response)
+            check(
+                result.get("isError") is False and "ecsim_frames_in_total" in text,
+                "实时模式：ecsim_metrics 返回 Prometheus 文本",
+            )
+
+            write_request = urllib.request.Request(
+                f"{server.api}/sdo?index=0x6040&sub=0",
+                data=b"\x0f\x00",
+                method="POST",
+            )
+            with urllib.request.urlopen(write_request, timeout=5) as write_response:
+                written = json.loads(write_response.read().decode("utf-8"))
+            check(written.get("ok") is True, "实时模式：受控写 0x6040 成功（产生审计）")
+
+            response = client.request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 65,
+                    "method": "tools/call",
+                    "params": {"name": "ecsim_sdo_audit", "arguments": {}},
+                }
+            )
+            result, text = tool_result(response)
+            audit = json.loads(text) if result.get("isError") is False else {}
+            events = audit.get("events") or []
+            check(
+                result.get("isError") is False
+                and audit.get("schema") == "ec-sim/sdo-audit-v1"
+                and audit.get("count", 0) >= 1
+                and events
+                and events[-1].get("index") == "0x6040",
+                "实时模式：ecsim_sdo_audit 含写入事件",
+            )
+        finally:
+            client.stop()
+            server.stop()
+            shutil.rmtree(tmpdir, ignore_errors=True)
+    else:
+        print("SKIP live-mode：需要 Linux UDS（本平台跳过，不计失败）")
+
+    # 7) --serve-write 下工具表必须完全不变
     server = ControlPlane(args.server, args.manifest, extra=("--serve-write",))
     client = McpClient(args.mcp, server.api)
     try:
@@ -358,7 +624,10 @@ def main():
     if failures:
         print(f"FAIL: mcp-stdio 探针 {len(failures)} 项失败")
         return 1
-    print("PASS: mcp-stdio 探针（9 只读工具、读写边界、--serve-write 下表不变）")
+    print(
+        "PASS: mcp-stdio 探针（9 只读工具、读写边界、--serve-write 下表不变、"
+        "token 200/401/403、审计 JSONL、live-only 工具覆盖）"
+    )
     return 0
 
 

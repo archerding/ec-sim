@@ -137,24 +137,27 @@
   `initialize`/`ping`/`tools/list`/`tools/call`；工具表 `include_str!` 嵌入
   `m3-w8-mcp-tools-v1.json`（单一事实来源）；`input_schema` 严格校验（未知参数/必填/整数范围）；
   HTTP 仅 GET、默认只连回环、`--token-env` 读 Bearer token、5 s 超时、1 MiB 响应上限；
-  错误码映射 §5；16 个单测（JSON/HTTP/目录/参数/JSON-RPC）。
-- **S2（B47）✅**：`scripts/spikes/mcp-stdio-probe.sh` + `mcp-stdio-probe.py`（python 合成 MCP client）：
+  错误码映射 §5；16 个单测（JSON/HTTP/目录/参数/JSON-RPC）。**B50 增 2 个审计单测 → 18。**
+- **S2（B47/B50）✅**：`scripts/spikes/mcp-stdio-probe.sh` + `mcp-stdio-probe.py`（python 合成 MCP client）：
   起真实静态 `--serve`，断言 9 工具、`state/dict/sdo` 读取、未知工具/缺参/静态模式 live-only 工具/
-  未知方法/坏 JSON 错误路径，再以 `--serve-write` 起服务确认工具表**不变**（18 项断言）。
-  本机（Windows）与 Linux 验证机均 **EXIT=0**。
-- **S3（部分完成）**：`mcp-stdio` 已登记进 `run-all-probes.sh`（类别 `any`，无需 root）；
-  Linux 验证机整轮 `run-all-probes.sh` 实跑留待下一轮回归（⚠️ 待验证）。
+  未知方法/坏 JSON 错误路径，再以 `--serve-write` 起服务确认工具表**不变**；
+  **B50 扩展**：token 矩阵（缺/错/对 → AUTH_REQUIRED/FORBIDDEN/200）、stderr 审计 **JSON Lines**、
+  Linux 实时（`--uds`+`--serve`）live-only 工具端到端（topology/pdo/history/metrics/sdo_audit，
+  含受控写产生审计），共 **31 项断言**。本机（Windows）与 Linux 验证机均 **EXIT=0**。
+- **S3（已闭环）**：`mcp-stdio` 已登记进 `run-all-probes.sh`（类别 `any`，无需 root）；
+  Linux 验证机整轮 `run-all-probes.sh` **20 PASS / 0 FAIL / 0 SKIP**（2026-11-13）。
 
 ## 9. 验收（当前实现）
 
 - `python3 scripts/spikes/mcp-tools-check.py` → **OK**（9 个只读工具、文档全部 GET 路由有归宿、
   POST 只出现在排除项、设计文档与清单/验证索引互链）。
 - `bash scripts/spikes/mcp-stdio-probe.sh` → **PASS**（本机与验证机）：9 个只读工具、
-  `tools/list` 与目录一致、无写工具、`--serve-write` 下表不变、错误码符合 §5。
-- `cargo test --workspace` 含 `mcp-server` 16 个单测；`fmt`/`clippy -D warnings` 全绿。
-- 明确未做：实时模式（UDS/TAP）下 live-only 工具（`/topology`、`/pdo`、`/metrics`、`/sdo-audit`）
-  的端到端（探针当前只跑静态控制面）；token 模式矩阵；调用审计日志（设计 §6 的 stderr JSON Lines
-  目前只打印 `tools/call <name>`）；`/events` 订阅。以上均标 ⚠️ 待验证/待做。
+  `tools/list` 与目录一致、无写工具、`--serve-write` 下表不变、错误码符合 §5；B50 增 token 矩阵、
+  审计 JSON Lines、Linux 实时 live-only 工具覆盖（共 31 项断言）。
+- `cargo test --workspace` 含 `mcp-server` 18 个单测；`fmt`/`clippy -D warnings` 全绿。
+- **B50 已闭环**：实时模式（UDS）下 live-only 工具（`/topology`、`/pdo`、`/pdo?history=1`、`/metrics`、
+  `/sdo-audit`）端到端；token 模式矩阵；调用审计（stderr JSON Lines：ts_ms/event/tool/duration_ms/ok）。
+  仍未做：`/events` 订阅类能力（非工具）、写工具（**永不映射**）。
 
 ## 10. 复现
 
