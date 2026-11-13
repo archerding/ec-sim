@@ -74,8 +74,8 @@
 | `dump-dict-probe.sh` | `--dump-dict --json` 输出合法 dict-v1（2 个画像）：0x6502 值（0x0410/0x3AD 小端）、0x6040=rw/16；纯文本 dump 向后兼容 | **EXIT=0** |
 | `dump-state-probe.sh` | `--dump-state`（2 个 manifest 画像 + 内置画像）输出合法 state-v1 JSON：身份/SM/PDO/DC/字典对象数；`web/` 资源存在 | **EXIT=0** |
 | `podman-unprivileged-probe.sh` | 无特权容器（podman，无 `--privileged/--network=host`）内跑 `--slaves 8` UDS shim：容器内启动、广播 WKC/地址分配、UDS 全链路通过 | **EXIT=0** |
-| `tap-multi-slave-probe.sh` | TAP 上 8 从站链：SOEM `slaveinfo` 报 `8 slaves found`/WKC 24、`simple_ng` 映射 8O+8I 且 WKC 24；实测循环 ≈425 Hz（未隔离 CPU） | **EXIT=0** |
-| `chain_latency`（example） | ESC 链处理微基准：1/2/4/8 从站 = 约 0.13/0.21/0.39/0.76 µs/帧（本机）；验证机 8 从站 ≈0.48 µs/帧 | `cargo run --release -p esc-node --example chain_latency` |
+| `tap-multi-slave-probe.sh` | TAP 上 N 从站链（默认 8；B45 用 `N=32`）：SOEM `slaveinfo` 报 N 站/WKC N*3、`simple_ng` 映射 NO+NI 且 WKC 全对；**B45 起统计每轮往返时间**（不再用 iterations/T 估频）：8 站 avg 164 µs、32 站 avg 167 µs；32 站 roundtrip <1 ms | **EXIT=0**（验证机，2026-11-13） |
+| `chain_latency`（example） | ESC 链处理微基准（B45 扩展到 1..64 从站 + 边际成本）：本机 1/8/32/64 = 0.158/0.754/2.992/5.832 µs/帧；验证机 = 0.073/0.461/1.704/3.482 µs/帧（≈52 ns/从站）；32 站仅占 1 ms 的 0.17% | `cargo run --release -p esc-node --example chain_latency -- 20000 1,8,32,64` |
 | `uds_latency`（example，原生 Rust） | UDS shim 往返：默认阻塞 p50≈93µs/p99≈157µs；sim `--poll` + 探测 `spin` 忙轮询 p50≈3.7µs/p99≈9.3µs（1 站）、8 站 p99≈14.6µs | `cargo run --release -p esc-node --example uds_latency -- <sock> 5000 spin` |
 | `shim-latency.sh` | UDS shim 延迟基准（支持 SIM_CPU/PROBE_CPU/RT）：未绑核 p50≈111µs/p99≈196µs；`isolcpus=2,3` + RT（sim CPU2 `-f 50`、probe CPU3 `-f 80`）p50≈101µs/p99≈172µs；8 从站 RT p99≈181µs | **EXIT=0** |
 | `soem-multi-slave-probe.sh` | 未修改 SOEM 经 UDS shim 数到 **8 从站**并 OP：`8 slaves found`、`mapped 8O+8I`、WKC 24 | **EXIT=0** |

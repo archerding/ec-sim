@@ -98,6 +98,6 @@ cargo test --workspace
 
 1. B44 原定范围已完成（子项 1–3 + 本班子项 4：仓库内真实行为画像 `plugins/behavior-counter/` 与 `wasm-behavior-probe.sh` 端到端）；剩余增量项：插件 panic 重启、多实例配额。
 2. 验证机补跑 `wasm-plugin-probe.sh` / `wasm-behavior-probe.sh` 与 Linux CLI UDS/TAP 行为插件端到端（需 crates.io，或先 vendor wasmi/wat）。
-3. M3-W7：32 从站 @1 kHz 瓶颈调研（文档结论，不承诺达成）；M3-W8：MCP/Agent 桥接 stub（只读端点映射）。
+3. M3-W7：32 从站 @1 kHz 瓶颈调研（文档结论，不承诺达成）。**已完成（B45）**：见 [M3-W7 文档](plan/M3-W7-32slave-1khz-bottleneck.md)——32 站链处理 1.7 µs（0.17% 预算）、TAP 往返 167 µs；修正 SOEM `simple_ng` 采样口径（fixed sleep，非控制环频率）。M3-W8：MCP/Agent 桥接 stub（只读端点映射）待做。
 4. DC 仿真（寄存器 + SYNC0/tick），实现后在测试画像上验证再声明 SII DC。
 5. CA 部分写/子索引顺序语义完善；fuzz 升级。

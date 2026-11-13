@@ -1,5 +1,47 @@
 ---
 
+## 2026-11-13 09:34 班（低峰）— **B45 M3-W7：32 从站 @1 kHz 瓶颈调研（文档结论）+ 测量口径修正**
+
+> 调度上下文计划重点（B2b / B8 / B4）均早已完成；按 `AGENTS.md` §5 取 backlog 顶部未完成项
+> **B45**，本班做其可独立验证的主项 **M3-W7**（W8 MCP stub 留待下一班）。
+
+**做了什么**
+- 新增 [docs/plan/M3-W7-32slave-1khz-bottleneck.md](docs/plan/M3-W7-32slave-1khz-bottleneck.md)：
+  问题/范围、既有数据、**测量口径修正**、本轮实测、瓶颈分解（1 ms 预算表）、可行路径与成本、
+  结论（不承诺达成）、复现命令。
+- **口径修正（关键）**：SOEM `simple_ng` 样例每次迭代含固定 `osal_usleep(5000)`（只读参考源码），
+  故 `iterations/T` 只是样例节拍（≈158–170 轮/s），**不是控制环频率**；主站侧指标改为每轮
+  `usec WKC` 往返时间。ADR 0001 的 425/860 Hz 记录标 ⚠️ 待复核（已追加"2026-11-13 更新"段）。
+- `crates/esc-node/examples/chain_latency.rs`：从站数改为参数（`[iterations] [slaves_csv]`），
+  默认 1..64；输出 µs/frame 与**边际 ns/从站**。
+- `scripts/spikes/tap-multi-slave-probe.sh`：支持任意 `N`（WKC=N*3、映射 NO+NI）；
+  改为统计往返 min/avg/max 并断言所有轮 WKC 正确；移除误导性的"估算循环频率"。
+- 文档同步：`AGENTS.md`（B45 进度 + 新增 B46）、`docs/plan/M3-scope.md`（W7 ✅）、
+  `docs/STATUS.md`、`docs/VERIFICATION.md`、ADR 0001。
+
+**验证结果**
+- 模拟器侧链处理（`chain_latency`，release）：验证机 32 站 **1.704 µs/帧**、64 站 3.482 µs
+  （边际 ≈52 ns/从站）；Windows 32 站 2.992 µs、64 站 5.832 µs（边际 ≈90 ns/从站）
+  → 32 站仅占 1 ms 周期的 **0.17%**，ESC 链不是瓶颈。
+- TAP + **未修改 SOEM**（验证机 root，8 秒窗口）：8 站 roundtrip n=1392 min20/avg **164**/max813 µs；
+  32 站 n=1344 min26/avg **167**/max344 µs，WKC 24/96 全轮正确 → 往返与从站数近似无关
+  （TAP 唤醒主导），32 站单轮仍在 1 ms 内。`N=8` / `N=32` 两次探针均 **EXIT=0**。
+- 本机：`cargo fmt --all -- --check` OK；`cargo clippy --workspace --all-targets -- -D warnings` OK；
+  `cargo test --workspace` → **238 passed / 0 failed**；example 参数化后跑通（见上）。
+- ⚠️ 未测：多 datagram/segment 帧形状的链处理；隔离 CPU + `SCHED_FIFO` 下 32 站 @1 kHz 实际发帧的
+  p50/p99/max（验证方法已写入 W7 文档 §7/§8 → B46）。
+
+**卡点**
+- ADR 0001 的 425/860 Hz 历史记录口径存疑，已标 ⚠️ 并写复核方法，未改写历史结论
+  （M1 两项仍记 🟡，不宣称达成）。
+- 32 站 1 kHz 不能仅凭本轮数据下"达成"结论（tail 抖动/帧形状/RT 调度未测）。
+
+**下次开工第一件事**
+- **B45 剩余项 M3-W8：MCP/Agent 桥接 stub 设计文档**（工具清单 + 只读端点映射，不含写，
+  无外部依赖）；若时间允许再启动 **B46 原生 32 站 1 kHz 基准**。
+
+---
+
 ## 2026-11-13 08:31 班（低峰）— **B44 收尾（W2 子项 4）：仓库内真实行为画像 `plugins/behavior-counter` + 端到端探针，B44 完成**
 
 > 调度上下文计划重点（B2b / B8 / B4）均早已完成；按 `AGENTS.md` §5 取 backlog 顶部未完成项

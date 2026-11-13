@@ -1,10 +1,14 @@
-//! 链式帧处理微基准（B16）：测量 `esc_node::handle_frame_chain` 在 1..N 个从站链上的
+//! 链式帧处理微基准（B16 / B45）：测量 `esc_node::handle_frame_chain` 在 1..N 个从站链上的
 //! 单帧处理耗时（不含 TAP/UDS 线缆层与主站侧开销）。
 //!
-//! 用法：`cargo run --release -p esc-node --example chain_latency [iterations]`
+//! 用法：
+//!   `cargo run --release -p esc-node --example chain_latency [iterations] [slaves_csv]`
 //!
-//! 目的：为 M1 的「8 从站 @1kHz / p99」分析提供**模拟器侧**数据，区分瓶颈来自 ESC 链处理
-//! 还是线缆层/主站侧（见 `docs/adr/0001-m1-1khz-p99-limits.md`）。
+//! 例：`cargo run --release -p esc-node --example chain_latency 20000 1,8,32,64`
+//!
+//! 目的：为 M1/M3 的「8/32 从站 @1kHz」分析提供**模拟器侧**数据，区分瓶颈来自 ESC 链处理
+//! 还是线缆层/主站侧（见 `docs/adr/0001-m1-1khz-p99-limits.md`、
+//! `docs/plan/M3-W7-32slave-1khz-bottleneck.md`）。
 
 use std::time::Instant;
 
@@ -48,16 +52,43 @@ fn measure(slaves: usize, iterations: usize) -> f64 {
 }
 
 fn main() {
-    let iterations: usize = std::env::args()
-        .nth(1)
+    let mut args = std::env::args().skip(1);
+    let iterations: usize = args
+        .next()
         .and_then(|value| value.parse().ok())
         .unwrap_or(20_000);
+    let slave_counts: Vec<usize> = args
+        .next()
+        .map(|csv| {
+            csv.split(',')
+                .filter_map(|value| value.trim().parse().ok())
+                .filter(|value| *value > 0)
+                .collect()
+        })
+        .unwrap_or_else(|| vec![1, 2, 4, 8, 16, 32, 64]);
+    if slave_counts.is_empty() {
+        eprintln!("error: slaves 列表为空（例：1,8,32,64）");
+        std::process::exit(2);
+    }
+
     println!("chain_latency iterations={iterations}");
-    for slaves in [1usize, 2, 4, 8] {
+    let mut previous: Option<(usize, f64)> = None;
+    for slaves in slave_counts {
         let ns = measure(slaves, iterations);
+        let frames_per_sec = 1.0e9 / ns;
         println!(
-            "CHAIN slaves={slaves} ns_per_frame={ns:.1} frames_per_sec={:.0}",
-            1.0e9 / ns
+            "CHAIN slaves={slaves} ns_per_frame={ns:.1} us_per_frame={:.3} frames_per_sec={frames_per_sec:.0}",
+            ns / 1000.0
         );
+        if let Some((previous_slaves, previous_ns)) = previous {
+            if slaves > previous_slaves {
+                let marginal = (ns - previous_ns) / (slaves - previous_slaves) as f64;
+                println!(
+                    "MARGINAL {}->{} ns_per_added_slave={marginal:.1}",
+                    previous_slaves, slaves
+                );
+            }
+        }
+        previous = Some((slaves, ns));
     }
 }

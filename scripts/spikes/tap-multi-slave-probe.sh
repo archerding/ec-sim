@@ -1,22 +1,24 @@
 #!/usr/bin/env bash
-# B13 预回归（M1 退出项）：**TAP 上 8 从站链**——`ec-sim-esc --tap <tap> --slaves 8` +
-# 未修改 SOEM（TAP 版，验证机本地构建，不入库）：
-#   1. `slaveinfo <tap>`：`8 slaves found and configured`、`Calculated workcounter 24`、
-#      8 个 `Slave:` 块；
-#   2. `simple_ng <tap>`：`mapped 8O+8I`、WKC 24 稳定；并从输出估算**循环频率**
-#      （iterations / 最后 T 时间，simple_ng 名义 1 ms 周期 → 约 1 kHz；实测值随环境）。
+# B13 预回归（M1 退出项）：**TAP 上 N 从站链**（默认 N=8；B45/M3-W7 用 `N=32`）——
+# `ec-sim-esc --tap <tap> --slaves N` + 未修改 SOEM（TAP 版，验证机本地构建，不入库）：
+#   1. `slaveinfo <tap>`：`N slaves found and configured`、`Calculated workcounter N*3`、
+#      N 个 `Slave:` 块；
+#   2. `simple_ng <tap>`：`mapped NO+NI`、WKC N*3 稳定；记录每轮**往返时间**（usec）。
+#      ⚠️ `simple_ng` 样例迭代间有 fixed 5ms sleep，iterations/T 不是控制环频率（B45 修正）。
 #
 # 前置：root、TAP 权限、验证机本地 SOEM TAP 构建：
 #   /opt/ecsim/fixtures/soem/build/samples/{slaveinfo,simple_ng}
 #   （可用 SOEM_SLAVEINFO / SOEM_SIMPLE_NG 覆盖）
 #
-# 用法：sudo ./tap-multi-slave-probe.sh
+# 用法：sudo ./tap-multi-slave-probe.sh            # 8 从站
+#       sudo N=32 ./tap-multi-slave-probe.sh       # 32 从站（M3-W7 瓶颈记录）
 set -euo pipefail
 
 BIN="${BIN:-target/release/ec-sim-esc}"
 TAP="${TAP:-escsim0}"
 MAC="${MAC:-02:ec:51:4d:00:01}"
 N="${N:-8}"
+EXPECTED_WKC=$((N * 3))
 SOEM_SLAVEINFO="${SOEM_SLAVEINFO:-/opt/ecsim/fixtures/soem/build/samples/slaveinfo/slaveinfo}"
 SOEM_SIMPLE_NG="${SOEM_SIMPLE_NG:-/opt/ecsim/fixtures/soem/build/samples/simple_ng/simple_ng}"
 LOG=/tmp/ec-sim-esc-tap-multi.log
@@ -66,33 +68,31 @@ grep -q "$N slaves found and configured" "$SLAVEINFO_OUT" || {
   grep -E "slaves found" "$SLAVEINFO_OUT" || true
   fail "TAP slaveinfo 未报告 $N 个从站"
 }
-grep -q "Calculated workcounter 24" "$SLAVEINFO_OUT" || fail "TAP workcounter 不是 24"
+grep -q "Calculated workcounter $EXPECTED_WKC" "$SLAVEINFO_OUT" || fail "TAP workcounter 不是 $EXPECTED_WKC"
 slave_blocks=$(grep -c "^Slave:" "$SLAVEINFO_OUT" || true)
 [ "$slave_blocks" -eq "$N" ] || fail "TAP slaveinfo 从站块数 $slave_blocks != $N"
-echo "OK: TAP slaveinfo 报告 $N 个从站（workcounter 24）"
+echo "OK: TAP slaveinfo 报告 $N 个从站（workcounter $EXPECTED_WKC）"
 
 echo "=== SOEM simple_ng（TAP，$N 从站链，8 秒）==="
 soem_simple_cmd=(stdbuf -oL "$SOEM_SIMPLE_NG" "$TAP")
 if [ -n "$SOEM_CPU" ]; then soem_simple_cmd=(taskset -c "$SOEM_CPU" "${soem_simple_cmd[@]}"); fi
 if [ "$SOEM_RT" != "0" ]; then soem_simple_cmd=(chrt -f "$SOEM_RT" "${soem_simple_cmd[@]}"); fi
-timeout 8 "${soem_simple_cmd[@]}" >"$SIMPLE_NG_OUT" 2>&1 || true
-grep -q "mapped 8O+8I" "$SIMPLE_NG_OUT" || fail "simple_ng 未映射 8O+8I"
-grep -q "WKC 24" "$SIMPLE_NG_OUT" || fail "simple_ng 未出现 WKC 24"
-iterations=$(grep -o "Iteration" "$SIMPLE_NG_OUT" | wc -l || true)
-[ "$iterations" -ge 1 ] || fail "simple_ng 没有迭代输出"
-last_t=$(grep -oE "T: [0-9]+" "$SIMPLE_NG_OUT" | tail -1 | awk '{print $2}' || true)
-if [ -n "$last_t" ]; then
-  rate=$(awk -v i="$iterations" -v t="$last_t" 'BEGIN { printf "%.0f", i * 1000000.0 / t }')
-  echo "OK: simple_ng 映射 8O+8I、$iterations 轮 WKC 24、估算循环频率 ≈ ${rate} Hz（名义 1 kHz，非隔离 CPU）"
-  if [ "$rate" -lt 1000 ]; then
-    echo "⚠️ 实测 ${rate} Hz < M1 目标 1 kHz（非隔离 CPU/未实时调度；记录为环境限制）"
-  fi
-  [ "$rate" -ge 200 ] || fail "8 从站循环频率过低：${rate} Hz"
-else
-  rate="unknown"
-  echo "OK: simple_ng 映射 8O+8I、$iterations 轮 WKC 24（T 时间戳不可解析，跳过频率估算）"
-fi
+timeout 8 "${soem_simple_cmd[@]}" >"$SIMPLE_NG_OUT" 2>&1 || true; sleep 0.3
+grep -q "mapped ${N}O+${N}I" "$SIMPLE_NG_OUT" || fail "simple_ng 未映射 ${N}O+${N}I"
+grep -q "WKC $EXPECTED_WKC" "$SIMPLE_NG_OUT" || fail "simple_ng 未出现 WKC $EXPECTED_WKC"
+
+# ⚠️ 语义修正（B45/M3-W7）：`simple_ng` 样例每次迭代固定 `osal_usleep(5000)`，
+# 因此 `iterations / T` 只是**样例上限**（≈160–200 轮/s），不能当作控制环频率。
+# 主站侧真正可比的指标是每轮**往返时间**：输出行 `<usec> usec  WKC <n>`。
+usec_list=$(grep -oE "[0-9]+ usec  WKC $EXPECTED_WKC" "$SIMPLE_NG_OUT" | awk '{print $1}' || true)
+bad_wkc=$(grep -oE "WKC [0-9]+" "$SIMPLE_NG_OUT" | grep -vc "WKC $EXPECTED_WKC" || true)
+[ -n "$usec_list" ] || fail "simple_ng 未打印可解析的往返时间（usec WKC）"
+rt=$(printf '%s\n' "$usec_list" | awk '
+  { n++; sum += $1; if (n == 1 || $1 < min) min = $1; if ($1 > max) max = $1 }
+  END { printf "n=%d min=%d avg=%.0f max=%d", n, min, sum / n, max }')
+[ "$bad_wkc" -eq 0 ] || fail "simple_ng 有 $bad_wkc 轮 WKC 不是 $EXPECTED_WKC"
+echo "OK: simple_ng 映射 ${N}O+${N}I、WKC $EXPECTED_WKC、往返时间 $rt usec"
 
 kill "$ec_pid" 2>/dev/null || true
 wait "$ec_pid" 2>/dev/null || true
-echo "OK: TAP 8 从站链预回归通过（未修改 SOEM，循环频率 ≈ ${rate} Hz）"
+echo "OK: TAP ${N} 从站链预回归通过（未修改 SOEM，往返 $rt usec）"

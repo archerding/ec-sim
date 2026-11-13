@@ -548,6 +548,20 @@ user.email = deepseek-harness@users.noreply.github.com
     plugins/behavior-counter/plugin.yaml`。
 
 - [ ] **B45 M3-W7：32 从站 @1 kHz 瓶颈调研（M3）**：SOEM 线程/内核旁路可行路径、现有 8 从站实测差距、文档结论（**不承诺达成**）；顺带 M3-W8 MCP/Agent 桥接 stub（只读端点映射）。
+  - 进度（2026-11-13 09:34 班）：**M3-W7 完成**——新增
+    [docs/plan/M3-W7-32slave-1khz-bottleneck.md](docs/plan/M3-W7-32slave-1khz-bottleneck.md)：
+    ① 修正测量口径（SOEM `simple_ng` 样例含 fixed `osal_usleep(5000)`，`iterations/T`
+    ≈158–170/s 不是控制环频率；主站侧指标改用每轮 roundtrip_time，ADR 0001 的 425/860 Hz
+    记录标 ⚠️ 待复核）；② `chain_latency` 扩展到 1..64 从站并输出边际成本——
+    验证机 32 站 **1.70 µs/帧**（Windows 2.99 µs），≈0.17% 的 1 ms 预算；
+    ③ `tap-multi-slave-probe.sh` 支持任意 `N` 并改为统计 `usec WKC` 往返——
+    TAP + 未修改 SOEM：8 站 avg **164 µs**、32 站 avg **167 µs**（往返与从站数近似无关，
+    TAP 唤醒主导；32 站单轮仍在 1 ms 内）；④ 瓶颈分解/可行路径/下一轮 RT 验证建议。
+    ⚠️ 未测多 datagram/segment 帧形状与隔离 CPU+RT 下 1 kHz 实际发帧 p99（建议 B46）。
+- [ ] **B46 原生 32 站 @1 kHz 基准（M3-W7 后续，建议）**：Rust 原生主站按 `clock_nanosleep`
+  1 kHz 发 32 站 LRW 帧，统计 p50/p99/max/jitter（隔离 CPU + `SCHED_FIFO` 对照），
+  并与 [M3-W7 文档](docs/plan/M3-W7-32slave-1khz-bottleneck.md) §4 数据对齐；
+  同时补多 datagram 帧形状的 `chain_latency` 测量。**不承诺对外 SLA**，只做能力证据。
 
 ## 7. 目录约定
 

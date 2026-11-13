@@ -80,3 +80,16 @@ taskset -c 2 target/release/ec-sim-esc --uds /tmp/n.sock --slaves 8 --poll
 # 终端 2（Rust 原生探测，忙轮询）
 taskset -c 3 target/release/examples/uds_latency /tmp/n.sock 5000 spin
 ```
+## 2026-11-13 更新（B45：测量口径复核 + 32 从站数据）
+
+> 详见 [M3-W7 瓶颈调研](../plan/M3-W7-32slave-1khz-bottleneck.md)。
+
+- ⚠️ **口径存疑**：本文 "TAP 8 站 ≈425 Hz / UDS shim ≈860 Hz" 若来自 `simple_ng` 的
+  `iterations / 输出总时间`，会被样例固定的 `osal_usleep(5000)` 限制（≈158–170 轮/s），
+  不能作为控制环频率；应改用每轮 `usec WKC` 往返时间。复核方法：验证机重跑并保留
+  `usec WKC` 行，按 roundtrip 统计。
+- 新增数据：`chain_latency` 32 站 = **1.70 µs/帧**（验证机）/ 2.99 µs（Windows）；
+  TAP + 未修改 SOEM 往返 8 站 avg 164 µs、32 站 avg 167 µs（32 站单轮仍在 1 ms 内）。
+- **结论不变**：不宣称 1 kHz/p99 已达成（`docs/plan/M1-exit-checklist.md` 两项仍记 🟡）；
+  但 "瓶颈在 ESC 链处理" 不成立，1 kHz 取决于主站应用实时调度/TAP 长尾/帧形状，
+  ⚠️ 待隔离 CPU + `SCHED_FIFO` 下按 1 kHz 实际发帧复核（建议 B46）。
