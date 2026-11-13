@@ -56,7 +56,6 @@ echo "WKC_NOTE: simple_ng WKC 提示为已知夹具现象（EL2008 probe 注释�
 HARNESS_MASTER="single_session"
 if [ -x /root/ecsim-master-long ]; then
   MASTER_HOURS=$(awk -v s="$DURATION" 'BEGIN{printf "%.2f", (s+300)/3600}')
-  "$ (/bin/true)" 2>/dev/null || true
   (
     /root/ecsim-master-long "$TAP" "$MASTER_HOURS" >>"$OUT/master.log" 2>&1
     echo "MASTER_LONG exit=$? $(date -Is)" >>"$OUT/master.log"
@@ -149,4 +148,5 @@ print("longest_op_segment=%d" % longest)
 print("op_ge_99pct=%s" % (len(op) >= 0.99 * seconds))
 PY
   echo "al_summary_written=$(wc -l <"$OUT/al-summary.txt" 2>/dev/null || echo 0)"
-} >>"$OUT/summary.txt" 2>&1cat "$OUT/summary.txt"
+} >>"$OUT/summary.txt" 2>&1
+cat "$OUT/summary.txt"
