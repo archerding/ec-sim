@@ -10,7 +10,8 @@
 > 探针注册表 **23 项**（B55 新增 `invalid-slave`；B54 新增 `tap-cia402`；B52 新增 `agent-skills`）：
 > 本机 any 类 7 PASS / 16 SKIP；验证机整轮最近一次 **20 PASS / 0 FAIL / 1 SKIP**（B-1 复跑，
 > `tap-live` 因 TAP 被占用单独补跑 PASS，见 `docs/verification/2026-11-13-ecsim-probe-registry-reconcile.md`）；
-> 本机 `cargo test --workspace` **261 passed / 0 failed**（B55 +2：`validate_slave_param` 合法/非法矩阵）。
+> 本机 `cargo test --workspace` **263 passed / 0 failed**（B55 +2：`validate_slave_param` 合法/非法矩阵；
+> B57 +2：`al_status::is_known` 与 `force_al_error` 注入/ACK 清除）。
 > `mcp-tools`/`mcp-stdio`/`agent-skills`/`tap-cia402`/`invalid-slave` 分见 B45/B47/B52/B54/B55（2026-11-13）。
 
 ## 无特权（UDS 合成主站，任意平台可跑）
@@ -61,6 +62,7 @@
 | `sdo-write-probe.sh` | `POST /sdo` 受控写：静态/未开开关 405；`--serve-write` 写 0x6040=0x000F 成功、`/sdo-audit` 有记录、`ecsim_sdo_writes_total=1`；0x1018→403、未知→404、长度错→400 | **EXIT=0** |
 | `serve-token-probe.sh` | 可选静态 Bearer token（`--serve-token-env`）：默认/空变量维持不鉴权；非空时缺头→401（`WWW-Authenticate`）、错误 token→403、正确→200；静态资源与 `/health` 豁免；实时 `POST /sdo`、`/sdo-audit`、`/metrics`、`/events` 同保护 | **EXIT=0** |
 | `invalid-slave-probe.sh` | **ACC-27②（P1）**：`?slave=` 统一校验（0-based）——静态 / 实时 UDS（`--slaves 3`，含 `POST /sdo`/`/pdo`）/ 实时 TAP（root，2 站）三路径；按站路由（`/state` `/pdo` `/metrics` `/events` `/sdo` `/dict` `/sdo-audit`）对 非数字/负数/空串/越界 一律 404 JSON，合法 0 与 N-1 一律 200，且写路由按站隔离；全局路由带 `?slave` 显式 404 | **EXIT=0**（本机静态段 PASS；UDS/TAP 段验证机 2026-11-13 团队班） |
+| `al-error-probe.sh` | **B57 / task-34（AC-E-203 支持）**：`--al-error <hex>` 注入 AL Status error+码——非法码拒启动（exit 2）；Linux/UDS 实时段断言 `/state.live.al_status=0x11`（INIT|error）、`al_status_code=0x0024`、`/metrics` 的 `ecsim_al_status=17`/`ecsim_al_status_code=36`；主站 Error ACK 清错由单测覆盖 | **EXIT=0**（本机参数校验段 PASS；实时段验证机 2026-11-13 团队班） |
 | `web-sdo-panel-check.py` | Web SDO 面板静态资源回归：`index.html` 控件 id（索引/子索引/读取/结果/写开关/写值/写按钮）+ token 提示；`app.js` 含 `readSdo`/`writeSdo`/`window.confirm`/405/401/403/404 提示与 `POST` 小端字节体；`node --check` 通过（无 node 时 SKIP）；⚠️ 无 DOM 自动化点击 | **EXIT=0** |
 | `sdo-read-probe.sh` | `GET /sdo`：静态/实时均返回 sdo-v1（0x6040 Controlword/0x0006/16/rw），缺 index/非法/未知对象/未知子索引 → 404 | **EXIT=0** |
 | `run-all-probes.sh` | 一键聚合：按平台/root 选择探针并汇总；本机 any 类 **7 PASS / 14 SKIP**（注册表 21 项），验证机 **20 PASS / 0 FAIL / 0 SKIP**（2026-11-13 B50 整轮；B52 新增 `agent-skills` 后待 CI/下一轮覆盖） | **EXIT=0**（本机/验证机） |

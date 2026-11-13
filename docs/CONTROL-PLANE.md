@@ -30,6 +30,14 @@ EC_SIM_TOKEN='<token>' target/release/ec-sim-esc --uds /tmp/ecsim.sock --esm-lax
   UI 与 API 同端口，无需另起静态服务器；未给出或目录不存在时回退为纯 API（`/` 返回自述 JSON）。
 - 读路由只接受 `GET`；写路由只接受 `POST` 且需 `--serve-write`（静态模式非 GET → 405，见 §5）。
 - 所有路由均带 `Access-Control-Allow-Origin: *` 与 `Cache-Control: no-store`，便于本机 WebUI 直接 `fetch`。
+- **验收/调试注入开关**（不影响控制面路由，默认关闭）：
+  - `--fault <hex>`（需 `--behavior cia402`）：注入 **CiA402 Fault**（statusword bit3、`0x603F`=码）；
+  - `--al-error <hex>`（task-34 / AC-E-203）：启动即置 **AL Status error 位 + AL Status Code**（写
+    `0x0130`/`0x0134`），**不改变** AL 状态、可由主站 Error ACK 清除；只接受已知码
+    （`0x0011/0x0012/0x0013/0x0015/0x0016/0x0017/0x0018/0x0019/0x001B/0x0024/0x0025/0x002B`），
+    未知码/0 **拒启动（exit 2）**。观测面：`/state.live.al_status`（如 `0x11` = INIT|error）与
+    `al_status_code`；`/metrics` 的 `ecsim_al_status`/`ecsim_al_status_code`。探针：
+    `scripts/spikes/al-error-probe.sh`（Linux/UDS；本机仅跑参数校验）。
 
 示例（同源托管 WebUI，推荐）：
 
@@ -232,6 +240,7 @@ token 模式下 `fetch` 不能自动带 `Authorization`，页面提示经反向�
 | --- | --- |
 | 路由/JSON schema/鉴权判定 | `cargo test -p control-plane`（22 个单测，含 `validate_slave_param` 合法/非法矩阵） |
 | 站号校验（ACC-27②，静态/UDS/TAP 三路径） | `scripts/spikes/invalid-slave-probe.sh` |
+| AL Status 错误注入（`--al-error`，task-34/AC-E-203） | `scripts/spikes/al-error-probe.sh`（Linux/UDS；本机仅参数校验段） |
 | 静态服务 | `scripts/spikes/http-state-probe.sh` |
 | 同源托管 web/ | `scripts/spikes/serve-web-probe.sh` |
 | SSE 推送 | `scripts/spikes/events-probe.sh` |

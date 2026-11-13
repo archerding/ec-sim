@@ -473,6 +473,28 @@ impl Responder {
         self.regs.read_u16(reg::AL_STATUS_CODE).unwrap_or(0)
     }
 
+    /// 验收/调试注入：强制置 AL Status error 位与 AL Status Code（写 `0x0130`/`0x0134`）。
+    ///
+    /// 语义（用于 AC-E-203 类"EC-Sim 侧注入 AL 错误 → 主站可观测"用例）：
+    /// - **不改变**当前 AL 状态，只置 error 位与错误码；
+    /// - 主站仍可按 ESM 语义用 AL Control 的 Error ACK 清错（模拟器侧会清 error/status_code）；
+    /// - `code` 必须是 [`esc_core::al_status::is_known`] 的已知码（`NO_ERROR` 不算），
+    ///   返回 `false` 表示拒绝（CLI 据此拒启动）。
+    ///
+    /// 默认路径不调用（`--al-error` 显式开启），因此不影响既有双主站行为。
+    pub fn force_al_error(&mut self, code: u16) -> bool {
+        if !esc_core::al_status::is_known(code) {
+            return false;
+        }
+        self.al.error = true;
+        self.al.status_code = code;
+        self.regs
+            .set_internal(reg::AL_STATUS, &[self.al.status_byte()]);
+        self.regs
+            .set_internal(reg::AL_STATUS_CODE, &code.to_le_bytes());
+        true
+    }
+
     /// 模拟 DC 系统时间（ns，帧驱动时钟；非真实同步）。
     #[must_use]
     pub fn dc_time_ns(&self) -> u64 {
@@ -2177,6 +2199,62 @@ mod tests {
             .expect("reply");
         let (_, data) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 2);
         assert_eq!(data[0], responder.al_status());
+    }
+
+    #[test]
+    fn force_al_error_sets_error_bit_and_code_and_rejects_stale_inputs() {
+        // 验收注入（task-34 / AC-E-203）：AL Status error 位 + AL Status Code 可经广播读观测。
+        let mut responder = Responder::default();
+        assert!(responder.force_al_error(esc_core::al_status::NO_VALID_OUTPUT_CONFIGURATION));
+        // 0x0130：状态 INIT(0x01) + error 位 0x10 → 0x11。
+        let status_frame = request(&[DatagramData::auto_increment(
+            Command::Brd,
+            1,
+            0,
+            0x0130,
+            vec![0u8; 2],
+        )]);
+        let reply = responder
+            .handle_frame(&status_frame, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let (_, data) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 2);
+        assert_eq!(data[0] & 0x10, 0x10, "AL Status error 位应置位：{data:?}");
+        assert_eq!(responder.al_status_code(), 0x0024);
+        // 0x0134 可读回错误码。
+        let code_frame = request(&[DatagramData::auto_increment(
+            Command::Brd,
+            2,
+            0,
+            0x0134,
+            vec![0u8; 2],
+        )]);
+        let reply = responder
+            .handle_frame(&code_frame, DEFAULT_SIM_MAC)
+            .expect("reply");
+        let (_, data) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 2);
+        assert_eq!(u16::from_le_bytes([data[0], data[1]]), 0x0024);
+        // 非法/无意义码拒绝：0（NO_ERROR）、未知码。
+        assert!(!responder.force_al_error(esc_core::al_status::NO_ERROR));
+        assert!(!responder.force_al_error(0x00FF));
+        // 拒绝不改变已注入状态。
+        assert_eq!(responder.al_status_code(), 0x0024);
+        // 主站按 ESM 语义发 AL Control = 当前状态(INIT 0x01) + Error ACK(0x10) → 清错。
+        let ack_frame = request(&[DatagramData::auto_increment(
+            Command::Apwr,
+            3,
+            0,
+            0x0120,
+            vec![0x11],
+        )]);
+        responder
+            .handle_frame(&ack_frame, DEFAULT_SIM_MAC)
+            .expect("reply");
+        assert_eq!(
+            responder.al_status(),
+            0x01,
+            "ACK 后应回到 INIT 且无 error 位"
+        );
+        assert_eq!(responder.al_status_code(), 0x0000);
     }
 
     #[test]

@@ -63,6 +63,29 @@ pub const fn name(code: u16) -> &'static str {
     }
 }
 
+/// 是否为本模拟器**已知/可注入**的 AL Status Code（`NO_ERROR` 不算，注入 0 无意义）。
+///
+/// 用于 CLI `--al-error <code>` 的参数校验（非法码拒启动）与诊断工具。
+#[must_use]
+pub const fn is_known(code: u16) -> bool {
+    matches!(
+        code,
+        UNSPECIFIED_ERROR
+            | INVALID_STATE_CHANGE
+            | UNKNOWN_REQUESTED_STATE
+            | BOOTSTRAP_NOT_SUPPORTED
+            | INVALID_MAILBOX_CONFIGURATION
+            | INVALID_MAILBOX_CONFIGURATION_OUT
+            | INVALID_SYNC_MANAGER_CONFIGURATION
+            | NO_VALID_INPUTS
+            | NO_VALID_OUTPUTS
+            | SYNC_MANAGER_WATCHDOG
+            | NO_VALID_OUTPUT_CONFIGURATION
+            | NO_VALID_INPUT_CONFIGURATION
+            | NO_VALID_INPUTS_AND_OUTPUTS
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,5 +123,30 @@ mod tests {
             assert_ne!(name(code), "unknown", "code {code:#06x} 缺少名称");
         }
         assert_eq!(name(0x7FFF), "unknown");
+    }
+
+    #[test]
+    fn is_known_accepts_table_codes_and_rejects_zero_or_unknown() {
+        for code in [
+            UNSPECIFIED_ERROR,
+            INVALID_STATE_CHANGE,
+            UNKNOWN_REQUESTED_STATE,
+            BOOTSTRAP_NOT_SUPPORTED,
+            INVALID_MAILBOX_CONFIGURATION,
+            INVALID_MAILBOX_CONFIGURATION_OUT,
+            INVALID_SYNC_MANAGER_CONFIGURATION,
+            NO_VALID_INPUTS,
+            NO_VALID_OUTPUTS,
+            SYNC_MANAGER_WATCHDOG,
+            NO_VALID_OUTPUT_CONFIGURATION,
+            NO_VALID_INPUT_CONFIGURATION,
+            NO_VALID_INPUTS_AND_OUTPUTS,
+        ] {
+            assert!(is_known(code), "code {code:#06x} 应为已知可注入码");
+        }
+        // NO_ERROR 不用于注入（注入 0 等于"没错误"，无意义）。
+        assert!(!is_known(NO_ERROR));
+        assert!(!is_known(0x00FF));
+        assert!(!is_known(0xFFFF));
     }
 }

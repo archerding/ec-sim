@@ -1079,6 +1079,8 @@ fn main() -> std::process::ExitCode {
     let mut verbose = false;
     let mut esm_preconditions = true;
     let mut fault: Option<u16> = None;
+    // 验收/调试注入：强制置 AL Status error 位 + AL Status Code（task-34 / AC-E-203；默认关闭）。
+    let mut al_error: Option<u16> = None;
     // 同一进程模拟的 ESC 数量（B12 多从站链；默认 1）。
     let mut slave_count: usize = 1;
     // 行为插件实例配额上限（B51 后续：--slaves N 时每站一个实例，默认 = N）。
@@ -1181,6 +1183,31 @@ fn main() -> std::process::ExitCode {
                     return std::process::ExitCode::from(2);
                 }
             },
+            "--al-error" => match args.next() {
+                Some(text) => {
+                    let digits = text.trim_start_matches("0x").trim_start_matches("0X");
+                    match u16::from_str_radix(digits, 16) {
+                        Ok(code) if esc_core::al_status::is_known(code) => al_error = Some(code),
+                        Ok(code) => {
+                            eprintln!(
+                                "ec-sim-esc: --al-error 拒绝未知/无意义的 AL Status Code 0x{code:04X}；\
+                                 可用示例：0x0011 0x0012 0x0013 0x0015 0x0016 0x0017 0x0018 0x0019 0x001B 0x0024 0x0025 0x002B"
+                            );
+                            return std::process::ExitCode::from(2);
+                        }
+                        Err(_) => {
+                            eprintln!(
+                                "ec-sim-esc: --al-error 需要十六进制 AL Status Code（如 0x0024）"
+                            );
+                            return std::process::ExitCode::from(2);
+                        }
+                    }
+                }
+                None => {
+                    eprintln!("ec-sim-esc: --al-error 需要一个错误码");
+                    return std::process::ExitCode::from(2);
+                }
+            },
             "--verbose" | "-v" => verbose = true,
             // B17：UDS 忙轮询（延迟基准用；CPU 占用高，默认关闭）。
             "--poll" => poll = true,
@@ -1222,6 +1249,7 @@ fn main() -> std::process::ExitCode {
                     "用法: ec-sim-esc [--tap <name> | --uds <path>] [--verbose] [--esm-lax] \
                      [--manifest <plugin.yaml>] [--esi <file.esi.xml>] [--behavior cia402]
                      [--fault <hex>（需 --behavior cia402）] [--slaves <1..64>]
+                     [--al-error <hex>（注入 AL Status error+码，如 0x0024；默认关闭，验收/调试用）]
                      [--behavior-max-instances <1..64>（manifest behavior: 的实例配额上限，默认 = --slaves）] [--poll]
                      调试：--dump-sii [--manifest <yaml>] [--esi <xml>] 打印 SII 镜像 hex/类别链后退出；
                      --dump-dict [--json] [--manifest <yaml>] [--esi <xml>] 打印运行时对象字典后退出（--json 输出 dict-v1）；
@@ -1242,6 +1270,13 @@ fn main() -> std::process::ExitCode {
     if serve_token_env.is_some() && serve_addr.is_none() {
         eprintln!("ec-sim-esc: --serve-token-env 需要同时给出 --serve <addr>");
         return std::process::ExitCode::from(2);
+    }
+    // task-34：AL Status 错误注入（验收/调试；作用于本进程模拟的全部从站，V1 通常单从站）。
+    if let Some(code) = al_error {
+        println!(
+            "AL_ERROR inject code=0x{code:04X} name={}（作用于本进程全部模拟从站；默认关闭）",
+            esc_core::al_status::name(code)
+        );
     }
     // B41：从环境变量读静态 token；未设置/为空 = 保持现状（不鉴权）。
     let serve_token: Option<String> = match serve_token_env.as_deref() {
@@ -1374,6 +1409,7 @@ fn main() -> std::process::ExitCode {
             esi,
             behavior,
             fault,
+            al_error,
             slave_count,
             behavior_max_instances,
             poll,
@@ -1391,6 +1427,7 @@ fn main() -> std::process::ExitCode {
             esi,
             behavior,
             fault,
+            al_error,
             slave_count,
             behavior_max_instances,
             live_serve,
@@ -1407,6 +1444,7 @@ fn main() -> std::process::ExitCode {
             esi,
             behavior,
             fault,
+            al_error,
             slave_count,
             behavior_max_instances,
             live_serve,
@@ -1492,9 +1530,18 @@ fn build_responders(
     behavior: Option<&str>,
     esm_preconditions: bool,
     fault: Option<u16>,
+    al_error: Option<u16>,
     count: usize,
 ) -> Result<Vec<esc_node::Responder>, String> {
-    let first = build_responder(manifest, esi, behavior, esm_preconditions, fault)?;
+    let mut first = build_responder(manifest, esi, behavior, esm_preconditions, fault)?;
+    // task-34：AL Status 错误注入在克隆前应用一次（各站一致；V1 通常单从站）。
+    if let Some(code) = al_error {
+        if !first.force_al_error(code) {
+            return Err(format!(
+                "--al-error 0x{code:04X} 被拒绝（未知/无意义的 AL Status Code）"
+            ));
+        }
+    }
     Ok((0..count).map(|_| first.clone()).collect())
 }
 
@@ -1585,6 +1632,7 @@ fn run_uds(
     esi: Option<plugin_host::esi::EsiDevice>,
     behavior: Option<String>,
     fault: Option<u16>,
+    al_error: Option<u16>,
     slave_count: usize,
     behavior_max_instances: Option<usize>,
     poll: bool,
@@ -1617,6 +1665,7 @@ fn run_uds(
         behavior.as_deref(),
         esm_preconditions,
         fault,
+        al_error,
         slave_count,
     ) {
         Ok(responders) => responders,
@@ -1735,6 +1784,7 @@ fn run(
     esi: Option<plugin_host::esi::EsiDevice>,
     behavior: Option<String>,
     fault: Option<u16>,
+    al_error: Option<u16>,
     slave_count: usize,
     behavior_max_instances: Option<usize>,
     serve: Option<String>,
@@ -1767,6 +1817,7 @@ fn run(
         behavior.as_deref(),
         esm_preconditions,
         fault,
+        al_error,
         slave_count,
     ) {
         Ok(responders) => responders,
@@ -1862,6 +1913,7 @@ fn run(
     _esi: Option<plugin_host::esi::EsiDevice>,
     _behavior: Option<String>,
     _fault: Option<u16>,
+    _al_error: Option<u16>,
     _slave_count: usize,
     _behavior_max_instances: Option<usize>,
     _serve: Option<String>,
@@ -1884,6 +1936,7 @@ fn run_uds(
     _esi: Option<plugin_host::esi::EsiDevice>,
     _behavior: Option<String>,
     _fault: Option<u16>,
+    _al_error: Option<u16>,
     _slave_count: usize,
     _behavior_max_instances: Option<usize>,
     _poll: bool,

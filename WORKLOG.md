@@ -1,5 +1,44 @@
 ---
 
+## 2026-11-13 团队班 — **task-34/B57：`--al-error` AL Status 错误注入（AC-E-203 支持）**
+
+> 任务板 `task-34`（Lead 批准，Owner `sim-impl`）。背景：`cnc-expert` 的 AC-E-203 需要
+> "EC-Sim 侧注入 AL 错误 → 主站 `ethercat slaves`/`al-status` 可观测"；既有 `--fault` 只到 CiA402 Fault，
+> AL Status Code 只能由主站非法迁移诱发。VM 未轮到，先做离线实现（VM 端到端排队）。
+
+**做了什么**
+- `esc-core::al_status::is_known(code)`：已知/可注入 AL Status Code 白名单（NO_ERROR 不算）；
+- `esc-node::Responder::force_al_error(code)`：置 AL Status error 位 + `0x0134` 码（同步 `0x0130`/`0x0134`），
+  **不改变**当前 AL 状态；未知/0 返回 `false`；主站 Error ACK 仍可按 ESM 语义清错（单测覆盖）。
+- CLI `--al-error <hex>`：只接受已知码（`0x0011/0x0012/0x0013/0x0015/0x0016/0x0017/0x0018/0x0019/0x001B/0x0024/0x0025/0x002B`），
+  未知/0 **拒启动 exit 2** 并提示可用码；启动打印 `AL_ERROR inject code=0xNNNN name=…`（作用于本进程全部模拟从站，
+  V1 通常单从站）；默认关闭，不改变既有双主站/探针行为。
+- 探针 `scripts/spikes/al-error-probe.sh`（Linux/UDS + 只读控制面；本机跑参数校验段）：
+  `/state.live.al_status=0x11`（INIT|error）、`al_status_code=0x0024`、`/metrics`
+  `ecsim_al_status=17`/`ecsim_al_status_code=36`；非法码拒启动。登记 **B-2 验收聚合**（36 项）。
+- 文档：`docs/CONTROL-PLANE.md` §1 调试/验收注入开关（`--fault` vs `--al-error` 语义/观测面/探针）、
+  `README.md` 控制面段、`docs/VERIFICATION.md` 探针行、`docs/STATUS.md`/`AGENTS.md`。
+
+**验证结果**
+- `cargo fmt --check` 0；`cargo clippy --workspace --all-targets -D warnings` 0；
+  `cargo test --workspace` **263 passed / 0 failed**（+2：`is_known` 码表；`force_al_error` 注入/读回/拒绝/ACK 清除）；
+  `control-plane-doc-check.py` EXIT=0。
+- `al-error-probe.sh` 本机（Windows）：非法码拒启动 **PASS**；实时注入段 SKIP（需 Linux/UDS）。
+- `run-acceptance-probes.sh` 注册表 35 → **36 项**（本机 3 PASS / 0 FAIL / 33 SKIP）。
+- ⚠️ 实时注入端到端（Linux/UDS）待 VM 窗口；**交付给 CNC 的 release 二进制需在 EC-Sim VM 重建**
+  （新特性），cnc-expert 的 AC-E-203 需等新二进制（我会在 VM 窗口一并 rebuild + 更新 `.local/artifacts/`）。
+
+**卡点**
+- EC-Sim VM 排队（sim-ux → sim-expert → 我）；单占用+锁、不 reboot。
+- task-18 整轮证据、task-17 TAP 段仍在队列。
+
+**下次开工第一件事**
+- VM 轮到后一次性完成：`cargo build --release`（含 --al-error）→ 更新共享盘二进制+sha256 + 交付文档 →
+  `al-error-probe.sh`/`invalid-slave-probe.sh` 全段 → `run-all-probes.sh`(23) + `run-acceptance-probes.sh`(36)
+  root 整轮 → 归档 + complete task-18 → ping cnc-expert。
+
+---
+
 ## 2026-11-13 团队班 — **task-18：B-2 验收探针聚合脚本 `run-acceptance-probes.sh`（PV-18）**
 
 > 任务板 `task-18`（Owner `sim-impl`）。目标：把 EC-SIM ACCEPTANCE §3.2.2 的 **B-2 行业协议探针组**

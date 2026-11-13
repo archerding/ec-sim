@@ -655,6 +655,13 @@ user.email = deepseek-harness@users.noreply.github.com
   本机（非 root）整轮 **3 PASS / 0 FAIL / 32 SKIP**（SKIP 均平台原因）；本机首跑即抓到"证据二进制=旧构建"
   的真实问题（重 build 后 PASS）。证据：`docs/verification/2026-11-13-gate-b2-acceptance-probes.md`
   （含 35 项 ACC↔探针追溯表）。⚠️ VM（root/TAP/IgH）整轮与 ACCEPTANCE §3.2.2 状态更新待 VM 恢复/sim-expert 采认。
+- [x] ~~**B57 `--al-error <code>`：AL Status 错误注入（task-34 / AC-E-203）**~~ ✅ **2026-11-13 团队班完成（本机验证；VM 端到端待排队）**：
+  `esc-core::al_status::is_known()` + `Responder::force_al_error(code)`（置 AL Status error 位 + `0x0134` 码，
+  不改状态、主站 Error ACK 可清）；CLI `--al-error <hex>`（只接受已知码，未知/0 **拒启动 exit 2**，
+  启动打印 `AL_ERROR inject code=… name=…`）；默认关闭、不影响既有探针。单测 +2（esc-core 码表/esc-node
+  注入+ACK 清除）；探针 `scripts/spikes/al-error-probe.sh`（Linux/UDS：`/state.live.al_status=0x11`、
+  `al_status_code`、`/metrics`；本机跑参数校验段）；登记 B-2 验收聚合（36 项）。文档：CONTROL-PLANE §1
+  调试开关 + README。⚠️ 交付二进制需在 EC-Sim VM 重建（新特性）后再给 cnc-expert 做 AC-E-203 端到端。
 
 ## 7. 目录约定
 

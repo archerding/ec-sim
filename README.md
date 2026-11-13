@@ -50,6 +50,10 @@ Read the decision record: [technology selection](ethercat-slave-simulator-tech-s
 ## Control plane & Web UI
 
 - **只读 HTTP API**：`ec-sim-esc --serve <addr> [--uds ... | --tap ...]` 提供 `GET /state`、`/dict`、`/pdo`、`/pdo?history=1`、`/topology`、`/metrics`，均支持 `?slave=N` 逐从站查看；std `TcpListener` 实现、零外部依赖。详见 **[docs/CONTROL-PLANE.md](docs/CONTROL-PLANE.md)**。
+- **验收/调试注入开关**（默认关闭）：`--fault <hex>`（CiA402 Fault：statusword bit3 / `0x603F`）与
+  `--al-error <hex>`（AL Status error + 错误码 `0x0130`/`0x0134`；只接受已知码，未知码拒启动；
+  探针 `scripts/spikes/al-error-probe.sh`）——用于"从站侧注入错误 → 主站/控制面可观测"的验收用例，
+  不改变默认行为；不构成任何认证。
 - **零依赖 Web 页**：`web/` 打开即可载入 dump JSON，或填 API 地址实时轮询状态/PDO/拓扑/指标并画 PDO 波形；SDO 面板支持 `GET /sdo` 只读浏览，写入需服务端 `--serve-write` + 页面勾选/`confirm` 二次确认（⚠️ 无 DOM 自动化，静态回归 + 人工验收）。见 **[web/README.md](web/README.md)**。M2 退出条件核对见 **[docs/plan/M2-exit-checklist.md](docs/plan/M2-exit-checklist.md)**；M3（插件宿主/写路径/鉴权）见 **[docs/plan/M3-scope.md](docs/plan/M3-scope.md)**、**[ADR 0002](docs/adr/0002-m3-plugin-host-and-write-paths.md)**。
 
 ## Plugin ecosystem

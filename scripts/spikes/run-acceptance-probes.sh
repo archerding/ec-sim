@@ -87,6 +87,7 @@ sdo-write-probe|linux|ACC-27
 sdo-read-probe|linux|ACC-27
 topology-probe|linux|ACC-27 交叉
 invalid-slave-probe|any|ACC-27②
+al-error-probe|linux|ACC-11..13 / AC-E-203 交叉（AL 注入）
 "
 
 skip_reason() {
