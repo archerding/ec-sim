@@ -35,6 +35,10 @@ BIN="${BIN:-target/release/ec-sim-esc}"
 PY="${PY:-$(command -v python3 || command -v python || echo python3)}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-180}"
 RUN_ROOT="${RUN_ROOT:-auto}"      # auto | 0 | 1
+# 已知环境阻塞项（`PV-01/PV-14`：验证机 ecrt SDO 上传/下载卡内核 D 状态；`H6` 口径）：
+# 逗号分隔的探针名，运行时标 SKIP 且原因写 NOT-JUDGED（不计 PASS，也不伪造通过）。
+# 例：NOT_JUDGED="igh-cia402-op,sdo-upload-probe" ./run-acceptance-probes.sh
+NOT_JUDGED="${NOT_JUDGED:-}"
 LOG_DIR="${LOG_DIR:-/tmp/ec-sim-acceptance}"
 mkdir -p "$LOG_DIR"
 
@@ -145,6 +149,15 @@ while IFS='|' read -r name kind acc; do
   script="scripts/spikes/${name}.sh"
   log="$LOG_DIR/${name}.log"
   reason="$(skip_reason "$kind")"
+  if [ -n "$NOT_JUDGED" ]; then
+    case ",${NOT_JUDGED}," in
+      *",${name},"*)
+        skip=$((skip + 1))
+        echo "${name}|${kind}|-|SKIP|0|NOT-JUDGED（已知环境阻塞 PV-01/PV-14/H6，未执行；不计 PASS）"
+        continue
+        ;;
+    esac
+  fi
   if [ ! -f "$script" ]; then
     fail=$((fail + 1))
     failed_names="$failed_names $name"

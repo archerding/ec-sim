@@ -45,20 +45,29 @@ RESULT: PASS
 - 一个真实拦截案例：首次运行时 `invalid-slave` FAIL——原因是本机 `target/release/ec-sim-esc` 是**旧构建**
   （B55 修复前），重新 `cargo build --release` 后 PASS；说明脚本能抓到"证据二进制与源码不一致"。
 
-## 4. VM 整轮证据（⚠️ 待补）
+## 4. VM 整轮证据（⚠️ 待补；一次作废轮次已记录）
 
-EC-Sim 验证机 2026-11-13 连续 reboot 后 SSH 失联（等用户重启，见 Lead 记录），本班未能跑 B-2 整轮。
-VM 恢复后的执行命令（作为证据归档模板）：
+**轮次 A（2026-11-13 13:16，作废）**：本人在 EC-Sim VM 上启动整轮，但当时 `vm-ecsim.lock` 已被
+sim-expert（task-22）持有且其 `ecrt_master_sdo_upload` 进程处于内核 D 状态、`ec_master` 被占用 →
+B-2 前 4 项 `esi-sii-scan`/`sv660n-capability`/`manifest-slave`/`esi-manifest-op` 全报
+`FAIL: IgH 未看到身份`，B-1 亦在冲突窗口内。**按 Lead 判定整轮作废、不采信**（已停止进程、未 reboot）。
+教训：VM 共用必须**先校验锁 owner 并等对方释放信号**（同名锁同秒覆盖导致误判），单 runner 才可信。
+
+**轮次 B（待跑，clean VM）**：
 
 ```bash
-# EC-Sim 验证机（root，自有 VM；按 Lead 的 VM 排队纪律：sim-ux → sim-expert → sim-impl）
+# EC-Sim 验证机（root，自有 VM；单 runner，先持锁 D:\tokengence.ai\.local\vm-ecsim.lock）
 cargo build --release -p esc-node -p mcp-server
 bash scripts/spikes/run-all-probes.sh          # B-1（0 FAIL；PASS+SKIP=注册表项数）
-bash scripts/spikes/run-acceptance-probes.sh   # B-2（本轮：36 项；0 FAIL，SKIP 均带原因）
+bash scripts/spikes/run-acceptance-probes.sh   # B-2（36 项；0 FAIL，SKIP 均带原因）
+# 若验证机仍处 ecrt SDO 已知阻塞（PV-01/PV-14/H6），可对相关项显式标 NOT-JUDGED（不计 PASS）：
+NOT_JUDGED="igh-cia402-op,igh-cia402-csv-op,igh-cia402-cst-op,igh-sv660n-op,igh-dc-op,sdo-upload-probe" \
+  bash scripts/spikes/run-acceptance-probes.sh
 ```
 
-归档要求（ACCEPTANCE §3.2.3）：`run-all`/本脚本输出、cargo 版本、`git rev-parse --short HEAD`、
-`git status --porcelain`、日志目录；结论按"预回归"表述，不宣称认证。
+> `NOT_JUDGED` 参数：逗号分隔探针名 → 运行时标 `SKIP` 且原因写
+> `NOT-JUDGED（已知环境阻塞 PV-01/PV-14/H6，未执行；不计 PASS）`；这是**如实标注**，不是"用 SKIP 刷绿"
+> （ACCEPTANCE §1.2 的 `NOT-JUDGED` 语义）。仅在验证机确有已知 D 状态阻塞时使用，并在证据中写明原因。
 
 ## 5. ACC ↔ 探针追溯表（本脚本注册表，36 项）
 
