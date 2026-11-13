@@ -81,9 +81,11 @@
 | `soem-multi-slave-probe.sh` | 未修改 SOEM 经 UDS shim 数到 **8 从站**并 OP：`8 slaves found`、`mapped 8O+8I`、WKC 24 | **EXIT=0** |
 | `soem-uds-probe.sh` | SOEM over UDS shim 的探索性夹具（以脚本内注记状态为准） | 见脚本注记 |
 | `wasm-plugin-probe.sh` | WASM 行为插件宿主（B43，可选 feature `wasm-runtime`，wasmi 0.31）：`read_pdo`/`write_pdo`/`log` 契约、1 万次 `tick` 不变式 | **EXIT=0**（本机）；⚠️ 验证机未跑（首次构建需 crates.io） |
+| `wasm-behavior-probe.sh` | 仓库内真实行为画像（B44 W2 子项 4）：`plugins/behavior-counter/`（manifest `behavior:` + 自写 WAT）→ 合成主站帧 APWR `0x1100` / APRD `0x1110` → SM3 = SM2 + 1；并跑 `plugin_manifests` 守卫 | **EXIT=0**（本机，2026-11-13）；⚠️ 验证机未跑（`wasm-runtime` 需 crates.io）；CLI UDS/TAP 端到端待验证 |
 
-> `wasm-plugin-probe.sh` **不进入** `run-all-probes.sh` 门禁：它需要可选 feature 与 crates.io
-> 拉取依赖（离线应 SKIP），属 M3-W1 spike 证据；手动运行见 [spike-6](spikes/spike-6-wasm-host.md)。
+> `wasm-plugin-probe.sh` / `wasm-behavior-probe.sh` **不进入** `run-all-probes.sh` 门禁：它们需要
+> 可选 feature 与 crates.io 拉取依赖（离线应 SKIP），属 M3-W1/W2 证据；手动运行见
+> [spike-6](spikes/spike-6-wasm-host.md) 与 `plugins/behavior-counter/README.md`。
 
 ## 辅助工具
 

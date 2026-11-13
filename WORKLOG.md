@@ -1,5 +1,59 @@
 ---
 
+## 2026-11-13 08:31 班（低峰）— **B44 收尾（W2 子项 4）：仓库内真实行为画像 `plugins/behavior-counter` + 端到端探针，B44 完成**
+
+> 调度上下文计划重点（B2b / B8 / B4）均早已完成；按 `AGENTS.md` §5 取 backlog 顶部未完成项
+> **B44**，本班做其"下次开工第一件事"——上一班留下的唯一缺口：**仓库内没有声明 `behavior:` 的画像**，
+> 因此行为插件链路只有库级单测、没有真实画像的端到端证据。
+
+**做了什么**
+- 新增 `plugins/behavior-counter/`（自写示例，非厂商兼容设备）：
+  - `behavior.wat`：**自写 WAT**，只导入 `env.read_pdo`/`write_pdo`/`log`、导出 `tick()`；
+    SM2（4B u32 小端，`0x1100`）+ 1 → SM3（`0x1110`）；arena 布局 `[SM2|SM3]`，故写 `4..=7`；
+    首个 tick 写一行日志 `counter tick`，之后不再写（不刷 64KiB 日志缓冲）。
+  - `plugin.yaml`：`sm 2/3 = out/in 0x1100/0x1110 len 4`、RxPDO `0x1600`/TxPDO `0x1A00`（32 位）、
+    对象 `0x7000:01`/`0x6000:01` + 身份对象；`behavior:{code: behavior.wat, tick_hz: 1000,
+    fuel_per_tick: 1000000, tick_timeout_ms: 50, max_memory_bytes: 65536}`；自有 VID/PID
+    `0x00000EC5`/`0x0000E5FF`、名称带 SIMULATED、R5 sources 齐全。
+  - `README.md`：语义表、宿主契约、跑法与 ⚠️ 限制说明。
+- 新增 `crates/esc-node/tests/behavior_counter_plugin.rs`（`wasm-runtime` 门控，默认构建为空）：
+  读**磁盘 manifest** → `validate()` → `behavior.code` 解析 → `BehaviorBridge::from_manifest`
+  （worker 线程编译/实例化 WAT）→ 合成主站帧 **APWR `0x1100`=41 / APRD `0x1110`** →
+  断言 SM3 读到 **42**、单帧 <50ms（不等待插件）、`published_frames>0`、`applied_generations≥1`、
+  `ticks≥1`、超时/fuel/错误为 0、SM2 未被插件改写。
+- 新增 `scripts/spikes/wasm-behavior-probe.sh`：跑上述端到端测试 + `plugin_manifests` 仓库画像守卫；
+  无 cargo 或 `wasm-runtime` 依赖拉不下来 → **exit 2（SKIP）**，不进 `run-all-probes` 门禁。
+- 同步文档：`AGENTS.md`（B44 标记完成 + 子项 4 进度 + 新增下一项 B45）、`docs/plan/M3-scope.md`
+  （W2 → ✅）、`docs/STATUS.md`（测试基线/能力清单/下一步）、`docs/VERIFICATION.md`（新探针行）、
+  `plugins/README.md`（行为插件参考样例）。
+
+**验证结果**
+- 本机（Windows，deps 已缓存）：`wasm-behavior-probe.sh` → **OK**（`test result: ok. 1 passed`，
+  `plugin_manifests` 3 passed）；`cargo test -p esc-node --features wasm-runtime` → **74 passed**
+  （73 单测 + 新集成测试）；`cargo test -p plugin-host --features wasm-runtime` → **58 passed**。
+- 默认构建：`cargo fmt --all -- --check` OK；`cargo clippy --workspace --all-targets -- -D warnings`
+  OK；`cargo test --workspace` → **238 passed / 0 failed**（新集成测试在默认 feature 下不编译，
+  仓库画像守卫把新 manifest 一并校验：解析/validate/SII CRC/字典/PDO 映射对象全部通过）。
+- `cargo clippy -p esc-node --features wasm-runtime --all-targets -- -D warnings` 与
+  `-p plugin-host --features wasm-runtime ...` 均 OK。
+- ⚠️ 未在 Linux 验证机跑：`wasm-runtime` 依赖 wasmi/wat 需要 crates.io（验证机不可达），
+  且 CLI 的 UDS/TAP 帧循环只在 Linux 编译。验证方法：能联网的 Linux 上
+  `cargo run -p esc-node --features wasm-runtime -- --uds /tmp/x --manifest plugins/behavior-counter/plugin.yaml`
+  配合 `uds_master_probe.py` 的帧序列（README 已写）。
+
+**卡点**
+- B44 原定范围（arena 同步 / 独立 worker / fuel+超时+内存 / 生命周期接 esc-node）**已全部完成**；
+  剩余为增量项（不在原范围）：插件 panic 重启与多实例配额、Linux CLI 端到端。
+- `behavior-counter` 只是示例：`tick_hz: 1000` 下每个 generation 都会 tick，未来做真实设备行为时
+  需要按主站周期而非固定 Hz 调参（当前由 manifest 决定，可调）。
+
+**下次开工第一件事**
+- 取 backlog 新顶部 **B45 M3-W7：32 从站 @1 kHz 瓶颈调研**（文档结论，不承诺达成；引用现有
+  8 从站实测数据 + SOEM 线程/内核旁路公开资料）。若能联网，顺带在验证机补跑
+  `wasm-plugin-probe.sh` / `wasm-behavior-probe.sh` 与 Linux CLI 行为插件端到端。
+
+---
+
 ## 2026-11-13 08:20 班（低峰）— **B44：M3-W2 子项 3 WASM 行为插件接 esc-node 非实时线程 + manifest `behavior:`**
 
 > 调度上下文计划重点（B2b 最小 ESC 应答器 / B8 双主站冒烟 / B4 wire crate）均已完成，

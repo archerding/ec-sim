@@ -1,0 +1,61 @@
+# EC-Sim 行为插件参考画像（B44 W2 子项 4）：声明式画像 + WASM 行为逻辑。
+#
+# 这不是厂商兼容设备：身份用**我方自有** VID/PID（R2），名称带 SIMULATED（R3），
+# 不复制任何厂商文件；仅用于验证「manifest behavior: → worker 线程 → SM3」链路。
+schema: ecsim.plugin/v1
+id: com.ecsim.example.behavior-counter
+name: "Behavior counter example (SIMULATED)"
+version: 0.1.0
+kind: device
+license: Apache-2.0 OR MIT
+pricing: {model: free, amount: 0, currency: CNY}
+
+identity:
+  vendor_id: 0x00000EC5
+  product_code: 0x0000E5FF
+  revision: 0x00010000
+  simulated: true
+
+profile: generic-io
+mailbox:
+  coe: {sdo: true, sdo_info: true, complete_access: false}
+
+# SM2（主站 → 从站，4 字节 u32）/ SM3（从站 → 主站，4 字节 u32）。
+sm:
+  - {index: 0, dir: mbox-in,  start: 0x1000, len: 128}
+  - {index: 1, dir: mbox-out, start: 0x1080, len: 128}
+  - {index: 2, dir: out,      start: 0x1100, len: 4}
+  - {index: 3, dir: in,       start: 0x1110, len: 4}
+
+pdo:
+  rx:
+    - index: 0x1600
+      entries:
+        - {index: 0x7000, sub: 1, bits: 32}
+  tx:
+    - index: 0x1A00
+      entries:
+        - {index: 0x6000, sub: 1, bits: 32}
+
+objects:
+  - {index: 0x1000, sub: 0, name: Device type, dtype: UINT32, access: ro, value: 0x00000000}
+  - {index: 0x1008, sub: 0, name: Device name, dtype: VISIBLE_STRING, access: ro, value: "EC-Sim behavior counter example (SIMULATED)"}
+  - {index: 0x1018, sub: 1, name: Vendor ID, dtype: UINT32, access: ro}
+  - {index: 0x1018, sub: 2, name: Product code, dtype: UINT32, access: ro}
+  - {index: 0x1018, sub: 3, name: Revision, dtype: UINT32, access: ro}
+  - {index: 0x7000, sub: 1, name: Counter command, dtype: UINT32, access: rw, pdo: rx}
+  - {index: 0x6000, sub: 1, name: Counter + 1, dtype: UINT32, access: ro, pdo: tx}
+
+dc: {supported: false}
+
+# WASM 行为插件声明：code 相对本 manifest 所在目录；宿主线程只 publish/poll，
+# 编译/实例化/tick 全部在 plugin-host 的独立 worker 线程（不进入实时环）。
+behavior:
+  code: behavior.wat
+  tick_hz: 1000
+  fuel_per_tick: 1000000
+  tick_timeout_ms: 50
+  max_memory_bytes: 65536
+
+sources:
+  - {title: "EC-Sim 仓库（自写示例；宿主契约 crates/plugin-host/src/wasm.rs，无第三方设备资料）", url: "https://github.com/archerding/ec-sim", accessed: "2026-11-13"}

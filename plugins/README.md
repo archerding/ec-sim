@@ -26,6 +26,9 @@ plugins/
 
 ## 提示
 
+- 行为插件参考样例：**[`behavior-counter/`](behavior-counter/README.md)**（自写 `behavior.wat` + manifest
+  `behavior:`，端到端守卫 `crates/esc-node/tests/behavior_counter_plugin.rs`，探针
+  `scripts/spikes/wasm-behavior-probe.sh`）；它同时演示 PDO arena、worker 线程与限流参数怎么配；
 - 先做**一个能跑通闭环的样品**（建议 Beckhoff EL2008 兼容 8DO），再做伺服；
 - 每个插件都要能在 IgH 与 SOEM 上被扫描到（这是本项目的验收线）；
 - 命名为 `com.ecsim.compat.<brand>-<model>`（自有域名前缀，不用厂商域名）。

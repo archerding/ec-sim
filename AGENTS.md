@@ -497,7 +497,7 @@ user.email = deepseek-harness@users.noreply.github.com
 - [x] ~~**B41 M3-W5：可选静态 token（M3）**~~ ✅ **2026-11-13 08:20 完成**：`--serve-token-env VAR` 从环境变量读静态 Bearer token（空/未设置 = 现状）；`control-plane::{AuthDecision,authorize,bearer_token,is_protected_route}` 纯函数 + 5 单测（共 20）；非空时 `/state`、`/dict`、`/pdo`、`/sdo`、`/sdo-audit`、`/topology`、`/metrics`、`/events`（含 `POST /sdo`/`POST /pdo`）必须 `Authorization: Bearer <token>`：缺头/非 Bearer → 401（`WWW-Authenticate: Bearer`）、错误 token → 403、正确 → 200；静态资源与 `/health` 豁免；http 请求解析统一为 `HttpRequest`（含请求头）并抽出 `write_http_response`；探针 `serve-token-probe.sh` 验证机 **EXIT=0**（静态矩阵 + UDS 实时写/审计/指标/SSE）；run-all-probes 验证机 **17 PASS / 0 FAIL**（新增 serve-token）；测试 **230 passed**。
 - [x] ~~**B42 M3-W6：Web SDO 面板（M3）**~~ ✅ **2026-11-13 08:00 完成**：`web/` 新增 SDO 面板——按 `index`/`sub` 调 `GET /sdo` 只读浏览（对象名/条目名/类型/位长/访问/值大端+原始小端 hex，`cache: no-store`）；写入默认关闭：勾选“允许写入”→ 填小端 hex → `window.confirm()` **二次确认**后才 `POST /sdo`（`Uint8Array` 原始字节体），并映射 405（未开 `--serve-write`）/401（token 需反向代理或 curl）/403/404/400；页面提示 token 模式限制、不保存 token。验证：`node --check web/app.js`、新增 `scripts/spikes/web-sdo-panel-check.py`（静态资源回归：控件 id + 逻辑标记 + README 断言 + node 语法；⚠️ 无 DOM 自动化）、`serve-web-probe.sh` 增加同源资源断言；验证机 `run-all-probes.sh` **18 PASS / 0 FAIL / 0 SKIP**；CONTROL-PLANE/web/README/M3 清单/VERIFICATION/STATUS/README 同步。⚠️ 浏览器人工点击验收待补。
 - [x] ~~**B43 M3-W1：WASM 插件宿主 spike（M3 主阻塞项）**~~ ✅ **2026-11-13 08:05 完成**：选型 **wasmi 0.31.2**（MIT/Apache-2.0 解释器；MSRV 兼容 workspace 1.75，wasmtime 50 需 Rust ≥1.97/依赖数百包）；`plugin-host` 新增**默认关闭**的 `wasm-runtime` feature——`env.read_pdo`/`env.write_pdo`/`env.log` + `tick` 导出、PDO arena 快照（64B）、日志上限 64KiB、`WasmHostError`；WAT 夹具 `fixtures/wasm/counter.wat` + 示例 `wasm_plugin_demo` + 探针 `wasm-plugin-probe.sh`；+7 feature 单测（plugin-host 34）、release 实测实例化 605µs / tick 179.5ns / 20 依赖包；默认 `cargo test --workspace` 仍 **230 passed** 且零第三方依赖。证据：[spike-6](docs/spikes/spike-6-wasm-host.md)。⚠️ 无 fuel/超时/arena 同步（W2）、验证机未跑该探针（需 crates.io）。
-- [ ] **B44 M3-W2：PDO arena 同步与插件隔离（M3）**：双缓冲/seqlock + generation；wasm 插件跑独立 worker 线程（不阻塞实时环）；fuel/超时 + 内存上限校验；压测无撕裂、实时环零阻塞；把实例生命周期接到 `esc-node` 非实时线程。
+- [x] ~~**B44 M3-W2：PDO arena 同步与插件隔离（M3）**~~ ✅ **2026-11-13 08:31 完成**：双缓冲/seqlock + generation（`plugin-host::arena`）、wasm 插件独占 worker 线程（`wasm_worker`，宿主永不 join 卡住的插件）、fuel/超时 + 内存上限、零撕裂/零分配压测、实例生命周期接 `esc-node` 非实时帧循环（`esc_node::behavior::BehaviorBridge` + manifest `behavior:`）、仓库内真实行为画像 `plugins/behavior-counter/` + 端到端探针 `wasm-behavior-probe.sh`（合成主站帧写 SM2 → worker tick → SM3 = SM2 + 1）。证据：各班进度、`crates/esc-node/tests/behavior_counter_plugin.rs`、`plugins/behavior-counter/README.md`。增量项（不在原范围）：插件 panic 重启/多实例配额、Linux CLI UDS/TAP 端到端（验证机需 crates.io）。
   - 进度（2026-11-13 08:35 班）：**W2 子项 1：arena 双缓冲/seqlock + generation 已实现**——
     `plugin-host::arena`（默认编译、零第三方依赖、模块内无 `unsafe`）：`PdoArena::new`（容量固定）/
     `publish`（写者：长度预检 + 单写者 CAS + 双缓冲原子拷贝，**不分配、不等待读者**）/
@@ -532,6 +532,22 @@ user.email = deepseek-harness@users.noreply.github.com
     测试 **238 passed**（默认）/ `wasm-runtime` 下 plugin-host **53**、esc-node **73**；
     Linux 目标交叉 `cargo check`（默认 + feature）exit 0。⚠️ 仓库内暂无声明 behavior 的画像、
     bin 运行时未在验证机端到端（验证机无 crates.io）；未做 panic 重启/多实例配额。
+  - 进度（2026-11-13 08:31 班）：**W2 子项 4（收尾）：仓库内真实行为画像 + 端到端探针**——
+    新增 `plugins/behavior-counter/`（自写 `behavior.wat`：SM2 u32 小端 + 1 写回 SM3，首 tick 写日志；
+    manifest `behavior:{code: behavior.wat, tick_hz: 1000, fuel_per_tick: 1e6, tick_timeout_ms: 50,
+    max_memory_bytes: 65536}`，身份自有 VID/PID + SIMULATED + sources）。
+    新增 `crates/esc-node/tests/behavior_counter_plugin.rs`（`wasm-runtime` 门控）：磁盘 manifest →
+    `validate()` → `BehaviorBridge::from_manifest` → 合成主站帧 APWR `0x1100`=41 / APRD `0x1110`
+    → 断言 SM3 = 42、单帧 <50ms、`published_frames>0`、ticks ≥ 1、超时/fuel/错误为 0、SM2 未被改写。
+    新增 `scripts/spikes/wasm-behavior-probe.sh`（本机可直接跑；无 cargo/crates.io 时 exit 2 = SKIP），
+    并同步 plugins/README、M3 清单 W2、STATUS、VERIFICATION、README。
+    测试 **238 passed**（默认，新集成测试在默认 feature 下为空）；`cargo test -p esc-node --features
+    wasm-runtime` **74 passed**（含新集成）、plugin-host 同 feature **58 passed**；
+    fmt/clippy（默认 + 两 crate feature）全 0。⚠️ Linux CLI UDS/TAP 行为插件端到端仍未跑（验证机无
+    crates.io）；验证方法：`cargo run -p esc-node --features wasm-runtime -- --uds /tmp/x --manifest
+    plugins/behavior-counter/plugin.yaml`。
+
+- [ ] **B45 M3-W7：32 从站 @1 kHz 瓶颈调研（M3）**：SOEM 线程/内核旁路可行路径、现有 8 从站实测差距、文档结论（**不承诺达成**）；顺带 M3-W8 MCP/Agent 桥接 stub（只读端点映射）。
 
 ## 7. 目录约定
 
