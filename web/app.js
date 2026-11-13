@@ -216,7 +216,12 @@ function updateConnUi() {
     }
   }
   if (dataTime) {
-    dataTime.textContent = window.ECSIM_I18N && window.ECSIM_I18N.lang === "en" ? `${tz("数据时间：")}${conn.lastDataAt ? new Date(conn.lastDataAt).toLocaleTimeString() : "-"} (${ageText()})` : `${tz("数据时间：")}${conn.lastDataAt ? new Date(conn.lastDataAt).toLocaleTimeString() : "-"}（${ageText()}）`;
+    const hasData = Boolean(conn.lastDataAt) && Number.isFinite(conn.lastDataAt);
+    const timeText = hasData ? new Date(conn.lastDataAt).toLocaleTimeString() : "-";
+    const ageSuffix = hasData ? ageText() : "-";
+    dataTime.textContent = window.ECSIM_I18N && window.ECSIM_I18N.lang === "en"
+      ? `${tz("数据时间：")}${timeText} (${ageSuffix})`
+      : `${tz("数据时间：")}${timeText}（${ageSuffix}）`;
   }
   if (pauseButton) {
     pauseButton.setAttribute("aria-pressed", conn.paused ? "true" : "false");
@@ -1644,7 +1649,7 @@ if (sdoDialog) {
     setSdoMessage("sdo-write-status", window.ECSIM_I18N && window.ECSIM_I18N.lang === "en" ? "Write cancelled." : "已取消写入。", false);
   });
   submit?.addEventListener("click", () => {
-    const pending = closeDialog(false);
+    const pending = closeDialog(true);
     if (pending) void performSdoWrite(pending.parsed, pending.bytes);
   });
   sdoDialog.addEventListener("keydown", (event) => {
@@ -1956,7 +1961,9 @@ async function performSdoWrite(parsed, bytes) {
     const data = JSON.parse(await response.text());
     setSdoMessage(
       "sdo-write-status",
-      `${tz("写入成功（站 ")}${parsed.slave}): ${data.old_hex || "-"} → ${data.written_hex} (audit: GET /sdo-audit)`,
+      window.ECSIM_I18N && window.ECSIM_I18N.lang === "en"
+        ? `Write OK (slave ${parsed.slave}): ${data.old_hex || "-"} → ${data.written_hex} (audit: GET /sdo-audit)`
+        : `写入成功（站 ${parsed.slave}）：${data.old_hex || "-"} → ${data.written_hex}（审计见 GET /sdo-audit）`,
       false,
     );
     lastSdoRead = null; // 旧值已变化，下次 confirm 前重新读取

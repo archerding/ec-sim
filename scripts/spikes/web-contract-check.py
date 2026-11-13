@@ -222,10 +222,19 @@ def main():
 
     # 3b) G-20 回归：7 视图导航 href 目标必须存在（id 在 html，或 sectionT/testid 在 app.js）。
     nav_targets = re.findall(r'href="#([A-Za-z0-9_-]+)"', index_text)
+    # 精确匹配 `id="..."` 属性（`(?<![-\w])` 防止命中 data-testid 子串）；动态区块由 sectionT("target") 提供 id。
+    def has_id(text, target):
+        return re.search(r'(?<![-\w])id="' + re.escape(target) + r'"', text) is not None
+
+    # 反向自检：`data-testid="sdo-index-input"` 不得被 has_id 误判（G-20 false-positive 回归）。
+    if has_id('data-testid="sdo-index-input"', "sdo-index-input"):
+        fail("G-20 断言自检失败：id 正则误命中 data-testid")
+
     broken_nav = [
-        target for target in nav_targets
-        if f'id="{target}"' not in index_text
-        and f'"{target}"' not in app_text
+        target
+        for target in nav_targets
+        if not has_id(index_text, target)
+        and re.search(r'sectionT\(\s*"' + re.escape(target) + r'"', app_text, re.S) is None
     ]
     if broken_nav:
         problems_nav = broken_nav
