@@ -7,15 +7,15 @@ UNIT="${UNIT:-ecsim-c4v2}"
 TAP="${TAP:-escsim0}"
 mkdir -p "$OUT"
 {
-  echo "postcheck_at=$(date +%Is)"
+  echo "postcheck_at=$(date -Is)"
   echo "=== unit ==="
   systemctl is-active "$UNIT" 2>&1 || true
-  echo "=== journal (unit) ==="
-  journalctl -u "$UNIT" --no-pager --since "-6h" 2>&1 | tail -200
+  systemctl show "$UNIT" -p ActiveState -p Result -p ExecMainStatus 2>&1 || true
+  echo "=== journal (unit, full) ==="
 } >"$OUT/unit.log" 2>&1
 
 {
-  echo "postcheck_at=$(date +%Is)"
+  echo "postcheck_at=$(date -Is)"
   echo "=== tap ==="
   ip link show "$TAP" 2>&1 || echo "tap_absent"
   echo "=== processes ==="
