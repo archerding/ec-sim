@@ -5580,3 +5580,11 @@
 - `static_web_response` 增加 `/i18n.js`（静态/实时同源）；新增 `serve-web-assets-probe.sh` 纳入 B-2（37→38）：
   资产清单 200 + i18n.js 含 ECSIM_I18N + 未知资源 404；本机静态段 EXIT=0（实时段待 VM）。
 - 补 sim-ux §17.2 的 en 残留中文（词典 79 键）；HMI 截图改走 `--serve` 产品路径（product-serve-en/zh-*）。
+
+### T-14 复验补充（cnc-expert，`3b7ee97`）
+
+- T-14 于 2026-11-13 18:54–18:56 **无构建负载窗口复现**：`--al-error 0x0024` + 新起 IgH 见 `INIT+ERROR`、
+  `/state` `0x11`+`0x0024`、`mailbox_requests=0`（无 ESM ACK→OP；负例 `0x9999` exit 2）→ 属**环境事实**
+  （IgH 时序/ACK 行为），非负载伪影；去掉"待复验"字样，保留与 SOEM 侧 OP 0x08 不同的如实记录；判据不变。
+- AC-E-202 sanity 再 PASS（SM3 `3706393000000000000008`、`tx_layout=LcecCsp`、lcec 逐值、5/5 轮）。
+- BL-17/BL-18 维持关闭；BL-20 仍 ⚠️ 未验证。
