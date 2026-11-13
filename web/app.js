@@ -755,8 +755,10 @@ function renderPdoHistory(history) {
     });
     context.stroke();
   };
+  try { performance.mark("pdo-waveform-draw-start"); } catch (error) { /* ignore */ }
   draw(sm2, "#6ea8fe");
   draw(sm3, "#8fe3a8");
+  try { performance.mark("pdo-waveform-draw-end"); performance.measure("pdo-waveform-draw", "pdo-waveform-draw-start", "pdo-waveform-draw-end"); } catch (error) { /* ignore */ }
   app.append(
     sectionT(
       "pdo-waveform-summary",
@@ -1181,6 +1183,10 @@ function renderAll() {
   const scrollYBefore = window.scrollY;
   app.replaceChildren();
   if (currentState) renderState(currentState);
+  if (currentState && !window.__appReadyMarked) {
+    window.__appReadyMarked = true;
+    try { performance.mark("app-ready"); } catch (error) { /* 非浏览器 */ }
+  }
   if (currentPdo) renderPdo(currentPdo);
   if (currentPdoHistory) renderPdoHistory(currentPdoHistory);
   if (currentTopology) {
