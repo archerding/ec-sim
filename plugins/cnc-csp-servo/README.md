@@ -18,6 +18,15 @@
 lcec 的 `basic_cia402` 在 `enableCSP=1` 时**隐式**要求 TxPDO 含 `0x606C:00`（实际速度）；
 V1 只用 PP 模式时 `generic-cia402-servo`（7B/7B）即可，V2 起用本画像（7B/11B）。
 
+## 已知 lcec 行为（2026-11-13，CNC 侧实测反馈）
+
+- lcec `basic_cia402` **默认 `enable_pv=1`**：即使 XML 只写 `enableCSP`，它也会把 RxPDO 配成
+  11B（多 `0x60FF` target velocity）并对 `0x60FF` 做一次 init CoE SDO upload。
+- 本画像的默认 PDO **仍是 CSP 7B/11B**；但已把 `0x60FF`（INT32, rw）放进 OD（**不进默认 PDO**），
+  使该 SDO upload 可读（避免 `error -5`）。CNC 侧仍建议 XML 显式 `enablePV=false` 保持 7B。
+- V1 单从站 OP 已按本画像在 CNC 验证机通过（CNC 侧证据；本仓库只引用事实，见
+  [对接文档 §4.1](../../docs/plan/CNC-V1-integration.md)）。
+
 ## 与 lcec 配置的对应
 
 CNC 侧 lcec XML 用 `basic_cia402` 且不写 `<dcConf>`；条目必须真实出现在 0x1600/0x1A00 映射对象里

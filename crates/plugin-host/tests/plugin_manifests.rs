@@ -212,6 +212,12 @@ fn cnc_csp_servo_layout_matches_lcec_csp_expectations() {
         dict.entry(0x606C, 0).is_some(),
         "0x606C 实际速度必须在对象字典里"
     );
+    // lcec `basic_cia402` 的 `enable_pv=1` 默认会对 0x60FF 做一次 init CoE SDO upload；
+    // 本画像把 0x60FF 放进 OD（不进默认 PDO）以保证该 SDO 可读（V1 实测 `enablePV=false` 亦可）。
+    assert!(
+        dict.entry(0x60FF, 0).is_some(),
+        "0x60FF 目标速度应在 OD 里（SDO 可读；不进默认 PDO）"
+    );
 }
 
 /// SV660N 固定映射（手册 2.2.6）守卫：0x1701（PP/CSP，4 对象/12 字节）与

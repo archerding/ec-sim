@@ -115,8 +115,22 @@ curl -s http://127.0.0.1:18090/pdo?slave=0      # pdo-v1 + decoded（0x6040/0x60
 | 单测守卫 | `cargo test -p plugin-host --test plugin_manifests` | `cnc_csp_servo_layout_matches_lcec_csp_expectations` PASS（工作区 259 passed） |
 
 > ⚠️ EC-Sim VM 的 IgH 是自建/验证机本地 ecrt 夹具（源码不入库）；CNC VM 的 IgH/lcec 由其 RPM 安装，
-> 两者独立验证，互不冒用日志。ecrt 夹具的 SDO 段阻塞在 EC-Sim VM 上**已复现多次**（PV-01/PV-14），
-> V1（lcec 零 SDO）不依赖该路径；若 CNC 侧 lcec 配置出现 SDO 读写需求，先按该风险单列。
+> 两者独立验证，互不冒用日志。ecrt 夹具的 SDO 段阻塞在 EC-Sim VM 上**已复现多次**（PV-01/PV-14；
+> `generic-cia402-servo` 与 `cnc-csp-servo` 都能复现），V1（lcec 零 SDO）不依赖该路径。
+
+### 4.1 CNC 侧 V1 联合验收（引用，非 EC-Sim 侧结论）
+
+CNC 侧 2026-11-13 用本对接包跑通 **V1 单从站 OP**（`cnc-impl` 在其验证机，证据在其仓库
+`docs/verification/2026-11-13-b6-v1-igh-tap-infra.md`；本仓库只引用事实、不复制其日志）：
+
+- `sha256` 校验本交付二进制一致；`READY tap=tapcnc0 mac=02:ec:51:4d:00:01` + `BEHAVIOR cia402 ...` 与
+  §3 runbook 一致；
+- 从站 `0:0 OP 0x00000ec5:0x0000e5e3`、master `Phase: Operation/Active: yes`、lcec HAL pin 正常、
+  `statusword=0x0240`、`lcec.0.wkc=3`；
+- 发现并解决：lcec 默认 `enable_pv=1` 会写 11B Rx 并对 `0x60FF` 做 init SDO（本镜像 OD 缺该对象时
+  报非致命 `error -5`）→ CNC 侧 XML 显式 `enablePV=false` 后恢复 7B/0x60FF 不再报错；
+  本仓库已在 `cnc-csp-servo` 的 OD 补 `0x60FF`（不进默认 PDO）作为兼容改进。
+- **边界**：V1 只验"单从站 OP + PDO/HAL 可见"，不宣称一致性/认证；物理安全链不在范围。
 
 ## 5. 二进制交付（CNC 验证机无 cargo/rustc）
 
@@ -143,12 +157,13 @@ curl -s http://127.0.0.1:18090/pdo?slave=0      # pdo-v1 + decoded（0x6040/0x60
 
 ## 6. 排查表（EC-Sim 侧常见失败）
 
-| 现象 | 可能原因 | 处理 |
+| 失败现象 | 可能原因 | 处理 |
 | --- | --- | --- |
 | IgH `ethercat slaves` 只看到 PREOP、无 OP | 无 ecrt 应用（IgH 工具行为）；TAP 未 up/无流量 | 先用 SOEM `simple_ng` 或 ecrt 应用驱动；确认 `ip link set tapcnc0 up` |
+| lcec 把 RxPDO 配成 11B（多 `0x60FF`）且 init SDO 报 `error -5`（非致命） | lcec `basic_cia402` 默认 **`enable_pv=1`**（即使 XML 只写 `enableCSP` 也会写 `0x60FF` 并做一次 CoE SDO upload） | lcec XML 显式写 **`enablePV=false`**（cnc-impl 2026-11-13 在其验证机实测：加上后 Rx 回到 7B、SDO error=0）；本画像已在 OD 补 `0x60FF`（不进默认 PDO）使该 SDO 也可读，但布局仍按 CSP 7B/11B |
 | AL Status Code `0x0017`（PREOP→SAFEOP） | SM2/SM3 未配置或长度不符 | 对照 §2：SM2 7B、SM3 7B/11B；检查 lcec XML 的 SM 长度 |
 | AL Status Code `0x0024/0x0025`（映射无效） | 0x1600/0x1A00 映射位长与 SM 长度不一致 | 用 lcec 的 XML PDO 条目核对 §2（条目必须在映射对象里） |
-| 身份不符 | 拿错 manifest 或 PID 过期 | `0x00000e5e0`（V1）/`0x0000e5e3`（CSP 画像） |
+| 身份不符 | 拿错 manifest 或 PID 过期 | `0x00000e5e0`（V1 PP 画像）/`0x0000e5e3`（CSP 画像） |
 | 0x606C 相关 mismatch | 用 7B Tx 画像跑 CSP | V2 起改用 `plugins/cnc-csp-servo`（Tx 11B） |
 | `/pdo` 无 decoded | 静态模式（无 `--tap/--uds`） | 实时模式才返回 live/decoded |
 

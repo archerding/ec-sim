@@ -68,6 +68,11 @@ objects:
   - {index: 0x6064, sub: 0, name: Position actual value, dtype: INT32, access: ro, value: 0, pdo: tx}
   - {index: 0x606C, sub: 0, name: Velocity actual value, dtype: INT32, access: ro, value: 0, pdo: tx}
   - {index: 0x607A, sub: 0, name: Target position, dtype: INT32, access: rw, value: 0, pdo: rx}
+  # 0x60FF（Target velocity）不在本画像默认 PDO 里（CSP 用 0x607A），但保留在 OD 供主站 SDO 读写：
+  # lcec `basic_cia402` 默认 `enable_pv=1`（即使 XML 只写 enableCSP）会对 0x60FF 做一次 init CoE SDO upload，
+  # 若 OD 缺该对象会报 `error -5`（V1 实测非致命；cnc-impl 2026-11-13 建议显式 `enablePV=false`）。
+  # 放进 OD 后该 SDO upload 也能成功（V2 若要切 PV/CSV 可直接复用本画像的 OD 形态）。
+  - {index: 0x60FF, sub: 0, name: Target velocity, dtype: INT32, access: rw, value: 0}
   - {index: 0x2100, sub: 0, name: Config string, dtype: VISIBLE_STRING, access: rw, value: `EC-Sim CNC CSP config (SIMULATED)`}
 
 # 虚拟闭环 V1/V2 不配置 DC（lcec XML 无 <dcConf>；模拟器只有 Tier0 帧驱动时钟）。
