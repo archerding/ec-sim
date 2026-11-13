@@ -8,7 +8,7 @@
 核心 ESC（寄存器/SM/FMMU/AL/EEPROM-SII/邮箱/watchdog）+ CoE（SDO 加速/分段/SDO Info/
 Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/CST，Tier0 简化）
 + 声明式设备画像已实现；**未修改的 SOEM 2.0.0 与 IgH 1.6.13** 可发现从站并进入 OP
-（IgH 无应用时到 PREOP）。测试基线 **258 passed**（另 `wasm-runtime` feature 下 plugin-host **58** / esc-node **74**：WASM 宿主 + arena + worker 线程 + 行为桥 + 仓库内真实行为画像）。**M3 = 退出候选**：Linux 验证机整轮 `run-all-probes.sh` **20 PASS / 0 FAIL / 0 SKIP**（含 `mcp-tools`/`mcp-stdio`/TAP）、本机 258 passed、许可核对完成、ADR 0002 → Accepted，见 [M3 退出清单](plan/M3-exit-checklist.md)（W6 真人浏览器点击验收待补）。
+（IgH 无应用时到 PREOP）。测试基线 **258 passed**（另 `wasm-runtime` feature 下 plugin-host **56 单测 + 5 集成** / esc-node **75 单测 + 1 集成**：WASM 宿主 + arena + worker 线程 + 行为桥 + 仓库内真实行为画像 + B51 重启/配额）。**M3 = 退出候选**：Linux 验证机整轮 `run-all-probes.sh` **20 PASS / 0 FAIL / 0 SKIP**（含 `mcp-tools`/`mcp-stdio`/TAP）、本机 258 passed、许可核对完成、ADR 0002 → Accepted，见 [M3 退出清单](plan/M3-exit-checklist.md)（W6 真人浏览器点击验收待补）。
 
 ## 代码与测试
 
@@ -113,9 +113,14 @@ cargo test --workspace
    token 矩阵（缺 token→AUTH_REQUIRED / 错 token→FORBIDDEN / 正确→200）、调用审计 **JSON Lines**、
    Linux 实时模式（`--uds`+`--serve`）live-only 工具端到端（topology/pdo/history/metrics/sdo_audit，
    含受控写产生审计）；本机与验证机 PASS，验证机整轮 20 PASS；`mcp-server` 单测 16→18。
-4. **B51（建议）B44 增量：插件 panic 重启 + 多实例配额**：worker 线程崩溃后的隔离/重启与实例配额；
-   需先补对应单测与探针。仍不宣称认证。
-5. 验证机补跑 `wasm-plugin-probe.sh` / `wasm-behavior-probe.sh` 与 Linux CLI UDS/TAP 行为插件端到端（需 crates.io，或先 vendor wasmi/wat）。
-6. DC 仿真（寄存器 + SYNC0/tick），实现后在测试画像上验证再声明 SII DC。
-7. CA 部分写/子索引顺序语义完善；fuzz 升级。
-8. 性能：TAP/UDS 闭环 32 站 @1 kHz 与 DC 下的长稳测试（B46 未覆盖部分，⚠️ 待验证）。
+4. ~~**B51（backlog 顶部）B44 增量：插件 panic 重启 + 多实例配额**~~ ✅ 2026-11-13 完成——
+   `BehaviorRuntime` 在 worker 死亡（panic/Stopped）或连续失败（trap/fuel/timeout）达阈值时按模块字节
+   自动重启（`max_restarts`，默认 3），预算耗尽**隔离**；新增 `BehaviorQuota` 实例配额（显式传入）；
+   统计加 `restarts/quarantined`；feature 单测 **56**（+3）覆盖重启恢复/隔离/配额。
+   `esc-node` 仍单实例（配额未接线，⚠️ 多实例接线属后续）。
+5. **B52（建议）M4 Agent Skills 只读技能文档与示例**：把 9 个只读 MCP 工具映射为可安装技能
+   （查询/排障/回归报告），写清只读边界与错误码；不引入写工具、不宣称认证。
+6. 验证机补跑 `wasm-plugin-probe.sh` / `wasm-behavior-probe.sh` 与 Linux CLI UDS/TAP 行为插件端到端（需 crates.io，或先 vendor wasmi/wat）。
+7. DC 仿真（寄存器 + SYNC0/tick），实现后在测试画像上验证再声明 SII DC。
+8. CA 部分写/子索引顺序语义完善；fuzz 升级。
+9. 性能：TAP/UDS 闭环 32 站 @1 kHz 与 DC 下的长稳测试（B46 未覆盖部分，⚠️ 待验证）。

@@ -21,9 +21,11 @@
 //! - wasmi 0.31 **没有**从外部中断正在执行的 wasm 的手段：`Timeout` 只是"宿主不再等"，
 //!   worker 线程会在 fuel 预算耗尽后才退出该次 tick。因此 fuel 是**唯一**的 CPU 上界，
 //!   `Timeout` 必须与有限的 `fuel_per_tick` 配合使用；
-//! - 插件 panic 目前会杀掉 worker 线程（之后 tick 返回 [`WorkerError::Stopped`]）；
-//!   未做 panic 捕获与自动重启；
-//! - 未与 `esc-node` 实时环接线（arena 仍由调用方发布），也未做多实例配额。
+//! - 插件 panic 会杀掉 worker 线程（之后 tick 返回 [`WorkerError::Stopped`]）；
+//!   **B51 起**由上层 [`crate::behavior::BehaviorRuntime`] 按保留的模块字节重启/隔离
+//!   （本模块仍不自行捕获 panic：worker 线程 detach 语义保持不变）；
+//! - 未与 `esc-node` 实时环接线（arena 仍由调用方发布）；多实例配额由
+//!   [`crate::behavior::BehaviorQuota`] 提供（`esc-node` 当前单实例）。
 
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread::{self, JoinHandle};

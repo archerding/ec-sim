@@ -611,8 +611,15 @@ user.email = deepseek-harness@users.noreply.github.com
   对→200）、审计字段与失败码、Linux 实时模式（`--uds`+`--serve`）live-only 工具端到端
   （topology/pdo/history/metrics/sdo_audit；先受控写 0x6040 产生审计）。本机与验证机 PASS；
   验证机整轮 **20 PASS / 0 FAIL / 0 SKIP**；`cargo test --workspace` **258 passed**。只写预回归，不宣称认证。
-- [ ] **B51 B44 增量：插件 panic 重启 + 多实例配额（建议，backlog 顶部）**：worker 线程崩溃后的隔离/
-  重启与实例配额；需先补单测与探针；`wasm-runtime` 依赖获取后补 Linux 端到端。仍不宣称认证。
+- [x] ~~**B51 B44 增量：插件 panic 重启 + 多实例配额**~~ ✅ **2026-11-13 完成**：
+  `plugin-host::behavior` 在 worker 线程死亡（panic/Stopped）或连续失败（trap/out-of-fuel/timeout）
+  达阈值时按保留模块字节重建实例（`max_restarts` 默认 3；预算耗尽 → **隔离**，ticker 退出、宿主继续用
+  最后有效输出）；新增 `BehaviorQuota` 显式实例配额（`spawn_*_with_quota`，不传 = 不限制）；
+  `BehaviorStats` 增 `restarts/quarantined`。feature 单测 **56**（+3：重启恢复 / 隔离 / 配额）。
+  ⚠️ `esc-node` 仍每进程 1 个行为桥（配额未接线，多实例接线后续）；线程死亡(panic)与 trap 共用重建路径，
+  trap 路径已测、真实 panic 路径未单独注入测试。
+- [ ] **B52 M4 Agent Skills 只读技能文档与示例（建议，backlog 顶部）**：把 9 个只读 MCP 工具映射为
+  可安装技能（查询/排障/回归报告），写清只读边界与错误码；不引入写工具、不宣称认证。
 
 ## 7. 目录约定
 

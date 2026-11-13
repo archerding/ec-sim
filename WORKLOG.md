@@ -1,5 +1,41 @@
 ---
 
+## 2026-11-13 12:32 班（低峰）— **B51：插件 panic 重启 + 实例配额（plugin-host::behavior）**
+
+> 调度上下文计划重点（B2b / B8 / B4）均早已完成；按 `AGENTS.md` §6 取 backlog 顶部 **B51**
+> （B44 增量：worker 崩溃后的隔离/重启与实例配额）。
+
+**做了什么**
+- **重启/隔离**（`BehaviorRuntime`）：保留模块字节；worker 线程死亡（panic/`Stopped`）或连续失败
+  （trap / out-of-fuel / timeout）达到 `restart_after_consecutive_errors`（默认 3）时按字节重建实例；
+  最多 `max_restarts`（默认 3）次，预算耗尽或重建失败 → **隔离**（`quarantined`，ticker 退出，
+  宿主继续使用最后一个有效输出，不再调用插件）。
+- **实例配额**（`BehaviorQuota`）：显式可选（`spawn_wat_with_quota` / `spawn_wasm_bytes_with_quota`），
+  `active()` 计数、Runtime Drop 时释放；不传配额 = 不限制，保持既有调用语义。
+- `BehaviorStats` 增 `restarts` / `quarantined`；`esc-node` 的 `BehaviorSpec` 补默认重启策略；
+  模块文档与 `wasm_worker` 已知限制更新（B51 范围）。
+- 测试 **+3**：trap 触发重启并在下一代恢复输出；重启预算耗尽后隔离且不再产出；
+  配额 2 时第 3 个实例失败、释放后可再申请。feature 单测 **53 → 56**。
+
+**验证结果**
+- `cargo fmt --all -- --check` **0**；`cargo test --workspace` **258 passed / 0 failed**；
+  默认 `clippy --workspace --all-targets -D warnings` **0**。
+- `cargo clippy -p plugin-host --features wasm-runtime --all-targets -D warnings` **0**；
+  `cargo clippy -p esc-node --features wasm-runtime --all-targets -D warnings` **0**。
+- `cargo test -p plugin-host --features wasm-runtime`：**56 单测 + 5 集成** PASS；
+  `cargo test -p esc-node --features wasm-runtime`：**75 单测 + 1 集成** PASS。
+- 未改默认依赖/许可（feature 仍默认关闭），未触碰实时环。
+
+**卡点**
+- 无硬阻塞。⚠️ 真实 panic 注入未单独单测（线程死亡与 trap 共用重建路径，trap 路径已测）；
+  `esc-node` 仍每进程 1 个行为桥，配额未接线（多实例接线属后续）。
+
+**下次开工第一件事**
+- 取 backlog 顶部 **B52（建议）M4 Agent Skills 只读技能文档与示例**：把 9 个只读 MCP 工具映射为可安装
+  技能（查询/排障/回归报告），写清只读边界与错误码；不引入写工具、不宣称认证。或先补 W6 真人点击以关闭 M3。
+
+---
+
 ## 2026-11-13 12:28 班（低峰）— **B50：MCP 覆盖矩阵（31 项断言 + 审计 JSONL + 实时 live-only 工具）**
 
 > 调度上下文计划重点（B2b / B8 / B4）均早已完成；按 `AGENTS.md` §6 取 backlog 顶部 **B50**

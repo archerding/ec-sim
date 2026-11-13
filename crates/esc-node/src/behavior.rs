@@ -77,6 +77,8 @@ impl BehaviorBridgeConfig {
             tick_hz: self.tick_hz,
             tick_timeout: Duration::from_millis(self.tick_timeout_ms.max(1)),
             limits,
+            max_restarts: plugin_host::behavior::DEFAULT_MAX_RESTARTS,
+            restart_after_consecutive_errors: plugin_host::behavior::DEFAULT_RESTART_AFTER_ERRORS,
         }
     }
 }
