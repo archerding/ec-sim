@@ -15,9 +15,29 @@ let currentPdo = null;
 let currentPdoHistory = null;
 let currentTopology = null;
 let currentMetrics = null;
-let liveTimer = null;
-let liveSource = null;
+let currentAudit = null;
 let liveBase = "";
+
+// ---- DOD-03（G-09）连接状态机（页面级）----
+// IDLE → CONNECTING → LIVE_SSE ⇄ LIVE_POLL → STOPPED；另有 STALE / PAUSED / RECONNECTING。
+// 规格来源：ECSIM-HMI-GO-B-DOD §3.2/§3.3。任何非 LIVE_* 状态都不得显示 "LIVE" 字样。
+const conn = {
+  mode: "IDLE", // IDLE | CONNECTING | LIVE_SSE | LIVE_POLL | STALE | STOPPED | PAUSED | RECONNECTING
+  lastDataAt: null, // 最后一次**真实数据**到达时间（ms）
+  lastMode: "LIVE_SSE", // 恢复时回到 SSE 还是轮询
+  failures: 0,
+  paused: false,
+  hidden: false,
+  timer: null, // 唯一轮询 interval
+  heartbeat: null, // 唯一心跳 interval（数据时间/Δ/STALE 判定）
+  source: null, // 唯一 EventSource
+  staleTimer: null, // 单次 STALE 探测（不用 setInterval）
+  pollIntervalMs: 1000,
+  sseIntervalMs: 500,
+  maxFailures: 3,
+  requestSeq: 0, // 丢弃过期响应（切站/重连时）
+};
+const MAX_DELTA_MS = 2 * 1000; // 2× 刷新间隔无新数据 → STALE
 
 function el(tag, attrs, ...children) {
   const node = document.createElement(tag);
@@ -52,6 +72,145 @@ function selectedSlave() {
   const input = document.getElementById("slave-index");
   const value = Number.parseInt(input.value, 10);
   return Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+// ---- DOD-13：AL 派生（state = al_status & 0x0F；bit4 error；bit5 ID 请求）----
+const AL_STATE_NAMES = { 1: "INIT", 2: "PREOP", 4: "SAFEOP", 8: "OP" };
+
+function deriveAl(statusHex) {
+  const raw = Number.parseInt(statusHex, 16);
+  const value = Number.isFinite(raw) ? raw : 0;
+  const state = value & 0x0f;
+  const error = (value & 0x10) !== 0;
+  const idRequest = (value & 0x20) !== 0;
+  const stateName = AL_STATE_NAMES[state] || `状态 ${state}`;
+  let severity = "info";
+  if (error) severity = "error";
+  else if (idRequest) severity = "warn";
+  else if (state === 8) severity = "ok";
+  else if (state === 4) severity = "info";
+  else if (state === 2) severity = "info";
+  return { raw: value, state, stateName, error, idRequest, severity };
+}
+
+function alChip(statusHex) {
+  const derived = deriveAl(statusHex);
+  const suffix = [derived.error ? "error" : null, derived.idRequest ? "id-req" : null]
+    .filter(Boolean)
+    .join(" · ");
+  const chip = el(
+    "span",
+    { class: "al-chip", "data-sev": derived.severity },
+    `${derived.stateName}${suffix ? `（${suffix}）` : ""}`,
+  );
+  chip.title = `al_status=${statusHex}（state=${derived.stateName}；error=${derived.error}；id_request=${derived.idRequest}）`;
+  return chip;
+}
+
+// ---- DOD-03：连接状态 UI（徽标/横幅/数据时间/陈旧标记）----
+function connBadgeText(mode) {
+  switch (mode) {
+    case "LIVE_SSE":
+      return "LIVE · SSE";
+    case "LIVE_POLL":
+      return "LIVE · 轮询";
+    case "STALE":
+      return "STALE（数据陈旧）";
+    case "STOPPED":
+      return "未连接";
+    case "PAUSED":
+      return "已暂停";
+    case "CONNECTING":
+      return "连接中…";
+    case "RECONNECTING":
+      return "重连中…";
+    default:
+      return "未连接";
+  }
+}
+
+function ageText() {
+  if (!conn.lastDataAt) return "-";
+  const age = Math.max(0, Date.now() - conn.lastDataAt);
+  return age < 1000 ? `${age} ms 前` : `${(age / 1000).toFixed(1)} s 前`;
+}
+
+function updateConnUi() {
+  const badge = document.getElementById("conn-badge");
+  const dataTime = document.getElementById("data-time");
+  const pauseButton = document.getElementById("pause-toggle");
+  const writeButton = document.getElementById("sdo-write");
+  if (badge) {
+    badge.dataset.mode = conn.mode;
+    badge.textContent = connBadgeText(conn.mode);
+    // 非 LIVE_* 状态不得出现 "LIVE" 字样（DOD-03 §3.3-1）。
+    if (conn.mode !== "LIVE_SSE" && conn.mode !== "LIVE_POLL") {
+      badge.textContent = badge.textContent.replace(/LIVE/g, "非实时");
+    }
+  }
+  if (dataTime) {
+    dataTime.textContent = `数据时间：${conn.lastDataAt ? new Date(conn.lastDataAt).toLocaleTimeString() : "-"}（${ageText()}）`;
+  }
+  if (pauseButton) {
+    pauseButton.setAttribute("aria-pressed", conn.paused ? "true" : "false");
+    pauseButton.textContent = conn.paused ? "继续" : "暂停";
+  }
+  if (writeButton) {
+    // STOPPED 下写按钮禁用并给 E-10 说明（§3.3-6）。
+    writeButton.disabled = conn.mode === "STOPPED";
+  }
+  const banner = document.getElementById("conn-banner");
+  if (banner) {
+    let text = "";
+    if (conn.mode === "LIVE_POLL") {
+      text =
+        "E-10：SSE 推送已中断，页面已降级为轮询（LIVE · 轮询）；数据可能落后 1 个刷新周期。恢复后自动回到 LIVE · SSE。";
+    } else if (conn.mode === "STOPPED") {
+      text =
+        "E-10：连续 3 次请求失败，已停止自动刷新（未连接）。请确认服务已启动后点“重新连接”；当前显示的是最后一次数据，可能已过期。";
+    } else if (conn.mode === "STALE") {
+      text = "数据陈旧（STALE）：超过 2 个刷新周期没有新数据；以下所有数值都带陈旧标记，请勿当作实时值。";
+    } else if (conn.mode === "PAUSED") {
+      text = "已暂停：页面停止发请求，显示最后一次数据与时间戳；点“继续”会立即拉取一次。";
+    } else if (conn.mode === "RECONNECTING") {
+      text = "正在重连：已发起一次探测请求…";
+    }
+    banner.textContent = text;
+    banner.classList.toggle("visible", text !== "");
+  }
+  // 陈旧标记覆盖所有依赖值（PDO/AL/拓扑/指标/数据时间）。
+  document.body.classList.toggle("stale", conn.mode === "STALE");
+}
+
+function noteData() {
+  conn.lastDataAt = Date.now();
+  conn.failures = 0;
+  if (conn.mode === "LIVE_SSE" || conn.mode === "LIVE_POLL" || conn.mode === "STALE") {
+    if (conn.mode === "STALE") conn.mode = conn.lastMode;
+  }
+  updateConnUi();
+}
+
+function setConnMode(mode) {
+  if (conn.mode === mode) {
+    updateConnUi();
+    return;
+  }
+  conn.mode = mode;
+  if (mode === "LIVE_SSE" || mode === "LIVE_POLL") {
+    conn.lastMode = mode;
+  }
+  updateConnUi();
+}
+
+function setStaticModeNotice(visible) {
+  const notice = document.getElementById("mode-notice");
+  if (!notice) return;
+  notice.classList.toggle("visible", visible);
+  notice.textContent = visible
+    ? "静态快照模式：当前 state 没有 live 字段（来自 --dump-state 的静态快照或文件载入），不提供实时/离线数据刷新。" +
+      "需要实时视图请用 ec-sim-esc --serve <addr> --uds <sock>（或 --tap）启动同进程实时模式。"
+    : "";
 }
 
 function section(title, ...children) {
@@ -116,6 +275,14 @@ function renderState(state) {
           ["邮箱请求/响应", `${live.stats.mailbox_requests} / ${live.stats.mailbox_responses}`],
           ["DC 寄存器读/写", `${live.stats.dc_reg_reads} / ${live.stats.dc_reg_writes}`],
         ]),
+        el(
+          "p",
+          {},
+          "AL 派生（DOD-13）：",
+          alChip(live.al_status),
+          " ",
+          el("span", { class: "sub" }, `al_status_code=${live.al_status_code}`),
+        ),
         el("p", { class: "sub" }, "只读快照；AL 状态码为 0x0000 时省略显示。"),
       ),
     );
@@ -467,6 +634,88 @@ function renderAll() {
     );
   }
   app.append(el("p", { class: "sub" }, "只读视图，不构成一致性/认证结论。"));
+  // DOD-02：静态模式说明（无 live 数据时显式提示，不再静默缺失）。
+  setStaticModeNotice(Boolean(currentState && !currentState.live));
+  updateSdoCurrent();
+  renderAudit();
+}
+
+// ---- DOD-02：`/sdo-audit` 只读展示（I-12/G-07；实时模式）----
+let lastSdoRead = null;
+
+function updateSdoCurrent() {
+  const node = document.getElementById("sdo-current");
+  if (!node) return;
+  node.replaceChildren();
+  const base = sdoApiBase();
+  const age = conn.lastDataAt ? ageText() : "静态/未刷新";
+  const staleNote =
+    conn.mode === "STALE" || conn.mode === "PAUSED" || conn.mode === "STOPPED"
+      ? `；⚠️ 数据可能过期（${connBadgeText(conn.mode)}）`
+      : "";
+  node.append(
+    el(
+      "span",
+      {},
+      `当前站：${selectedSlave()}（0-based，0..N-1） · API：${base || "未填写"} · 数据：${age}${staleNote}`,
+    ),
+  );
+}
+
+function renderAudit() {
+  const container = document.getElementById("sdo-audit");
+  const statusNode = document.getElementById("sdo-audit-status");
+  if (!container) return;
+  container.replaceChildren();
+  if (!currentAudit || !Array.isArray(currentAudit.events)) {
+    if (statusNode) statusNode.textContent = "无审计数据（需实时模式且发生过受控写）。";
+    return;
+  }
+  if (currentAudit.events.length === 0) {
+    if (statusNode) statusNode.textContent = "审计为空：尚未发生受控写。";
+    container.append(el("p", { class: "sub" }, "暂无写事件。"));
+    return;
+  }
+  const rows = currentAudit.events.map((event) => [
+    event.ts_ms == null ? "-" : new Date(Number(event.ts_ms)).toLocaleTimeString(),
+    String(event.slave ?? "-"),
+    event.index,
+    String(event.sub).padStart(2, "0"),
+    event.old_hex || "-",
+    event.new_hex || "-",
+  ]);
+  container.append(
+    table(["时间", "站（0-based）", "索引", "子索引", "旧值（小端 hex）", "新值（小端 hex）"], rows),
+  );
+  if (statusNode) statusNode.textContent = `共 ${currentAudit.events.length} 条（服务端最多 64 条）。`;
+}
+
+async function loadAudit() {
+  const statusNode = document.getElementById("sdo-audit-status");
+  const base = liveBase;
+  if (!base) {
+    if (statusNode) statusNode.textContent = "需要实时模式（--serve + --uds/--tap）。";
+    return;
+  }
+  try {
+    const response = await fetch(`${base}/sdo-audit?slave=${selectedSlave()}`, { cache: "no-store" });
+    if (!response.ok) {
+      if (statusNode) {
+        statusNode.textContent =
+          response.status === 404
+            ? "审计不可用：该路由需要实时模式（静态快照无写事件）。"
+            : `审计读取失败：${response.status}`;
+      }
+      return;
+    }
+    const data = JSON.parse(await response.text());
+    if (data.schema === "ec-sim/sdo-audit-v1") {
+      currentAudit = data;
+      renderAudit();
+    }
+  } catch (error) {
+    if (statusNode) statusNode.textContent = `审计读取失败：${error.message}`;
+  }
 }
 
 function loadMetrics(text, source) {
@@ -492,87 +741,187 @@ function loadJson(text, source) {
 }
 
 function stopLive() {
-  if (liveSource) {
-    liveSource.close();
-    liveSource = null;
+  if (conn.source) {
+    conn.source.close();
+    conn.source = null;
   }
-  if (liveTimer) {
-    clearInterval(liveTimer);
-    liveTimer = null;
+  if (conn.timer) {
+    clearInterval(conn.timer);
+    conn.timer = null;
   }
+  if (conn.heartbeat) {
+    clearInterval(conn.heartbeat);
+    conn.heartbeat = null;
+  }
+  if (conn.staleTimer) {
+    clearTimeout(conn.staleTimer);
+    conn.staleTimer = null;
+  }
+}
+
+function stopPollingTimer() {
+  if (conn.timer) {
+    clearInterval(conn.timer);
+    conn.timer = null;
+  }
+}
+
+async function pollOnce(reason) {
+  if (!liveBase || conn.paused || conn.hidden) return;
+  const seq = ++conn.requestSeq;
+  const slave = selectedSlave();
+  const requestOpts = { cache: "no-store" };
+  try {
+    const stateResponse = await fetch(`${liveBase}/state?slave=${slave}`, requestOpts);
+    if (seq !== conn.requestSeq) return; // 切站/重连：丢弃过期响应
+    if (!stateResponse.ok) throw new Error(`/state ${stateResponse.status}`);
+    loadJson(await stateResponse.text(), `${liveBase}/state?slave=${slave} (${reason})`);
+    const pdoResponse = await fetch(`${liveBase}/pdo?slave=${slave}`, requestOpts);
+    if (pdoResponse.ok && seq === conn.requestSeq) {
+      loadJson(await pdoResponse.text(), `${liveBase}/pdo?slave=${slave} (${reason})`);
+    }
+    const historyResponse = await fetch(`${liveBase}/pdo?slave=${slave}&history=1`, requestOpts);
+    if (historyResponse.ok && seq === conn.requestSeq) {
+      loadJson(await historyResponse.text(), `${liveBase}/pdo?slave=${slave}&history=1 (${reason})`);
+    }
+    const topologyResponse = await fetch(`${liveBase}/topology`, requestOpts);
+    if (topologyResponse.ok && seq === conn.requestSeq) {
+      loadJson(await topologyResponse.text(), `${liveBase}/topology (${reason})`);
+    }
+    const metricsResponse = await fetch(`${liveBase}/metrics?slave=${slave}`, requestOpts);
+    if (metricsResponse.ok && seq === conn.requestSeq) {
+      loadMetrics(await metricsResponse.text(), `${liveBase}/metrics?slave=${slave} (${reason})`);
+    }
+    await loadAudit();
+    noteData();
+    if (conn.mode === "STOPPED" || conn.mode === "RECONNECTING") setConnMode(conn.lastMode);
+  } catch (error) {
+    conn.failures += 1;
+    if (conn.failures >= conn.maxFailures) {
+      stopPollingTimer();
+      if (conn.source) {
+        conn.source.close();
+        conn.source = null;
+      }
+      setConnMode("STOPPED");
+    } else {
+      setConnMode("STALE");
+    }
+    message.textContent = `实时请求失败（${conn.failures}/${conn.maxFailures}）：${error.message}`;
+  }
+}
+
+function startPollingTimer(intervalMs) {
+  if (conn.timer) clearInterval(conn.timer);
+  conn.pollIntervalMs = intervalMs;
+  conn.timer = setInterval(() => {
+    void pollOnce("poll");
+  }, intervalMs);
+}
+
+function startHeartbeat() {
+  if (conn.heartbeat) clearInterval(conn.heartbeat);
+  // 2× 刷新间隔无新数据 → STALE（保留最后值 + 时间/Δ；不得伪造实时）。
+  conn.heartbeat = setInterval(() => {
+    if (conn.paused || conn.mode === "STOPPED" || conn.mode === "IDLE") {
+      updateConnUi();
+      return;
+    }
+    if (conn.lastDataAt && Date.now() - conn.lastDataAt > MAX_DELTA_MS) {
+      if (conn.mode === "LIVE_SSE" || conn.mode === "LIVE_POLL") setConnMode("STALE");
+    }
+    updateConnUi();
+  }, 500);
+}
+
+function connectSse() {
+  if (!liveBase || conn.paused) return;
+  if (conn.source) {
+    conn.source.close();
+    conn.source = null;
+  }
+  const slave = selectedSlave();
+  setConnMode("CONNECTING");
+  const source = new EventSource(`${liveBase}/events?slave=${slave}`);
+  conn.source = source;
+  source.onopen = () => setConnMode("LIVE_SSE");
+  source.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.schema === "ec-sim/state-v1") {
+        currentState = data;
+        message.textContent = `SSE：${liveBase}/events?slave=${slave}`;
+        noteData();
+        if (conn.mode !== "LIVE_SSE") setConnMode("LIVE_SSE");
+        renderAll();
+      }
+    } catch (error) {
+      message.textContent = `SSE 解析失败：${error.message}`;
+    }
+  };
+  source.onerror = () => {
+    // 断流 → 显式降级为 LIVE_POLL（不得继续显示 LIVE 单字）；保留最后数据 + 时间戳。
+    if (conn.source) {
+      conn.source.close();
+      conn.source = null;
+    }
+    if (conn.mode === "STOPPED") return;
+    setConnMode("LIVE_POLL");
+    if (!conn.timer) startPollingTimer(1000);
+    // 5s 后单次重连探测（只用 1 个 EventSource；不做无限叠加定时器）。
+    if (conn.staleTimer) clearTimeout(conn.staleTimer);
+    conn.staleTimer = setTimeout(() => {
+      if (conn.mode === "LIVE_POLL") connectSse();
+    }, 5000);
+  };
+  // SSE 期间其余块按 2s 轮询（PDO/拓扑/指标/审计）。
+  startPollingTimer(2000);
 }
 
 function startLive() {
   stopLive();
   if (!liveBase) return;
-  // 优先 SSE（`GET /events`）：状态由服务端推送；PDO/拓扑/指标仍定时拉取（2s）。
-  if (typeof window !== "undefined" && window.EventSource) {
-    liveSource = new EventSource(`${liveBase}/events?slave=${selectedSlave()}`);
-    liveSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.schema === "ec-sim/state-v1") {
-          currentState = data;
-          message.textContent = `SSE：${liveBase}/events`;
-          renderAll();
-        }
-      } catch (error) {
-        message.textContent = `SSE 解析失败：${error.message}`;
-      }
-    };
-    liveSource.onerror = () => {
-      message.textContent = "SSE 连接中断（浏览器会自动重连）";
-    };
-    liveTimer = setInterval(async () => {
-      try {
-        const slave = selectedSlave();
-        const pdoResponse = await fetch(`${liveBase}/pdo?slave=${slave}`);
-        if (pdoResponse.ok)
-          loadJson(await pdoResponse.text(), `${liveBase}/pdo?slave=${slave} (live)`);
-        const historyResponse = await fetch(`${liveBase}/pdo?slave=${slave}&history=1`);
-        if (historyResponse.ok)
-          loadJson(
-            await historyResponse.text(),
-            `${liveBase}/pdo?slave=${slave}&history=1 (live)`,
-          );
-        const topologyResponse = await fetch(`${liveBase}/topology`);
-        if (topologyResponse.ok)
-          loadJson(await topologyResponse.text(), `${liveBase}/topology (live)`);
-        const metricsResponse = await fetch(`${liveBase}/metrics?slave=${slave}`);
-        if (metricsResponse.ok)
-          loadMetrics(await metricsResponse.text(), `${liveBase}/metrics?slave=${slave} (live)`);
-      } catch (error) {
-        message.textContent = `实时拉取失败：${error.message}`;
-      }
-    }, 2000);
+  conn.lastDataAt = null;
+  conn.failures = 0;
+  if (conn.paused) {
+    setConnMode("PAUSED");
     return;
   }
-  // 回退：无 EventSource 时用 1s 轮询。
-  liveTimer = setInterval(async () => {
-    try {
-      const slave = selectedSlave();
-      const stateResponse = await fetch(`${liveBase}/state?slave=${slave}`);
-      if (stateResponse.ok)
-        loadJson(await stateResponse.text(), `${liveBase}/state?slave=${slave} (live)`);
-      const pdoResponse = await fetch(`${liveBase}/pdo?slave=${slave}`);
-      if (pdoResponse.ok)
-        loadJson(await pdoResponse.text(), `${liveBase}/pdo?slave=${slave} (live)`);
-      const historyResponse = await fetch(`${liveBase}/pdo?slave=${slave}&history=1`);
-      if (historyResponse.ok)
-        loadJson(
-          await historyResponse.text(),
-          `${liveBase}/pdo?slave=${slave}&history=1 (live)`,
-        );
-      const topologyResponse = await fetch(`${liveBase}/topology`);
-      if (topologyResponse.ok)
-        loadJson(await topologyResponse.text(), `${liveBase}/topology (live)`);
-      const metricsResponse = await fetch(`${liveBase}/metrics?slave=${slave}`);
-      if (metricsResponse.ok)
-        loadMetrics(await metricsResponse.text(), `${liveBase}/metrics?slave=${slave} (live)`);
-    } catch (error) {
-      message.textContent = `实时刷新失败：${error.message}`;
+  startHeartbeat();
+  void pollOnce("initial").then(() => {
+    if (typeof window !== "undefined" && window.EventSource) connectSse();
+    else setConnMode("LIVE_POLL");
+  });
+}
+
+function reconnectNow() {
+  if (!liveBase) {
+    message.textContent = "请先填写 API 地址并载入。";
+    return;
+  }
+  stopLive();
+  conn.failures = 0;
+  setConnMode("RECONNECTING");
+  setStaticModeNotice(false);
+  void pollOnce("reconnect").then(() => {
+    if (conn.mode === "STOPPED") {
+      setConnMode("STOPPED");
+      return;
     }
-  }, 1000);
+    if (typeof window !== "undefined" && window.EventSource) connectSse();
+    else setConnMode("LIVE_POLL");
+  });
+}
+
+function togglePause() {
+  conn.paused = !conn.paused;
+  if (conn.paused) {
+    stopLive();
+    setConnMode("PAUSED");
+  } else {
+    setConnMode("RECONNECTING");
+    startLive();
+  }
 }
 
 document.getElementById("file").addEventListener("change", async (event) => {
@@ -608,7 +957,14 @@ document.getElementById("load-api").addEventListener("click", async () => {
     if (metricsResponse.ok)
       loadMetrics(await metricsResponse.text(), `${base}/metrics?slave=${slave}`);
     liveBase = base;
+    conn.lastDataAt = Date.now();
+    await loadAudit();
+    updateSdoCurrent();
     if (document.getElementById("live").checked) startLive();
+    else {
+      setConnMode("IDLE");
+      updateConnUi();
+    }
   } catch (error) {
     message.textContent = `API 载入失败：${error.message}`;
   }
@@ -625,8 +981,45 @@ Promise.all([tryFetchJson("state.json"), tryFetchJson("dict.json"), tryFetchJson
 
 document.getElementById("live").addEventListener("change", (event) => {
   if (event.target.checked) startLive();
-  else stopLive();
+  else {
+    stopLive();
+    setConnMode("IDLE");
+    updateConnUi();
+  }
 });
+
+// DOD-03：切站 = 切换数据上下文；重连（丢弃旧 SSE/轮询，避免混站）。
+document.getElementById("slave-index").addEventListener("change", () => {
+  lastSdoRead = null;
+  conn.lastDataAt = null;
+  conn.failures = 0;
+  updateSdoCurrent();
+  if (liveBase && document.getElementById("live").checked && !conn.paused) reconnectNow();
+});
+
+document.getElementById("reconnect").addEventListener("click", () => reconnectNow());
+document.getElementById("pause-toggle").addEventListener("click", () => togglePause());
+document.getElementById("sdo-audit-refresh").addEventListener("click", () => {
+  void loadAudit();
+});
+
+// DOD-03 §3.3-7：页面隐藏暂停轮询；恢复可见立即拉一次。
+document.addEventListener("visibilitychange", () => {
+  conn.hidden = document.hidden;
+  if (document.hidden) {
+    stopPollingTimer();
+    if (conn.staleTimer) {
+      clearTimeout(conn.staleTimer);
+      conn.staleTimer = null;
+    }
+  } else if (liveBase && document.getElementById("live").checked && !conn.paused) {
+    void pollOnce("visible");
+  }
+});
+
+// 初始 UI：徽标/数据时间/暂停按钮。
+updateConnUi();
+updateSdoCurrent();
 
 // ---- B42：SDO 面板（`GET /sdo` 只读浏览 + `--serve-write` 下二次确认写入）----
 // 说明：本页无法探测服务端是否开启 `--serve-write`，因此写入默认关闭；
@@ -671,7 +1064,14 @@ function sdoQuery() {
     setSdoMessage("sdo-status", "子索引非法：0–255。", true);
     return null;
   }
-  return { index, sub, query: `?index=0x${index.toString(16).padStart(4, "0").toUpperCase()}&sub=${sub}` };
+  const slave = selectedSlave();
+  return {
+    index,
+    sub,
+    slave,
+    // DOD-13（G-04 UI 半）：`/sdo` 请求必须带当前站（0-based）；B55 起后端校验非法/越界 → 404。
+    query: `?index=0x${index.toString(16).padStart(4, "0").toUpperCase()}&sub=${sub}&slave=${slave}`,
+  };
 }
 
 function hexToBytes(hex) {
@@ -710,12 +1110,22 @@ async function sdoFailureHint(response) {
   } catch (error) {
     detail = "";
   }
-  if (response.status === 401) {
-    return "401：需要 Authorization: Bearer token。浏览器 fetch 无法自动带 token，请经反向代理注入或改用 curl（--serve-token-env 模式）。";
+  // DOD-02：每条错误给「原因 + 影响 + 下一步」（不是只显示 HTTP 码）。
+  if (response.status === 400) {
+    return `400：请求参数非法${detail ? `（${detail}）` : ""}。影响：本次读写未执行。下一步：检查值长度是否等于对象位长（小端原始字节）。`;
   }
-  if (response.status === 403) return `403：服务端拒绝${detail ? `（${detail}）` : ""}`;
-  if (response.status === 404) return `404：对象/子索引不存在或参数缺失${detail ? `（${detail}）` : ""}`;
-  if (response.status === 405) return `405：写操作未启用${detail ? `（${detail}）` : ""}——服务端需 --serve-write`;
+  if (response.status === 401) {
+    return "401：需要 Authorization: Bearer token。影响：当前页面无法鉴权（浏览器 fetch 无法自动带 token）。下一步：经反向代理注入请求头，或改用 curl（--serve-token-env 模式）。";
+  }
+  if (response.status === 403) {
+    return `403：服务端拒绝${detail ? `（${detail}）` : ""}。影响：对象被写白名单/安全排除规则阻止。下一步：确认 manifest 声明 writable 且不是身份/配置对象。`;
+  }
+  if (response.status === 404) {
+    return `404：对象/子索引不存在或参数缺失${detail ? `（${detail}）` : ""}。影响：未取得数据。下一步：核对索引/子索引与站号（0-based，0..N-1）。`;
+  }
+  if (response.status === 405) {
+    return `405：写操作未启用${detail ? `（${detail}）` : ""}。影响：服务端未开启写路径。下一步：以 --serve-write 启动服务。`;
+  }
   return `${response.status}：${detail || response.statusText || "请求失败"}`;
 }
 
@@ -736,9 +1146,10 @@ async function readSdo() {
     }
     const data = JSON.parse(await response.text());
     renderSdoResult(data);
+    lastSdoRead = data;
     setSdoMessage(
       "sdo-status",
-      `已读取 ${data.index}:${String(data.sub).padStart(2, "0")} ${data.name || ""}`.trim(),
+      `已读取站 ${parsed.slave} 的 ${data.index}:${String(data.sub).padStart(2, "0")} ${data.name || ""}`.trim(),
       false,
     );
   } catch (error) {
@@ -764,11 +1175,28 @@ async function writeSdo() {
     return;
   }
   const written = bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  // DOD-02：confirm 信息增强（对象名/位长/旧值/新值/站号 + STALE/暂停警告 + 审计提示）。
+  const current =
+    lastSdoRead &&
+    lastSdoRead.schema === "ec-sim/sdo-v1" &&
+    lastSdoRead.index === `0x${parsed.index.toString(16).padStart(4, "0").toUpperCase()}` &&
+    Number(lastSdoRead.sub) === parsed.sub
+      ? lastSdoRead
+      : null;
+  const staleWarning =
+    conn.mode === "STALE" || conn.mode === "PAUSED" || conn.mode === "STOPPED"
+      ? `\n⚠️ 当前数据可能过期（${connBadgeText(conn.mode)}，最后数据 ${ageText()}）；写入前请确认现场状态。`
+      : "";
   // 二次确认：勾选“允许写入”是第一步，此 confirm 是第二步。
   const confirmed = window.confirm(
-    `确认写入对象 ${parsed.index.toString(16).toUpperCase().padStart(4, "0")}h:${String(parsed.sub).padStart(2, "0")}？\n` +
+    `确认写入从站 ${parsed.slave}（0-based，0..N-1）的对象 ` +
+      `${parsed.index.toString(16).toUpperCase().padStart(4, "0")}h:${String(parsed.sub).padStart(2, "0")}？\n` +
+      `对象名：${current ? current.object_name || current.name || "-" : "（未读取；建议先点“读取”核对旧值/位长）"}\n` +
+      `位长/访问：${current ? `${current.bits} 位 / ${current.access}` : "-"}\n` +
+      `旧值（小端 hex）：${current ? current.value_hex || "-" : "-"}\n` +
       `新值（小端 hex）：${written}\n\n` +
-      "该操作仅在服务端以 --serve-write 启动时生效；写入会记入 /sdo-audit。",
+      "该操作仅在服务端以 --serve-write 启动时生效；写入会记入 /sdo-audit。" +
+      staleWarning,
   );
   if (!confirmed) {
     setSdoMessage("sdo-write-status", "已取消写入。", false);
@@ -788,10 +1216,12 @@ async function writeSdo() {
     const data = JSON.parse(await response.text());
     setSdoMessage(
       "sdo-write-status",
-      `写入成功：${data.old_hex || "-"} → ${data.written_hex}（审计见 GET /sdo-audit）`,
+      `写入成功（站 ${parsed.slave}）：${data.old_hex || "-"} → ${data.written_hex}（审计见 GET /sdo-audit）`,
       false,
     );
+    lastSdoRead = null; // 旧值已变化，下次 confirm 前重新读取
     await readSdo();
+    await loadAudit();
   } catch (error) {
     setSdoMessage("sdo-write-status", `写入失败：${error.message}`, true);
   }

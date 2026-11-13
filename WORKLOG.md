@@ -37,6 +37,42 @@
 
 ---
 
+## 2026-11-13 团队班 — **task-43/H1：EC-Sim Web 实现（DOD-02/03/06/13 + DOD-11 断言迁移）**
+
+> 任务板 `task-43`；EC-Sim HMI = **有条件 GO-A**（实现准予、发布冻结）。仅改 EC-Sim `web/` + 静态检查脚本/文档。
+
+**做了什么**
+- **DOD-03（G-09）SSE 降级**（`web/app.js`）：页级 6 态状态机（`LIVE_SSE`/`LIVE_POLL`/`STALE`/`STOPPED`/
+  `PAUSED`/`RECONNECTING`）；SSE 断流 → `LIVE · 轮询` + E-10 banner（非 LIVE 状态强制不出现 "LIVE" 字样）；
+  2×刷新间隔无数据 → `STALE`（`body.stale` 给所有依赖值加陈旧角标 + 数据时间变黄 + Δ）；
+  3 次失败 → `STOPPED`（停自动请求、写按钮禁用、`[重新连接]`）；`visibilitychange` 隐藏暂停/可见拉一次；
+  单 interval/单 EventSource/请求序号丢弃过期响应。
+- **DOD-02**：静态快照模式说明（`#mode-notice` + 启动示例）；`/sdo-audit` 只读审计表（`#sdo-audit`，
+  实时模式拉取、写后立即刷新）；`confirm` 信息增强（站号/对象名/位长/访问/旧值/新值/审计 + STALE 过期警告）；
+  400/401/403/404/405 统一「原因 + 影响 + 下一步」。
+- **DOD-13（UI 半）**：`/sdo` 请求带 `?slave=`（0-based，配合 B55 后端校验）；站号文案 0..N-1；
+  `#sdo-current` 显示当前站/数据年龄；AL 派生 chip（state&0x0F + bit4 error + bit5 ID 请求）。
+- **DOD-06**：`web/index.html` CSS：按钮/输入/选择 `min-height/min-width: 44px`、checkbox 24px、label 行高 44px、
+  focus 环 2px。
+- **DOD-11**：`scripts/spikes/web-sdo-panel-check.py` 断言迁移**同 commit**——原 10 控件/13 标记全覆盖保留 +
+  新增 11 H1 控件/18 H1 标记 + 44px/0-based/非 LIVE 字样消除断言；差异记录在证据文档 §3。
+- 证据：`docs/verification/2026-11-13-hmi-h1-web.md`；`web/README.md` 增 H1 说明。
+
+**验证结果**
+- `node --check web/app.js` **EXIT=0**；`web-sdo-panel-check.py` **EXIT=0**（SDO 10 控件 + H1 11 控件；
+  SDO 13 + H1 18 标记）；静态同源 smoke（`--serve --web-root web` 取 `/`、`/app.js`、`/state`）**EXIT=0**。
+- ⚠️ **不写"降级 PASS"**：DOD-03 T-SSE-01..06、DOD-06 DOM 实测 44px、审计/confirm 真实浏览器行为
+  → 由 `sim-ux` 走查判定；`0x18` 维持 NOT-JUDGED（BL-20 暂停/v1.x）。
+
+**卡点**
+- 浏览器交互验收依赖 sim-ux 走查；EC-Sim VM 未参与本轮（纯静态/本机 smoke）。
+
+**下次开工第一件事**
+- 等 sim-ux 的 DOD 走查结果 → 回填 `docs/verification/2026-11-13-hmi-h1-web.md` §5 或按缺口修 H1；
+  之后按 H2 批次（DOD-01 契约脚本/testid 等）推进（需 Lead 建任务）。
+
+---
+
 ## 2026-11-13 团队班 — **task-41/B60：GAP-14 端到端 PDO 字节序探针 + M3 PASS 回写**
 
 > 任务板 `task-41`；Lead 会签 M3 PASS（`ECSIM-M3-EXIT-REVIEW.md` v0.5 §10.3 / `938cadd`）后的仓库回写。

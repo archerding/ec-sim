@@ -38,6 +38,22 @@ IDS = [
     "sdo-write-status",
 ]
 
+# H1（task-43）新增外壳/状态/审计控件：DOD-02 静态说明 + 审计；DOD-03 徽标/banner/数据时间/重连/暂停；
+# DOD-13 UI 站上下文（0-based 提示与 `/sdo` 带 slave）。
+H1_IDS = [
+    "conn-badge",
+    "data-time",
+    "reconnect",
+    "pause-toggle",
+    "conn-banner",
+    "mode-notice",
+    "sdo-current",
+    "sdo-audit-box",
+    "sdo-audit",
+    "sdo-audit-refresh",
+    "sdo-audit-status",
+]
+
 APP_MARKERS = [
     "readSdo",
     "writeSdo",
@@ -52,6 +68,28 @@ APP_MARKERS = [
     "401",
     "403",
     "404",
+]
+
+# H1（task-43）：DOD-03 六态 + 单定时器/可见性；DOD-02 审计/confirm 增强/静态说明；DOD-13 站上下文。
+H1_APP_MARKERS = [
+    "LIVE_SSE",
+    "LIVE_POLL",
+    "STALE",
+    "STOPPED",
+    "PAUSED",
+    "RECONNECTING",
+    "EventSource",
+    "pollOnce",
+    "startHeartbeat",
+    "loadAudit",
+    "renderAudit",
+    "visibilitychange",
+    "sdo-audit",
+    "?slave=",
+    "setStaticModeNotice",
+    "旧值（小端 hex）",
+    "位长/访问",
+    "数据可能过期",
 ]
 
 
@@ -72,14 +110,30 @@ readme_text = README.read_text(encoding="utf-8")
 for element_id in IDS:
     if f'id="{element_id}"' not in index_text:
         fail(f"index.html 缺少 SDO 面板控件 id={element_id}")
+for element_id in H1_IDS:
+    if f'id="{element_id}"' not in index_text:
+        fail(f"index.html 缺少 H1 控件 id={element_id}")
 for hint in ("--serve-token-env", "Authorization", "反向代理", "curl", "二次确认", "--serve-write"):
     if hint not in index_text:
         fail(f"index.html 缺少 SDO 面板提示：{hint}")
+# DOD-06：交互目标 ≥44px（按钮/输入）+ 触控说明。
+for css in ("min-height: 44px", "min-width: 44px"):
+    if css not in index_text:
+        fail(f"index.html 缺少 DOD-06 触控尺寸约束：{css}")
+# DOD-13：站号 0-based 文案。
+if "0-based" not in index_text:
+    fail("index.html 缺少 0-based 站号提示（DOD-13）")
 
 # 2) 面板逻辑与安全行为。
 for marker in APP_MARKERS:
     if marker not in app_text:
         fail(f"app.js 缺少 SDO 面板实现标记：{marker}")
+for marker in H1_APP_MARKERS:
+    if marker not in app_text:
+        fail(f"app.js 缺少 H1 实现标记：{marker}")
+# DOD-03：非 LIVE 状态不得显示 "LIVE" 字样（代码里必须显式替换）。
+if "replace(/LIVE/g" not in app_text:
+    fail("app.js 未实现非 LIVE 状态的 LIVE 字样消除（DOD-03 §3.3-1）")
 if "method: \"POST\"" not in app_text:
     fail("app.js 未见 POST /sdo 写入请求")
 if "/sdo${parsed.query}" not in app_text:
@@ -106,4 +160,7 @@ else:
         fail(f"node --check 失败：{result.stderr.strip() or result.stdout.strip()}")
     print("OK: node --check web/app.js 语法通过")
 
-print("OK: Web SDO 面板静态检查通过（%d 个控件、%d 个逻辑标记；无 DOM 自动化）" % (len(IDS), len(APP_MARKERS)))
+print(
+    "OK: Web SDO 面板静态检查通过（SDO %d 控件 + H1 %d 控件；SDO %d 逻辑标记 + H1 %d 标记；无 DOM 自动化）"
+    % (len(IDS), len(H1_IDS), len(APP_MARKERS), len(H1_APP_MARKERS))
+)

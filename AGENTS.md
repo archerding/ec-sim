@@ -685,6 +685,14 @@ user.email = deepseek-harness@users.noreply.github.com
   `[0x6041,0x6064,0x606C,0x6061]` + SM3 11B，并做**旧顺序负例判别**（offset2/3..7 不同时成立 → 旧顺序必 FAIL）；
   登记 B-2 验收聚合（36 → **37**，脚本自算）；验证机整轮 **B-2 `30 PASS / 0 FAIL / 7 SKIP（37）` PASS**。
   证据：`docs/verification/2026-11-13-gate-b2-acceptance-probes.md` §4 轮次 C。
+- [x] ~~**B61 H1 EC-Sim Web 实现（task-43 / GO-B DOD-02/03/06/13）**~~ ✅ **2026-11-13 团队班**：
+  `web/` 实现 DOD-03 SSE 降级（6 态状态机 + STALE/PAUSED/STOPPED + E-10 banner + 数据时间/Δ + 单定时器 +
+  visibilitychange）、DOD-02（静态模式说明、`/sdo-audit` 展示、confirm 信息增强、错误码「原因/影响/下一步」）、
+  DOD-13 UI 半（`/sdo?slave=` 0-based、站上下文、AL 派生 chip）、DOD-06（≥44px 触控/focus 环）；
+  DOD-11 断言迁移**同 commit**（原 10 控件/13 标记全覆盖保留 + H1 新增断言，差异记录在证据文档）。
+  证据：`docs/verification/2026-11-13-hmi-h1-web.md`（node --check / web-sdo-panel-check / 静态同源 smoke 全 EXIT=0）。
+  ⚠️ **DOD-03 T-SSE-01..06 / DOD-06 DOM 实测 / 审计/confirm 浏览器行为待 sim-ux 走查**（不写"降级 PASS"）；
+  发布仍冻结；`0x18` 维持 NOT-JUDGED（BL-20 暂停/v1.x）。
 
 ## 7. 目录约定
 

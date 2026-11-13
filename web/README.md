@@ -60,3 +60,25 @@ schema 与字段说明见 **[docs/CONTROL-PLANE.md](../docs/CONTROL-PLANE.md)**�
   `node --check`（无 node 时 SKIP）；⚠️ 该检查是静态资源回归，**无 DOM 自动化点击**；
 - 浏览器人工验收（本班起含 SDO 面板；⚠️ 无自动化 DOM 测试）；
 - 若需回归控制面契约，用 `scripts/spikes/*-probe.sh` 与 `control-plane-doc-check.py`。
+
+## H1（task-43 / GO-B DOD-02/03/06/13）— EC-Sim Web 实现
+
+本轮在 web/ 内实现 H1 批次（不改国内后端契约；数据仍只读）：
+
+- **DOD-03（G-09）SSE 降级**：页级连接状态机 IDLE → CONNECTING → LIVE_SSE ⇄ LIVE_POLL → STOPPED，
+  另有 STALE / PAUSED / RECONNECTING。SSE 断流 → LIVE · 轮询 + E-10 banner（不再显示 LIVE 单字）；
+  2×刷新间隔无新数据 → STALE（所有依赖值加陈旧角标 + 数据时间变黄 + Δ）；
+  连续 3 次请求失败 → STOPPED（停止自动请求、写按钮禁用、[重新连接] 手动恢复）；
+  isibilitychange 隐藏暂停轮询、可见立即拉一次；仅 1 个 interval/1 个 EventSource。
+- **DOD-02**：静态快照模式显式说明（#mode-notice）；/sdo-audit 只读审计表（#sdo-audit）；
+  confirm 信息增强（站号/对象名/位长/访问/旧值/新值/审计提示 + STALE/PAUSED 过期警告）；
+  错误码 400/401/403/404/405 均给「原因 + 影响 + 下一步」。
+- **DOD-13（UI 半）**：/sdo 请求携带 ?slave=（0-based，与 B55 后端校验一致）；站号输入/审计/提示均标注
+  0..N-1；AL 派生 chip（state & 0x0F，bit4=error 红、bit5=ID 请求黄）。
+- **DOD-06**：交互目标 ≥44×44 px（按钮/输入/复选/行内动作），focus 环 2px；相邻间距 ≥8。
+- **DOD-11**：web-sdo-panel-check.py 断言与 H1 改造**同 commit**迁移（保留原有 10 控件/13 标记覆盖，
+  新增 H1 控件/标记断言；旧断言等价覆盖未降）。
+
+> ⚠️ 静态检查（
+ode --check + web-sdo-panel-check.py）≠ 交互验收；DOD-03 的 T-SSE-01..06、
+> DOD-06 的 DOM 实测 44px、审计/confirm 的真实浏览器行为由 **sim-ux** 走查判定（本页不写"降级 PASS"）。
