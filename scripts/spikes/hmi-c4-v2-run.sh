@@ -22,6 +22,13 @@ cleanup() {
   kill "${SIM_PID:-0}" "${MASTER_PID:-0}" "${SSE_PID:-0}" 2>/dev/null
   wait 2>/dev/null
   ip link del "$TAP" 2>/dev/null
+  # 清理证明（sim-expert 口径 ⑤）：TAP/进程均无残留
+  {
+    echo "cleanup_at=$(date +%Is)"
+    ip link show "$TAP" 2>&1 || echo "tap_absent"
+    pgrep -af "ec-sim-esc --tap $TAP" || echo "sim_absent"
+    pgrep -af "simple_ng $TAP" || echo "master_absent"
+  } >"$OUT/cleanup-proof.txt" 2>&1
 }
 trap cleanup EXIT
 
@@ -38,6 +45,8 @@ for _ in $(seq 1 100); do
   curl -fsS --max-time 1 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 && break
   sleep 0.2
 done
+curl -fsS --max-time 3 "http://127.0.0.1:$PORT/metrics?slave=0" >"$OUT/metrics-before.txt" 2>&1 || true
+echo "WKC_NOTE: simple_ng WKC 提示为已知夹具现象（EL2008 probe 注释），不作为产品结论；只要 frames_in>0/AL 进 OP 即判主站流量已连通" >"$OUT/wkc-note.txt"
 
 # 持续主站流量（SOEM 循环，保证 frames_in 持续增长、AL 进 OP）
 (
@@ -86,6 +95,7 @@ while :; do
 done
 
 curl -fsS --max-time 3 "http://127.0.0.1:$PORT/state?slave=0" >"$OUT/last-state.json" 2>"$OUT/last-state.err" || true
+curl -fsS --max-time 3 "http://127.0.0.1:$PORT/metrics?slave=0" >"$OUT/metrics-after.txt" 2>&1 || true
 curl -sS -o /dev/null -w 'last_state_code=%{http_code} time_total=%{time_total}\n' --max-time 3 "http://127.0.0.1:$PORT/state?slave=0" >"$OUT/last-state-curl.txt" 2>&1 || true
 {
   echo "duration_seconds=$(( $(date +%s) - start ))"
