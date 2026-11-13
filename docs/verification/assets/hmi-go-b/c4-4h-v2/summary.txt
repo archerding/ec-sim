@@ -1,0 +1,11 @@
+duration_seconds=14409
+http_fail_total=0
+frames_in_last=22834414
+al_status_last=8
+sse_events_total=28341
+sse_connects_total=237
+samples_rows=241
+final_rss_kb=3596
+final_fds=6
+final_threads=3
+last_state_curl=last_state_code=200 time_total=0.000213

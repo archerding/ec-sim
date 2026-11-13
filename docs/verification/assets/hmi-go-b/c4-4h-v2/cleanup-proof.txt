@@ -1,0 +1,6 @@
+cleanup_at=03s
+Device "escsim0" does not exist.
+tap_absent
+sim_absent
+72196 /opt/ecsim/fixtures/soem/build/samples/simple_ng/simple_ng escsim0
+72258 /opt/ecsim/fixtures/soem/build/samples/simple_ng/simple_ng escsim0

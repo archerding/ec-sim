@@ -1,0 +1,9 @@
+postcheck_at=2026-11-14T03:54:33+08:00
+=== tap ===
+Device "escsim0" does not exist.
+tap_absent
+=== processes ===
+sim_absent
+master_absent
+=== ports ===
+port_free

@@ -1,0 +1,1 @@
+WKC_NOTE: simple_ng WKC 提示为已知夹具现象（EL2008 probe 注释），不作为产品结论；只要 frames_in>0/AL 进 OP 即判主站流量已连通

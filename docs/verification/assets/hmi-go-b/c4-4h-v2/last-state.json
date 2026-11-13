@@ -1,0 +1,27 @@
+{
+  "schema": "ec-sim/state-v1",
+  "tool": "ec-sim-esc 0.0.1",
+  "identity": {"vendor_id": "0x00000EC5", "product_code": "0x0000E5E3", "revision": "0x00010000", "serial": "0x00000000"},
+  "names": ["CNC virtual-loop CSP servo (SIMULATED)", "EC-Sim"],
+  "mailbox_declared": true,
+  "coe_details": 47,
+  "general_flags": 0,
+  "ebus_current_ma": 0,
+  "sync_managers": [
+    {"start": "0x1000", "length": 128, "control": "0x26", "status": 0, "enable": 1},
+    {"start": "0x1080", "length": 128, "control": "0x22", "status": 0, "enable": 1},
+    {"start": "0x1100", "length": 7, "control": "0x04", "status": 0, "enable": 1},
+    {"start": "0x1110", "length": 11, "control": "0x00", "status": 0, "enable": 1}
+  ],
+  "pdo_tx": [
+    {"index": "0x1A00", "sync_manager": 3, "entries": [{"index": "0x6041", "sub": 0, "bits": 16}, {"index": "0x6064", "sub": 0, "bits": 32}, {"index": "0x606C", "sub": 0, "bits": 32}, {"index": "0x6061", "sub": 0, "bits": 8}]}
+  ],
+  "pdo_rx": [
+    {"index": "0x1600", "sync_manager": 2, "entries": [{"index": "0x6040", "sub": 0, "bits": 16}, {"index": "0x6060", "sub": 0, "bits": 8}, {"index": "0x607A", "sub": 0, "bits": 32}]}
+  ],
+  "dc": null,
+  "profile": {"id": "com.ecsim.profile.cnc-csp-servo", "name": "CNC virtual-loop CSP servo (SIMULATED)"},
+  "dict_objects": 18
+,
+  "live": {"station_address": "0x1001", "al_status": "0x11", "al_status_code": "0x0011", "dc_time_ns": 22919824000, "stats": {"frames_in": 22919824, "frames_out": 22919806, "frames_dropped": 18, "datagrams_hit": 4517240, "mailbox_requests": 1412, "mailbox_responses": 1412, "dc_reg_reads": 765012, "dc_reg_writes": 765190}}
+}

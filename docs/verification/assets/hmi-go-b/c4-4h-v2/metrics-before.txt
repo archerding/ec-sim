@@ -1,0 +1,36 @@
+# HELP ecsim_frames_in_total 收到的 EtherCAT 帧总数
+# TYPE ecsim_frames_in_total counter
+ecsim_frames_in_total{slave="0",station_address="0x0000"} 2
+# HELP ecsim_frames_out_total 发出的 EtherCAT 帧总数
+# TYPE ecsim_frames_out_total counter
+ecsim_frames_out_total{slave="0",station_address="0x0000"} 0
+# HELP ecsim_frames_dropped_total 丢弃的帧总数
+# TYPE ecsim_frames_dropped_total counter
+ecsim_frames_dropped_total{slave="0",station_address="0x0000"} 2
+# HELP ecsim_datagrams_hit_total 命中的 datagram 总数
+# TYPE ecsim_datagrams_hit_total counter
+ecsim_datagrams_hit_total{slave="0",station_address="0x0000"} 0
+# HELP ecsim_mailbox_requests_total 邮箱请求总数
+# TYPE ecsim_mailbox_requests_total counter
+ecsim_mailbox_requests_total{slave="0",station_address="0x0000"} 0
+# HELP ecsim_mailbox_responses_total 邮箱响应总数
+# TYPE ecsim_mailbox_responses_total counter
+ecsim_mailbox_responses_total{slave="0",station_address="0x0000"} 0
+# HELP ecsim_dc_reg_reads_total DC 寄存器读次数
+# TYPE ecsim_dc_reg_reads_total counter
+ecsim_dc_reg_reads_total{slave="0",station_address="0x0000"} 0
+# HELP ecsim_dc_reg_writes_total DC 寄存器写次数
+# TYPE ecsim_dc_reg_writes_total counter
+ecsim_dc_reg_writes_total{slave="0",station_address="0x0000"} 0
+# HELP ecsim_dc_time_ns 模拟 DC 系统时间（ns，帧驱动）
+# TYPE ecsim_dc_time_ns gauge
+ecsim_dc_time_ns{slave="0",station_address="0x0000"} 2000
+# HELP ecsim_al_status 当前 AL 状态（低 4 位）
+# TYPE ecsim_al_status gauge
+# HELP ecsim_al_status_code AL Status Code
+# TYPE ecsim_al_status_code gauge
+ecsim_al_status{slave="0",station_address="0x0000"} 1
+ecsim_al_status_code{slave="0",station_address="0x0000"} 0
+# HELP ecsim_sdo_writes_total 控制面 SDO 写操作次数
+# TYPE ecsim_sdo_writes_total counter
+ecsim_sdo_writes_total 0
