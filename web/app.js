@@ -295,7 +295,8 @@ function section(title, ...children) {
 
 // DOD-01：带 data-testid 的 section（契约钩子，不改变显示）。
 function sectionT(testid, title, ...children) {
-  return el("section", { "data-testid": testid }, el("h2", {}, title), ...children);
+  // D1：同时提供 `id`，供 7 视图导航 `<a href="#...">`/深链锚点使用。
+  return el("section", { "data-testid": testid, id: testid }, el("h2", {}, title), ...children);
 }
 
 function toast(text) {
@@ -1571,7 +1572,9 @@ document.getElementById("load-api").addEventListener("click", async () => {
       updateConnUi();
     }
   } catch (error) {
-    message.textContent = `API 载入失败：${error.message}`;
+    message.textContent = window.ECSIM_I18N && window.ECSIM_I18N.lang === "en"
+      ? `E-04 connection failed: ${base} (host:port unreachable or service not started); check the --serve address and retry.`
+      : `E-04 连接失败：${base}（host:port 不可达或服务未启动）；请检查 --serve 地址后重试。`;
   }
 });
 
@@ -1622,6 +1625,52 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+
+// D2：L2 确认框接线（submit/cancel/Esc/Tab 焦点陷阱/关闭还焦点）。
+let confirmOpener = null;
+const sdoDialog = document.getElementById("sdo-confirm-dialog");
+if (sdoDialog) {
+  const submit = document.getElementById("sdo-confirm-submit");
+  const cancel = document.getElementById("sdo-confirm-cancel");
+  const closeDialog = (restore) => {
+    const pending = pendingSdoWrite;
+    closeSdoConfirm();
+    if (restore && confirmOpener) confirmOpener.focus();
+    confirmOpener = null;
+    return pending;
+  };
+  cancel?.addEventListener("click", () => {
+    closeDialog(true);
+    setSdoMessage("sdo-write-status", window.ECSIM_I18N && window.ECSIM_I18N.lang === "en" ? "Write cancelled." : "已取消写入。", false);
+  });
+  submit?.addEventListener("click", () => {
+    const pending = closeDialog(false);
+    if (pending) void performSdoWrite(pending.parsed, pending.bytes);
+  });
+  sdoDialog.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeDialog(true);
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusables = [cancel, submit].filter(Boolean);
+    if (focusables.length === 0) return;
+    const index = focusables.indexOf(document.activeElement);
+    if (event.shiftKey && (index <= 0 || index === -1)) {
+      event.preventDefault();
+      focusables[focusables.length - 1].focus();
+    } else if (!event.shiftKey && (index === focusables.length - 1 || index === -1)) {
+      event.preventDefault();
+      focusables[0].focus();
+    }
+  });
+}
+const originalOpen = openSdoConfirm;
+openSdoConfirm = function (parsed, bytes, info) {
+  confirmOpener = document.activeElement;
+  originalOpen(parsed, bytes, info);
+};
 // 初始 UI：徽标/数据时间/暂停按钮。
 updateConnUi();
 updateSdoCurrent();

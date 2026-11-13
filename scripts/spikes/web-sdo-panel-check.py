@@ -90,6 +90,11 @@ H1_APP_MARKERS = [
     "旧值（小端 hex）",
     "位长/访问",
     "数据可能过期",
+    "sdo-confirm-submit",
+    "sdo-confirm-cancel",
+    "performSdoWrite",
+    "Escape",
+    "Tab",
 ]
 
 

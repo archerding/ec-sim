@@ -220,6 +220,18 @@ def main():
         slot for slot in GENERIC_SLOTS if "${view}" not in combined and slot.split("-", 1)[1] not in combined
     ]
 
+    # 3b) G-20 回归：7 视图导航 href 目标必须存在（id 在 html，或 sectionT/testid 在 app.js）。
+    nav_targets = re.findall(r'href="#([A-Za-z0-9_-]+)"', index_text)
+    broken_nav = [
+        target for target in nav_targets
+        if f'id="{target}"' not in index_text
+        and f'"{target}"' not in app_text
+    ]
+    if broken_nav:
+        problems_nav = broken_nav
+    else:
+        problems_nav = []
+
     # 4) 命名检查：所有已出现的字面 testid 必须小写 kebab 且前缀合法。
     literal_bad = []
     for literal in TESTID_LITERAL_RE.findall(combined):
@@ -263,6 +275,8 @@ def main():
         problems.append(f"缺少通用态槽位模板：{missing_slots}")
     if literal_bad:
         problems.append(f"命名违规：{literal_bad}")
+    if problems_nav:
+        problems.append(f"导航 href 目标不存在（G-20）：{problems_nav}")
 
     if problems:
         print(f"FAIL: DOD-01 契约未全绿（固定 testid {found}/{total_fixed}，16 id 缺失 {len(missing_ids)}）")
