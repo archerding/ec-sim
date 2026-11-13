@@ -5546,3 +5546,11 @@
 
 **下次开工**
 - 等 sim-ux H1 走查结果先修 H1 缺口；VM 空闲后采 DOD-07/08 证据；实现 DOD-09 后 task-44 再收口。
+
+### H2 补充（同日）：headless Edge 采集 DOD-07/08 参考证据 + 44px 修复
+
+- 新 `scripts/spikes/hmi-browser-probe.mjs`（Edge headless + CDP，无第三方依赖）；本机静态模式采集
+  1024×768/1280×900/1920×1080/1024@125% 四组截图与度量，资产 `docs/verification/assets/hmi-h2/`。
+- 采集发现并修复 2 处 DOD-06 缺口：导航链接宽度 <44px、checkbox 24px → 统一 ≥44px；复测四视口
+  **<44px = 0、横向溢出 = 0**；静态 FCP 32–112 ms（8 站实时性能 ⚠️ 未测）。
+- 未占用 EC-Sim VM、未动 `vm-ecsim.lock`、未 reboot；headless 结果不替代 sim-ux 人工走查。

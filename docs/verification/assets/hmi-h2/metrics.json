@@ -1,0 +1,235 @@
+[
+  {
+    "label": "1024x768",
+    "width": 1024,
+    "height": 768,
+    "scale": 1,
+    "innerWidth": 1024,
+    "innerHeight": 768,
+    "devicePixelRatio": 1,
+    "scrollWidth": 1009,
+    "overflowX": -15,
+    "counts": {
+      "interactive": 47,
+      "visible": 43,
+      "under44": 0
+    },
+    "renderedSections": 7,
+    "appTextLength": 3999,
+    "under44": [],
+    "paint": [
+      {
+        "name": "first-paint",
+        "startTime": 112
+      },
+      {
+        "name": "first-contentful-paint",
+        "startTime": 112
+      }
+    ],
+    "navigation": {
+      "domContentLoaded": 49.2,
+      "load": 100.3,
+      "transferSize": 15551
+    },
+    "resources": [
+      {
+        "name": "app.js",
+        "duration": 4.6,
+        "transferSize": 72751
+      },
+      {
+        "name": "state.json",
+        "duration": 2.3,
+        "transferSize": 1600
+      },
+      {
+        "name": "dict.json",
+        "duration": 2.6,
+        "transferSize": 7129
+      },
+      {
+        "name": "pdo.json",
+        "duration": 2.8,
+        "transferSize": 635
+      },
+      {
+        "name": "favicon.ico",
+        "duration": 2.9,
+        "transferSize": 635
+      }
+    ],
+    "screenshot": ".local\\hmi-capture\\out3\\1024x768.png"
+  },
+  {
+    "label": "1280x900",
+    "width": 1280,
+    "height": 900,
+    "scale": 1,
+    "innerWidth": 1280,
+    "innerHeight": 900,
+    "devicePixelRatio": 1,
+    "scrollWidth": 1265,
+    "overflowX": -15,
+    "counts": {
+      "interactive": 47,
+      "visible": 43,
+      "under44": 0
+    },
+    "renderedSections": 7,
+    "appTextLength": 3999,
+    "under44": [],
+    "paint": [
+      {
+        "name": "first-paint",
+        "startTime": 32
+      },
+      {
+        "name": "first-contentful-paint",
+        "startTime": 32
+      }
+    ],
+    "navigation": {
+      "domContentLoaded": 9.7,
+      "load": 12.1,
+      "transferSize": 0
+    },
+    "resources": [
+      {
+        "name": "app.js",
+        "duration": 0,
+        "transferSize": 0
+      },
+      {
+        "name": "state.json",
+        "duration": 4.2,
+        "transferSize": 300
+      },
+      {
+        "name": "dict.json",
+        "duration": 4.4,
+        "transferSize": 300
+      },
+      {
+        "name": "pdo.json",
+        "duration": 5.1,
+        "transferSize": 635
+      }
+    ],
+    "screenshot": ".local\\hmi-capture\\out3\\1280x900.png"
+  },
+  {
+    "label": "1920x1080",
+    "width": 1920,
+    "height": 1080,
+    "scale": 1,
+    "innerWidth": 1920,
+    "innerHeight": 1080,
+    "devicePixelRatio": 1,
+    "scrollWidth": 1905,
+    "overflowX": -15,
+    "counts": {
+      "interactive": 47,
+      "visible": 43,
+      "under44": 0
+    },
+    "renderedSections": 7,
+    "appTextLength": 3999,
+    "under44": [],
+    "paint": [
+      {
+        "name": "first-paint",
+        "startTime": 56
+      },
+      {
+        "name": "first-contentful-paint",
+        "startTime": 56
+      }
+    ],
+    "navigation": {
+      "domContentLoaded": 18.5,
+      "load": 21.2,
+      "transferSize": 300
+    },
+    "resources": [
+      {
+        "name": "app.js",
+        "duration": 0,
+        "transferSize": 0
+      },
+      {
+        "name": "state.json",
+        "duration": 4.2,
+        "transferSize": 300
+      },
+      {
+        "name": "dict.json",
+        "duration": 4,
+        "transferSize": 300
+      },
+      {
+        "name": "pdo.json",
+        "duration": 4.3,
+        "transferSize": 635
+      }
+    ],
+    "screenshot": ".local\\hmi-capture\\out3\\1920x1080.png"
+  },
+  {
+    "label": "1024x768@125",
+    "width": 1024,
+    "height": 768,
+    "scale": 1.25,
+    "innerWidth": 1024,
+    "innerHeight": 768,
+    "devicePixelRatio": 1.25,
+    "scrollWidth": 1009,
+    "overflowX": -15,
+    "counts": {
+      "interactive": 47,
+      "visible": 43,
+      "under44": 0
+    },
+    "renderedSections": 7,
+    "appTextLength": 3999,
+    "under44": [],
+    "paint": [
+      {
+        "name": "first-paint",
+        "startTime": 44
+      },
+      {
+        "name": "first-contentful-paint",
+        "startTime": 44
+      }
+    ],
+    "navigation": {
+      "domContentLoaded": 11,
+      "load": 13.8,
+      "transferSize": 0
+    },
+    "resources": [
+      {
+        "name": "app.js",
+        "duration": 0,
+        "transferSize": 0
+      },
+      {
+        "name": "state.json",
+        "duration": 3,
+        "transferSize": 300
+      },
+      {
+        "name": "dict.json",
+        "duration": 3.4,
+        "transferSize": 300
+      },
+      {
+        "name": "pdo.json",
+        "duration": 3.9,
+        "transferSize": 635
+      }
+    ],
+    "screenshot": ".local\\hmi-capture\\out3\\1024x768@125.png"
+  }
+]

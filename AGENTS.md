@@ -740,3 +740,7 @@ tests-gpl/      只跑 GPL 主站的夹具（独立目录、独立许可、不�
     脱敏）**EXIT=0**。
   - ⚠️ **DOD-07 性能 / DOD-08 分辨率缩放 / DOD-09 i18n 未完成**（需浏览器窗口/实现）：不得记 PASS；
     证据与下一步见 `docs/verification/2026-11-13-hmi-h2-web.md`。
+
+  - ✅ **DOD-07/08 参考证据（headless）**：`scripts/spikes/hmi-browser-probe.mjs`（Edge headless + CDP）+
+    `docs/verification/assets/hmi-h2/`（4 视口截图/metrics）：渲染 7 section、可见交互 43、**<44px=0**、
+    横向溢出=0、静态 FCP 32–112 ms；并修 nav 链接/checkbox 的 44px 缺口。**8 站实时性能与 7 视图人工确认仍 ⚠️ 未测**。
