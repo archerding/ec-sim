@@ -16,6 +16,15 @@ pub mod esi;
 pub mod manifest;
 pub mod sii_gen;
 
+/// WASM 行为插件宿主（B43 / M3-W1 spike）。
+///
+/// 仅在 `wasm-runtime` feature 下编译（默认关闭）：依赖 wasmi 0.31（MIT），
+/// 提供 `env.read_pdo` / `env.write_pdo` / `env.log` 三个导入与 `tick` 导出，
+/// 插件只看到 PDO arena 快照、不进入实时环。选型与实测证据见
+/// `docs/spikes/spike-6-wasm-host.md`；arena 同步与 fuel/超时属 W2 后续工作。
+#[cfg(feature = "wasm-runtime")]
+pub mod wasm;
+
 /// 设备插件的最小契约。
 ///
 /// 真实实现由声明式 `plugin.yaml` 生成（或 WASM 导出），宿主按此 trait 分发；

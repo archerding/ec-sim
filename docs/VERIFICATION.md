@@ -80,6 +80,10 @@
 | `shim-latency.sh` | UDS shim 延迟基准（支持 SIM_CPU/PROBE_CPU/RT）：未绑核 p50≈111µs/p99≈196µs；`isolcpus=2,3` + RT（sim CPU2 `-f 50`、probe CPU3 `-f 80`）p50≈101µs/p99≈172µs；8 从站 RT p99≈181µs | **EXIT=0** |
 | `soem-multi-slave-probe.sh` | 未修改 SOEM 经 UDS shim 数到 **8 从站**并 OP：`8 slaves found`、`mapped 8O+8I`、WKC 24 | **EXIT=0** |
 | `soem-uds-probe.sh` | SOEM over UDS shim 的探索性夹具（以脚本内注记状态为准） | 见脚本注记 |
+| `wasm-plugin-probe.sh` | WASM 行为插件宿主（B43，可选 feature `wasm-runtime`，wasmi 0.31）：`read_pdo`/`write_pdo`/`log` 契约、1 万次 `tick` 不变式 | **EXIT=0**（本机）；⚠️ 验证机未跑（首次构建需 crates.io） |
+
+> `wasm-plugin-probe.sh` **不进入** `run-all-probes.sh` 门禁：它需要可选 feature 与 crates.io
+> 拉取依赖（离线应 SKIP），属 M3-W1 spike 证据；手动运行见 [spike-6](spikes/spike-6-wasm-host.md)。
 
 ## 辅助工具
 

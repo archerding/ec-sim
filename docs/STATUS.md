@@ -8,7 +8,7 @@
 核心 ESC（寄存器/SM/FMMU/AL/EEPROM-SII/邮箱/watchdog）+ CoE（SDO 加速/分段/SDO Info/
 Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/CST，Tier0 简化）
 + 声明式设备画像已实现；**未修改的 SOEM 2.0.0 与 IgH 1.6.13** 可发现从站并进入 OP
-（IgH 无应用时到 PREOP）。测试基线 **230 passed**。
+（IgH 无应用时到 PREOP）。测试基线 **230 passed**（另 `wasm-runtime` feature 下 7 个 WASM 单测）。
 
 ## 代码与测试
 
@@ -16,7 +16,7 @@ Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/
 | --- | --- | --- |
 | `esc-core` | 寄存器、SM/FMMU、AL 状态机、EEPROM-SII 生成、邮箱解析、watchdog | 86 |
 | `esc-node` | 从站应答器、PDI 内存、邮箱处理、CiA 402 行为、`ec-sim-esc` 二进制 | 71 |
-| `plugin-host` | plugin.yaml 解析/校验、SII/字典/ESI 生成 | 27 + 3 集成 |
+| `plugin-host` | plugin.yaml 解析/校验、SII/字典/ESI 生成；WASM 宿主（可选 feature） | 27 + 3 集成（另 `wasm-runtime` 下 +7） |
 | `wire` | EtherCAT 帧/datagram 编解码 + WKC 语义 | 23 |
 | `control-plane` | 只读快照 API：state-v1 / dict-v1 JSON + 路由表（`/state`、`/dict`） | 4 |
 
@@ -42,6 +42,10 @@ Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/
 - **设备画像**：`generic-io`、`beckhoff-el2008`、`generic-cia402-servo`、
   `generic-cia402-csv-servo`、`generic-cia402-cst-servo`（均自有 VID/PID + SIMULATED），
   `inovance-sv660n` 兼容画像（默认可变 PDO 已按公开手册核对：RPDO 8B / TPDO 22B + DC）。
+- **插件宿主（M3-W1 spike）**：`plugin-host` 的 `wasm-runtime` feature（**默认关闭**，默认构建仍零第三方
+  依赖）提供 wasmi 0.31 最小宿主——`env.read_pdo`/`env.write_pdo`/`env.log` + `tick` 导出、PDO arena
+  快照、日志上限 64KiB；WAT 夹具 + `wasm-plugin-probe.sh`；release 实测实例化 605µs / tick 179.5ns。
+  插件**不进入实时环**；arena 同步/fuel 超时/崩溃隔离属 W2。见 [spike-6](spikes/spike-6-wasm-host.md)。
 
 ## 控制面与 WebUI
 
@@ -91,6 +95,8 @@ cargo test --workspace
 
 ## 下一步（按优先级）
 
-1. B11：固定映射（0x1701..0x1705/0x1B01..0x1B04）生成与位长逐项核对；厂商扩展对象核对。
-2. DC 仿真（寄存器 + SYNC0/tick），实现后在测试画像上验证再声明 SII DC。
-3. CA 部分写/子索引顺序语义完善；fuzz 升级。
+1. B44（M3-W2）：PDO arena 同步（双缓冲/seqlock + generation）+ WASM 插件独占 worker 线程 + fuel/超时/内存上限。
+2. 验证机补跑 `wasm-plugin-probe.sh`（需 crates.io；同步依赖后执行）。
+3. B11：固定映射（0x1701..0x1705/0x1B01..0x1B04）生成与位长逐项核对；厂商扩展对象核对。
+4. DC 仿真（寄存器 + SYNC0/tick），实现后在测试画像上验证再声明 SII DC。
+5. CA 部分写/子索引顺序语义完善；fuzz 升级。

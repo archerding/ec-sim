@@ -8,3 +8,16 @@ description = "EC-Sim 插件宿主：声明式插件加载与 WASM 行为沙箱�
 
 [dependencies]
 esc-core = { path = "../esc-core" }
+# 仅 `wasm-runtime` feature 下编译（B43 / M3-W1 spike）。许可：wasmi MIT、wat MIT/Apache-2.0。
+# 默认关闭 → 默认构建与 `cargo test --workspace` 保持零第三方依赖、无需 crates.io。
+wasmi = { version = "0.31.2", optional = true }
+wat = { version = "1", optional = true }
+
+[features]
+default = []
+# WASM 行为插件宿主（wasmi 解释器，不进入实时环；见 docs/spikes/spike-6-wasm-host.md）。
+wasm-runtime = ["dep:wasmi", "dep:wat"]
+
+[[example]]
+name = "wasm_plugin_demo"
+required-features = ["wasm-runtime"]

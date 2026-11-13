@@ -1,5 +1,53 @@
 ---
 
+## 2026-11-13 08:05 班（低峰）— **B43：M3-W1 WASM 行为插件宿主 spike（wasmi 0.31）**
+
+> 调度上下文计划重点（B2b 最小 ESC 应答器 / B8 双主站冒烟 / B4 wire crate）均已完成，
+> 按 `AGENTS.md` §5 取 backlog 顶部未完成项 **B43**。
+
+**做了什么**
+- 选型：**wasmi 0.31.2**（MIT/Apache-2.0 解释器）——对比 wasmtime 50.0.1（Apache-2.0 WITH
+  LLVM-exception；MSRV 1.95–1.97 与 workspace MSRV 1.75 不兼容，依赖数百包/构建分钟级）与
+  wasmi 1.x/2.x（需 Rust 1.86）；0.31.x 是同时满足 MSRV 1.75 的可行线（⚠️ 未在 1.75 工具链实测）。
+- `plugin-host` 新增**默认关闭**的 `wasm-runtime` feature：`crates/plugin-host/src/wasm.rs`
+  （`HostState` = PDO arena 快照 + 日志上限 64KiB + 调用/丢弃计数；`WasmPlugin::{from_wat,
+  from_wasm_bytes,call_tick}`；导入 `env.read_pdo`/`env.write_pdo`/`env.log`、导出 `tick`；
+  `WasmHostError::{InvalidModule,MissingExport,Trap}`；7 个单测：正常路径/越界读写/缺失导出/
+  非法 wasm/trap 不计数/超大 log/`take_logs` 语义）。
+- 夹具与示例：`crates/plugin-host/fixtures/wasm/counter.wat`（自写 WAT：`arena[4]=arena[0]+1`
+  并写一行日志，演示 SM2 输出快照 → SM3 输入快照）、`examples/wasm_plugin_demo.rs`
+  （打印实例化/单 tick 耗时与 1 万次 tick 不变式）。
+- 探针 `scripts/spikes/wasm-plugin-probe.sh`（逐行断言 demo 输出；离线时 SKIP exit 2；
+  **不加入** `run-all-probes.sh` 门禁——需可选 feature + crates.io）。
+- 证据文档 `docs/spikes/spike-6-wasm-host.md`（选型对比/契约/实测/已知限制）；`Cargo.lock`
+  增加 wasmi/wat 及传递依赖（`wasm-runtime` 全树 20 包，含本仓库 2 crate）。
+- 文档同步：`AGENTS.md`（B43 完成 + 新增 B44=W2）、`docs/plan/M3-scope.md`（W1 ✅、下一步）、
+  `docs/STATUS.md`（能力清单/测试基线/下一步）、`docs/VERIFICATION.md`（探针表 + 不进门禁说明）。
+
+**验证结果**
+- 本机：`cargo fmt --all -- --check` 通过；`cargo clippy -p plugin-host --features wasm-runtime
+  --all-targets -- -D warnings` 通过；`cargo test -p plugin-host --features wasm-runtime`
+  → **34 passed**（新增 7）；默认 `cargo test --workspace` → **230 passed**（feature 关闭，
+  默认构建仍零第三方依赖、无需 crates.io）。
+- `bash scripts/spikes/wasm-plugin-probe.sh` → **EXIT=0**（debug：per_tick≈1658 ns；
+  `pdo_after=29 00 00 00 2a…`、`log="tick"`、`log_lines=1 calls=1`、`invariants=ok`）。
+- release（独立 target 目录、从零构建 **13.2 s**）：实例化 **605.5 µs**、1 万次 tick
+  **179.5 ns/次**、示例 exe 2.2 MB；`wasm-runtime` 依赖树 20 包。
+- ⚠️ Linux 验证机本轮**未跑**该探针（验证机源码树是普通拷贝，首次构建需从 crates.io 拉可选
+  依赖）；验证方法：同步仓库后 `cargo test -p plugin-host --features wasm-runtime` +
+  `bash scripts/spikes/wasm-plugin-probe.sh`（网络经本机代理）。
+
+**卡点**
+- 宿主**无 fuel/超时/独立线程**、arena 无同步（普通 `Vec` 快照）→ 严禁在实时环调用，W2 解决；
+- 插件内存上限未校验；无 WASI/文件/网络/时间导入（白名单仅 3 个函数）；未接 `plugin.yaml`
+  的 `behavior:` 声明；wasmi 0.31 未声明 MSRV（仅 1.97.1 实测，⚠️ 待验证 1.75）。
+
+**下次开工第一件事**
+- **B44**：M3-W2 PDO arena 同步（双缓冲/seqlock + generation）+ 插件独占 worker 线程 +
+  fuel/超时/内存上限校验；顺带在验证机补跑 `wasm-plugin-probe.sh`（需要 crates.io）。
+
+---
+
 ## 2026-11-13 08:00 班（低峰）— **B42：M3-W6 Web SDO 面板（只读浏览 + 二次确认写入）**
 
 > 调度上下文计划重点（B2b 最小 ESC 应答器 / B8 双主站冒烟 / B4 wire crate）均已完成，
