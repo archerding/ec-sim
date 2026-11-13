@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>EC-Sim 状态视图</title>
+  <title data-i18n="app.title">EC-Sim 状态视图</title>
   <style>
     :root { color-scheme: light dark; }
     body { font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; padding: 24px; background: #0f1115; color: #e6e8ee; }
@@ -91,7 +91,7 @@
 </head>
 <body>
   <a class="skip-link" href="#app" data-testid="shell-skip-link">跳到主内容</a>
-  <h1>EC-Sim 状态视图</h1>
+  <h1 data-i18n="app.title">EC-Sim 状态视图</h1>
   <div class="sub">
     数据源：<code>ec-sim-esc --dump-state</code> 生成的 JSON（M2 WebUI 起点；状态/PDO/拓扑/指标只读，
     SDO 面板只读浏览，写入需显式开启且二次确认）。
@@ -105,20 +105,21 @@
     <span id="conn-badge" data-testid="shell-topbar-mode-badge" data-mode="IDLE" role="status" aria-live="polite">未连接</span>
     <span id="api-source" data-testid="shell-topbar-source">未连接</span>
     <span id="data-time" data-testid="shell-context-datetime">数据时间：-</span>
-    <button id="reconnect" data-testid="shell-topbar-reconnect" type="button">重新连接</button>
-    <button id="pause-toggle" data-testid="shell-topbar-pause" type="button" aria-pressed="false">暂停</button>
-    <a href="../docs/CONTROL-PLANE.md" data-testid="shell-topbar-about">关于 / 边界</a>
+    <button id="reconnect" data-testid="shell-topbar-reconnect" type="button" data-i18n="topbar.reconnect">重新连接</button>
+    <button id="pause-toggle" data-testid="shell-topbar-pause" type="button" aria-pressed="false" data-i18n="topbar.pause">暂停</button>
+    <a href="../docs/CONTROL-PLANE.md" data-testid="shell-topbar-about" data-i18n="topbar.about">关于 / 边界</a>
   </div>
   <nav id="shell-nav" aria-label="视图导航" style="margin-bottom:12px">
-    <a href="#overview-topology" data-testid="shell-nav-overview">总览</a>
-    <a href="#slave-identity" data-testid="shell-nav-slave">从站</a>
-    <a href="#pdo-current-table" data-testid="shell-nav-pdo">PDO</a>
-    <a href="#dict-table" data-testid="shell-nav-dict">字典</a>
-    <a href="#sdo-index-input" data-testid="shell-nav-sdo">SDO</a>
-    <a href="#evidence-boundaries" data-testid="shell-nav-evidence">证据</a>
-    <a href="#about-boundaries" data-testid="shell-nav-about">关于</a>
+    <a href="#overview-topology" data-testid="shell-nav-overview" data-i18n="nav.overview">总览</a>
+    <a href="#slave-identity" data-testid="shell-nav-slave" data-i18n="nav.slave">从站</a>
+    <a href="#pdo-current-table" data-testid="shell-nav-pdo" data-i18n="nav.pdo">PDO</a>
+    <a href="#dict-table" data-testid="shell-nav-dict" data-i18n="nav.dict">字典</a>
+    <a href="#sdo-index-input" data-testid="shell-nav-sdo" data-i18n="nav.sdo">SDO</a>
+    <a href="#evidence-boundaries" data-testid="shell-nav-evidence" data-i18n="nav.evidence">证据</a>
+    <a href="#about-boundaries" data-testid="shell-nav-about" data-i18n="nav.about">关于</a>
   </nav>
   <div id="conn-banner" role="alert" data-testid="shell-banner-error"></div>
+  <button id="lang-toggle" type="button" aria-pressed="false" style="min-height:44px;min-width:44px">EN</button>
   <div id="mode-notice"></div>
   <div id="shell-context" data-testid="shell-context">
     <span data-testid="shell-context-slave-select">从站：<input id="slave-index" type="number" min="0" value="0" style="width:80px" /></span>
@@ -131,23 +132,21 @@
   </div>
 
   <section>
-    <h2>载入状态</h2>
+    <h2 data-i18n="section.load">载入状态</h2>
     <input id="file" data-testid="shell-load-file" type="file" accept="application/json,.json" multiple />
     <div class="row" style="margin-top:10px">
-      <label>API 地址 <input id="api" type="text" value="http://127.0.0.1:8090" size="28" /></label>
-      <button id="load-api" type="button">从 API 载入</button>
-      <label><input id="live" type="checkbox" /> 实时刷新</label>
+      <label><span data-i18n="load.api">API 地址</span> <input id="api" type="text" value="http://127.0.0.1:8090" size="28" /></label>
+      <button id="load-api" type="button" data-i18n="load.fromApi">从 API 载入</button>
+      <label><input id="live" type="checkbox" /> <span data-i18n="load.live">实时刷新</span></label>
     </div>
-    <div class="sub" style="margin-top:8px">
-      从站在上方“从站”处选择（0-based，0..N-1）；实时还可用
-      <code>ec-sim-esc --serve 127.0.0.1:8090 --uds &lt;sock&gt; --manifest plugins/…</code>
-      （同进程提供 <code>/pdo</code>、<code>/topology</code>、<code>/metrics</code>、<code>/events</code>）。
+    <div class="sub" style="margin-top:8px" data-i18n="load.slaveHint">
+      从站在上方“从站”处选择（0-based，0..N-1）；实时还可用 ec-sim-esc --serve 127.0.0.1:8090 --uds &lt;sock&gt; --manifest plugins/…（同进程提供 /pdo、/topology、/metrics、/events）。
     </div>
     <div id="message" class="sub"></div>
   </section>
 
   <section>
-    <h2>SDO 浏览（只读 API）</h2>
+    <h2 data-i18n="section.sdo">SDO 浏览（只读 API）</h2>
     <p class="sub">
       经 <code>GET /sdo?index&amp;sub&amp;slave</code> 从运行时对象字典读取（<strong>不经过</strong> mailbox/CoE 往返）。
       需先在上方填写 API 地址（<code>--serve</code> 的地址）并载入；请求会带当前站号（B55 起后端校验 0-based）。
@@ -189,7 +188,7 @@
   </section>
 
   <section id="sdo-audit-box">
-    <h2>SDO 写审计（只读 API：<code>GET /sdo-audit</code>）</h2>
+    <h2 data-i18n="section.audit" data-i18n-html="1">SDO 写审计（只读 API：<code>GET /sdo-audit</code>）</h2>
     <p class="sub">
       最近 64 条受控写事件（服务端内存）；实时模式下随刷新更新，写入成功后会立即重取。
       审计需实时模式（静态快照无写事件）。
@@ -220,11 +219,12 @@
     </div>
   </div>
 
-  <footer data-testid="shell-footer-note">'
+  <footer data-testid="shell-footer-note" data-i18n="footer.boundary">
     EC-Sim 只读状态视图 · 快照语义（非实时 SLA）· 不宣称 EtherCAT 一致性/CTT/LinuxCNC 或任何认证；
     控制面默认无鉴权、仅回环/受信环境使用。⚠️ 观察值为读取时刻近似值。
   </footer>
 
+  <script src="i18n.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

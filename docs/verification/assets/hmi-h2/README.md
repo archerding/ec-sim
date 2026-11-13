@@ -31,3 +31,11 @@
 - 7 个视图的逐视图截图/抽屉、1024 下导航折叠的人工确认；
 - 8 站实时环境（`--slaves 8` + TAP/UDS）的首屏/交互/Timer 指标；
 - 真实浏览器（非 headless）的视觉走查与对比度取色。
+
+## DOD-09 i18n 截图（en 模式）
+
+- `en-1024x768.png`、`en-1280x900.png`、`en-1920x1080.png`、`en-1024x768@125.png` + `en-metrics.json`：
+  通过 `?lang=en` 静态覆盖（不写 localStorage）在 headless Edge 下采集；为 batch 1（静态外壳 i18n）证据。
+- 结果：四视口渲染正常、无横向溢出、可见交互仍全 ≥44px；动态文案（横幅/表头/字段/错误提示）i18n 迁移在
+  batch 2 完成后再补最终 en 截图。
+- 边界：headless 参考证据，不替代 sim-ux 真人走查。

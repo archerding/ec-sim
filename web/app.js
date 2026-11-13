@@ -216,7 +216,10 @@ function updateConnUi() {
   }
   if (pauseButton) {
     pauseButton.setAttribute("aria-pressed", conn.paused ? "true" : "false");
-    pauseButton.textContent = conn.paused ? "继续" : "暂停";
+    const i18n = window.ECSIM_I18N;
+    pauseButton.textContent = conn.paused
+      ? i18n ? i18n.t("topbar.resume") : "继续"
+      : i18n ? i18n.t("topbar.pause") : "暂停";
   }
   if (writeButton) {
     // STOPPED 下写按钮禁用并给 E-10 说明（§3.3-6）。
@@ -1617,6 +1620,19 @@ document.addEventListener("visibilitychange", () => {
 // 初始 UI：徽标/数据时间/暂停按钮。
 updateConnUi();
 updateSdoCurrent();
+
+// DOD-09：语言切换后重渲染动态文案（静态文案由 i18n.js 处理）。
+window.addEventListener("ecsim-lang", () => {
+  updateConnUi();
+  updateSdoCurrent();
+  renderAll();
+});
+const langToggle = document.getElementById("lang-toggle");
+if (langToggle) {
+  langToggle.addEventListener("click", () => {
+    if (window.ECSIM_I18N) window.ECSIM_I18N.toggle();
+  });
+}
 
 // ---- B42：SDO 面板（`GET /sdo` 只读浏览 + `--serve-write` 下二次确认写入）----
 // 说明：本页无法探测服务端是否开启 `--serve-write`，因此写入默认关闭；
