@@ -438,8 +438,54 @@ pub struct PluginManifest {
     pub objects: Vec<ObjectConfig>,
     /// 分布式时钟（DC）声明：支持标志 + 时序参数（SII DC 类别 0x003C）。
     pub dc: DcConfig,
+    /// WASM 行为插件声明（`behavior:`）；`None` = 纯声明式（无行为逻辑）。
+    pub behavior: Option<BehaviorConfig>,
     /// 证据链（R5）。
     pub sources: Vec<Source>,
+}
+
+/// WASM 行为插件声明（manifest `behavior:`，M3-W2 / B44）。
+///
+/// 行为插件**永不进入实时环**：`esc-node` 在帧循环里只做 PDO arena 发布与输出回取，
+/// 插件的编译/实例化/tick 全部发生在独立 worker 线程（见 `plugin_host::behavior`）。
+/// 本结构只描述"加载什么、怎么限流"，不需要 `wasm-runtime` feature 即可解析/校验。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BehaviorConfig {
+    /// WASM 代码路径（**相对 manifest 所在目录**；`.wasm` 或 `.wat`）。
+    pub code: String,
+    /// 目标 tick 频率（Hz；1..=8000）。worker 线程按此节流，宿主侧不参与调度。
+    pub tick_hz: u32,
+    /// 每次 tick 追加的 fuel 预算（wasmi 指令计量）；`None` = 运行时默认。
+    pub fuel_per_tick: Option<u64>,
+    /// 插件线性内存上限（字节）；`None` = 运行时默认。
+    pub max_memory_bytes: Option<usize>,
+    /// 宿主等待单次 tick 的超时（毫秒；1..=10000）；超时只放弃等待，不杀 worker。
+    pub tick_timeout_ms: u64,
+}
+
+impl BehaviorConfig {
+    /// 以 `manifest_path` 所在目录为基准解析 `code`，并拒绝绝对路径/`..` 穿越。
+    pub fn code_path(
+        &self,
+        manifest_path: impl AsRef<std::path::Path>,
+    ) -> Result<std::path::PathBuf, String> {
+        let manifest_path = manifest_path.as_ref();
+        let base = manifest_path
+            .parent()
+            .ok_or_else(|| format!("manifest 路径没有父目录：{}", manifest_path.display()))?;
+        let relative = std::path::Path::new(&self.code);
+        if relative.has_root()
+            || relative
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
+            return Err(format!(
+                "behavior.code 必须是 manifest 目录内的相对路径（不得绝对路径/包含 ..）：{}",
+                self.code
+            ));
+        }
+        Ok(base.join(relative))
+    }
 }
 
 /// CoE 邮箱能力位（manifest `mailbox.coe`）。
@@ -554,6 +600,25 @@ impl PluginManifest {
             None => DcConfig::default(),
         };
 
+        let behavior = match root.get("behavior") {
+            Some(node) => Some(BehaviorConfig {
+                code: required_scalar(node, "code")?,
+                tick_hz: integer_or(node.get("tick_hz"), 1000)?,
+                fuel_per_tick: node
+                    .get("fuel_per_tick")
+                    .map(|value| integer(Some(value)))
+                    .transpose()?
+                    .map(u64::from),
+                max_memory_bytes: node
+                    .get("max_memory_bytes")
+                    .map(|value| integer(Some(value)))
+                    .transpose()?
+                    .map(|bytes| bytes as usize),
+                tick_timeout_ms: u64::from(integer_or(node.get("tick_timeout_ms"), 50)?),
+            }),
+            None => None,
+        };
+
         let sources = root
             .get("sources")
             .map(|node| match node {
@@ -586,6 +651,7 @@ impl PluginManifest {
             fixed_pdos,
             objects,
             dc,
+            behavior,
             sources,
         })
     }
@@ -625,6 +691,55 @@ impl PluginManifest {
         }
         if self.dc.supported && self.dc.cycle_time0 == 0 {
             problems.push("dc.supported=true 需要 dc.cycle_time0（ns）".to_string());
+        }
+        if let Some(behavior) = &self.behavior {
+            let code = std::path::Path::new(behavior.code.trim());
+            if behavior.code.trim().is_empty() {
+                problems.push("behavior.code 为空：必须指向 .wasm/.wat 行为模块".to_string());
+            } else {
+                if code.has_root()
+                    || code
+                        .components()
+                        .any(|component| matches!(component, std::path::Component::ParentDir))
+                {
+                    problems.push(format!(
+                        "behavior.code 必须是 manifest 目录内的相对路径（不得绝对路径/包含 ..）：{}",
+                        behavior.code
+                    ));
+                }
+                let extension = code
+                    .extension()
+                    .and_then(std::ffi::OsStr::to_str)
+                    .unwrap_or_default()
+                    .to_ascii_lowercase();
+                if !matches!(extension.as_str(), "wasm" | "wat") {
+                    problems.push(format!(
+                        "behavior.code 扩展名必须是 .wasm 或 .wat：{}",
+                        behavior.code
+                    ));
+                }
+            }
+            if behavior.tick_hz == 0 || behavior.tick_hz > 8000 {
+                problems.push(format!(
+                    "behavior.tick_hz={} 超出范围（1..=8000）",
+                    behavior.tick_hz
+                ));
+            }
+            if behavior.tick_timeout_ms == 0 || behavior.tick_timeout_ms > 10_000 {
+                problems.push(format!(
+                    "behavior.tick_timeout_ms={} 超出范围（1..=10000）",
+                    behavior.tick_timeout_ms
+                ));
+            }
+            if behavior.fuel_per_tick == Some(0) {
+                problems.push("behavior.fuel_per_tick 必须为正数".to_string());
+            }
+            if behavior.max_memory_bytes == Some(0) {
+                problems.push("behavior.max_memory_bytes 必须为正数".to_string());
+            }
+            if matches!(behavior.max_memory_bytes, Some(bytes) if bytes > 64 * 1024 * 1024) {
+                problems.push("behavior.max_memory_bytes 超过 64 MiB 上限".to_string());
+            }
         }
         if self.sm.is_empty() {
             problems.push("sm 为空：必须声明 Sync Manager 布局".to_string());
@@ -1292,6 +1407,133 @@ sources:
                 .iter()
                 .any(|p| p.contains("cycle_time0")),
             "应报告缺少 cycle_time0"
+        );
+    }
+
+    #[test]
+    fn parses_behavior_declaration() {
+        const BEHAVIOR_MANIFEST: &str = r#"
+schema: ecsim.plugin/v1
+id: com.ecsim.x
+name: "X (SIMULATED)"
+version: 0.1.0
+kind: device
+identity:
+  vendor_id: 0x00000EC5
+  product_code: 9
+  simulated: true
+sm:
+  - {index: 2, dir: out, start: 0x1100, len: 4}
+  - {index: 3, dir: in, start: 0x1110, len: 4}
+pdo:
+  rx:
+    - index: 0x1600
+      entries:
+        - {index: 0x7000, sub: 1, bits: 32}
+  tx:
+    - index: 0x1A00
+      entries:
+        - {index: 0x6000, sub: 1, bits: 32}
+objects:
+  - {index: 0x7000, sub: 1, name: Out, dtype: UINT32, access: rw, pdo: rx}
+  - {index: 0x6000, sub: 1, name: In, dtype: UINT32, access: ro, pdo: tx}
+behavior:
+  code: code/behavior.wat
+  tick_hz: 250
+  fuel_per_tick: 200000
+  max_memory_bytes: 65536
+  tick_timeout_ms: 20
+sources:
+  - {title: "t", url: "https://example.invalid", accessed: "2026-11-13"}
+"#;
+        let manifest = PluginManifest::parse(BEHAVIOR_MANIFEST).expect("parse");
+        let behavior = manifest.behavior.as_ref().expect("behavior");
+        assert_eq!(behavior.code, "code/behavior.wat");
+        assert_eq!(behavior.tick_hz, 250);
+        assert_eq!(behavior.fuel_per_tick, Some(200_000));
+        assert_eq!(behavior.max_memory_bytes, Some(65_536));
+        assert_eq!(behavior.tick_timeout_ms, 20);
+        assert!(manifest.validate().is_empty(), "{:?}", manifest.validate());
+        // 相对 manifest 目录解析代码路径。
+        let resolved = behavior
+            .code_path("plugins/x/plugin.yaml")
+            .expect("resolve");
+        assert_eq!(
+            resolved,
+            std::path::Path::new("plugins/x").join("code/behavior.wat")
+        );
+
+        // 默认值：tick_hz=1000 / tick_timeout_ms=50，无 fuel/内存限制。
+        let minimal = BEHAVIOR_MANIFEST
+            .replace("  tick_hz: 250\n", "")
+            .replace("  fuel_per_tick: 200000\n", "")
+            .replace("  max_memory_bytes: 65536\n", "")
+            .replace("  tick_timeout_ms: 20\n", "");
+        let manifest = PluginManifest::parse(&minimal).expect("parse");
+        let behavior = manifest.behavior.as_ref().expect("behavior");
+        assert_eq!(behavior.tick_hz, 1000);
+        assert_eq!(behavior.tick_timeout_ms, 50);
+        assert_eq!(behavior.fuel_per_tick, None);
+        assert_eq!(behavior.max_memory_bytes, None);
+    }
+
+    #[test]
+    fn rejects_invalid_behavior_declarations() {
+        const BASE: &str = r#"
+schema: ecsim.plugin/v1
+id: com.ecsim.x
+name: "X (SIMULATED)"
+version: 0.1.0
+kind: device
+identity:
+  vendor_id: 1
+  product_code: 1
+  simulated: true
+sm:
+  - {index: 2, dir: out, start: 0x1100, len: 2}
+  - {index: 3, dir: in, start: 0x1110, len: 2}
+behavior:
+  code: ../escape.wasm
+  tick_hz: 0
+  fuel_per_tick: 0
+  max_memory_bytes: 0
+  tick_timeout_ms: 0
+sources:
+  - {title: "t", url: "https://example.invalid", accessed: "2026-11-13"}
+"#;
+        let manifest = PluginManifest::parse(BASE).expect("parse");
+        let problems = manifest.validate();
+        for needle in [
+            "相对路径",
+            "tick_hz",
+            "tick_timeout_ms",
+            "fuel_per_tick",
+            "max_memory_bytes",
+        ] {
+            assert!(
+                problems.iter().any(|problem| problem.contains(needle)),
+                "应报告“{needle}”：{problems:?}"
+            );
+        }
+        // 绝对路径与非法扩展名同样拒绝。
+        let absolute = BASE.replace("code: ../escape.wasm", "code: /tmp/plugin.wasm");
+        let problems = PluginManifest::parse(&absolute).expect("parse").validate();
+        assert!(
+            problems.iter().any(|problem| problem.contains("绝对路径")),
+            "{problems:?}"
+        );
+        let bad_ext = BASE
+            .replace("code: ../escape.wasm", "code: code/behavior.bin")
+            .replace("  tick_hz: 0\n", "  tick_hz: 100\n")
+            .replace("  fuel_per_tick: 0\n", "")
+            .replace("  max_memory_bytes: 0\n", "")
+            .replace("  tick_timeout_ms: 0\n", "");
+        let problems = PluginManifest::parse(&bad_ext).expect("parse").validate();
+        assert!(
+            problems
+                .iter()
+                .any(|problem| problem.contains(".wasm 或 .wat")),
+            "{problems:?}"
         );
     }
 

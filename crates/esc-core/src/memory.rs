@@ -67,6 +67,13 @@ impl DlUserMemory {
         Some(self.mem[offset..offset + len].to_vec())
     }
 
+    /// 读一段字节到调用方缓冲（**无堆分配**，供实时环使用）；越界返回 [`None`]。
+    pub fn read_into(&self, address: u16, dst: &mut [u8]) -> Option<usize> {
+        let offset = Self::offset(address, dst.len())?;
+        dst.copy_from_slice(&self.mem[offset..offset + dst.len()]);
+        Some(dst.len())
+    }
+
     /// 写一段字节；越界返回 `false`（数据不写入）。
     pub fn write(&mut self, address: u16, data: &[u8]) -> bool {
         let Some(offset) = Self::offset(address, data.len()) else {

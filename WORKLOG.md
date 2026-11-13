@@ -1,5 +1,55 @@
 ---
 
+## 2026-11-13 08:20 班（低峰）— **B44：M3-W2 子项 3 WASM 行为插件接 esc-node 非实时线程 + manifest `behavior:`**
+
+> 调度上下文计划重点（B2b 最小 ESC 应答器 / B8 双主站冒烟 / B4 wire crate）均已完成，
+> 按 `AGENTS.md` §5 取 backlog 顶部未完成项 **B44**，本班做其中最后一项可独立验证的子项 3。
+
+**做了什么**
+- `plugin-host::manifest`：新增 `BehaviorConfig{code,tick_hz,fuel_per_tick,max_memory_bytes,tick_timeout_ms}`
+  与 `PluginManifest.behavior`；`code_path()` 以 manifest 目录为基准解析并拒绝绝对路径/`..`；
+  `validate()` 校验 code 非空/.wasm|.wat、tick_hz 1..=8000、tick_timeout_ms 1..=10000、
+  fuel/内存上限为正（内存 ≤64MiB）。默认 tick_hz=1000、超时 50ms。新增 2 个解析/校验单测。
+- `plugin-host::behavior`（`wasm-runtime` feature）新增非实时运行时 `BehaviorRuntime`：
+  宿主线程只 `publish(&sm2,&sm3)`（arena 发布，不分配不等待）+ `poll_output()`（`try_lock`，
+  同 generation 只交付一次）；独立 ticker 线程按 `tick_hz` 节流、每个新 generation 最多 tick
+  一次，`tick_timeout` 超时只放弃本次结果（迟到结果按 id 丢弃），`Drop` 只置停止位并 detach，
+  不 join 卡住的插件。`BehaviorStats` 记录 ticks/timeouts/out_of_fuel/errors/最近耗时。
+- `esc-node` 新增 feature `wasm-runtime` 与 `esc_node::behavior::BehaviorBridge`
+  （SM2/SM3 布局 + `--manifest` 的 `behavior:` → 读写代码文件启动；帧循环只 copy→publish→
+  poll→写回 SM3，`copy_process_data`/`read_into` 为**无堆分配**读路径）。
+- `ec-sim-esc` 接线：`--manifest` 中声明 `behavior:` 时，UDS/TAP 两个帧循环在每帧处理后调用
+  `bridge.on_frame()`；未启用 feature 的构建打印"已忽略"提示。新增 Linux 目标交叉
+  `cargo check --target x86_64-unknown-linux-gnu` 覆盖（Windows 本机无法编译 TAP/UDS 代码）。
+- 文档：AGENTS B44 进度、`docs/plan/M3-scope.md` W2、`docs/STATUS.md`。
+
+**验证结果**
+- 本机（Windows）：`cargo fmt --all -- --check` OK；
+  `cargo clippy --workspace --all-targets -- -D warnings` OK；
+  `cargo test --workspace` → **238 passed / 0 failed**（新增 manifest 2 单测，默认 feature 不编译行为插件）；
+  `cargo clippy -p plugin-host --features wasm-runtime --all-targets -- -D warnings` OK；
+  `cargo clippy -p esc-node --features wasm-runtime --all-targets -- -D warnings` OK；
+  `cargo test -p plugin-host --features wasm-runtime` → **53 passed**（新增 4 个行为运行时单测：
+  往返、慢插件下宿主 publish/poll 有界、非法 WAT、drop 繁忙 worker 及时返回）；
+  `cargo test -p esc-node --features wasm-runtime` → **73 passed**（新增 2：桥接把插件输出写回
+  SM3 且单帧不等待插件、无 behavior 时返回 None）。
+- Linux 目标交叉编译检查：`cargo check --target x86_64-unknown-linux-gnu -p esc-node`
+  与 `--features wasm-runtime` 均 **exit 0**（覆盖 bin 的 TAP/UDS 接线）。
+- ⚠️ 未在 Linux 验证机上真实跑（验证机无 crates.io，`wasm-runtime` 依赖 wasmi/wat 无法拉取）；
+  bin 的运行时行为仅由库级单测 + 交叉编译保证，未做 UDS/TAP 端到端。
+  验证方法：验证机联网 `cargo run -p esc-node --features wasm-runtime -- --uds /tmp/x --manifest <带 behavior 的画像>`。
+
+**卡点**
+- manifest 的 `behavior:` 目前只有运行时接线，仓库内**没有**声明 behavior 的画像；`plugins/_template`
+  仍为注释示例。wasmi 0.31 无异步中断：`tick_timeout` 只是宿主不再等，CPU 上界依赖 `fuel_per_tick`；
+  插件 panic 仍会杀 worker（未做自动重启/多实例配额）。
+
+**下次开工第一件事**
+- 在仓库加一个自写 `plugins/behavior-counter`（WAT + manifest `behavior:`），并补
+  `scripts/spikes/wasm-behavior-probe.sh`（本机可直接跑；验证机需 crates.io 或预先 vendor 依赖）。
+
+---
+
 ## 2026-11-13 08:45 班（低峰）— **B44：M3-W2 子项 2 WASM 插件独占 worker 线程 + fuel/超时/内存上限**
 
 > 调度上下文计划重点（B2b 最小 ESC 应答器 / B8 双主站冒烟 / B4 wire crate）均已完成，

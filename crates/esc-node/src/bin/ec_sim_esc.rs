@@ -1242,8 +1242,8 @@ fn main() -> std::process::ExitCode {
         return std::process::ExitCode::from(2);
     }
 
-    let manifest = match manifest_path {
-        Some(path) => match plugin_host::manifest::PluginManifest::load(&path) {
+    let manifest = match manifest_path.as_deref() {
+        Some(path) => match plugin_host::manifest::PluginManifest::load(path) {
             Ok(manifest) => {
                 if !manifest.validate().is_empty() {
                     eprintln!(
@@ -1268,6 +1268,22 @@ fn main() -> std::process::ExitCode {
             }
         },
         None => None,
+    };
+
+    // B44 子项 3：manifest 的 `behavior:` 声明 → 行为插件代码路径（相对 manifest 目录）。
+    // worker 线程在 run/run_uds 里按 feature 启动；这里只解析路径并尽早报错。
+    let behavior_code: Option<std::path::PathBuf> = match (&manifest, manifest_path.as_deref()) {
+        (Some(manifest), Some(path)) => match manifest.behavior.as_ref() {
+            Some(behavior) => match behavior.code_path(path) {
+                Ok(code) => Some(code),
+                Err(error) => {
+                    eprintln!("ec-sim-esc: manifest behavior 声明非法：{error}");
+                    return std::process::ExitCode::from(2);
+                }
+            },
+            None => None,
+        },
+        _ => None,
     };
 
     let esi = match esi_path {
@@ -1304,6 +1320,7 @@ fn main() -> std::process::ExitCode {
             verbose,
             esm_preconditions,
             manifest,
+            behavior_code.clone(),
             esi,
             behavior,
             fault,
@@ -1319,6 +1336,7 @@ fn main() -> std::process::ExitCode {
             verbose,
             esm_preconditions,
             manifest,
+            behavior_code.clone(),
             esi,
             behavior,
             fault,
@@ -1333,6 +1351,7 @@ fn main() -> std::process::ExitCode {
             verbose,
             esm_preconditions,
             manifest,
+            behavior_code,
             esi,
             behavior,
             fault,
@@ -1468,6 +1487,7 @@ fn run_uds(
     verbose: bool,
     esm_preconditions: bool,
     manifest: Option<plugin_host::manifest::PluginManifest>,
+    behavior_code: Option<std::path::PathBuf>,
     esi: Option<plugin_host::esi::EsiDevice>,
     behavior: Option<String>,
     fault: Option<u16>,
@@ -1511,6 +1531,39 @@ fn run_uds(
         }
     };
     let responders = std::sync::Arc::new(std::sync::Mutex::new(responders));
+    // B44 子项 3：WASM 行为桥（插件在独立 ticker 线程，帧循环只 publish/poll）。
+    #[cfg(feature = "wasm-runtime")]
+    let mut behavior_bridge = match (&manifest, behavior_code.as_deref()) {
+        (Some(manifest), Some(code)) => {
+            match esc_node::behavior::BehaviorBridge::from_manifest(manifest, code) {
+                Ok(Some(bridge)) => {
+                    let config = bridge.config();
+                    println!(
+                        "BEHAVIOR wasm sm2=0x{:04X}/{}B sm3=0x{:04X}/{}B tick_hz={} timeout={}ms",
+                        config.sm2_address,
+                        config.sm2_len,
+                        config.sm3_address,
+                        config.sm3_len,
+                        config.tick_hz,
+                        config.tick_timeout_ms
+                    );
+                    Some(bridge)
+                }
+                Ok(None) => None,
+                Err(error) => {
+                    eprintln!("ec-sim-esc: 启动行为插件失败：{error}");
+                    return std::process::ExitCode::from(7);
+                }
+            }
+        }
+        _ => None,
+    };
+    #[cfg(not(feature = "wasm-runtime"))]
+    if behavior_code.is_some() {
+        eprintln!(
+            "ec-sim-esc: manifest 声明了 behavior，但本构建未启用 wasm-runtime feature（--features wasm-runtime），已忽略"
+        );
+    }
     if let Some(addr) = serve {
         let shared = std::sync::Arc::clone(&responders);
         let root = web_root.clone();
@@ -1558,7 +1611,14 @@ fn run_uds(
             for responder in guard.iter_mut() {
                 responder.tick(now_ms());
             }
-            esc_node::handle_frame_chain(&mut guard, &buf[..len], DEFAULT_SIM_MAC)
+            let reply = esc_node::handle_frame_chain(&mut guard, &buf[..len], DEFAULT_SIM_MAC);
+            #[cfg(feature = "wasm-runtime")]
+            if let Some(bridge) = behavior_bridge.as_mut() {
+                if let Some(first) = guard.first_mut() {
+                    bridge.on_frame(first);
+                }
+            }
+            reply
         };
         let Some(reply) = reply else {
             if verbose {
@@ -1589,6 +1649,7 @@ fn run(
     verbose: bool,
     esm_preconditions: bool,
     manifest: Option<plugin_host::manifest::PluginManifest>,
+    behavior_code: Option<std::path::PathBuf>,
     esi: Option<plugin_host::esi::EsiDevice>,
     behavior: Option<String>,
     fault: Option<u16>,
@@ -1632,6 +1693,39 @@ fn run(
         }
     };
     let responders = std::sync::Arc::new(std::sync::Mutex::new(responders));
+    // B44 子项 3：WASM 行为桥（插件在独立 ticker 线程，帧循环只 publish/poll）。
+    #[cfg(feature = "wasm-runtime")]
+    let mut behavior_bridge = match (&manifest, behavior_code.as_deref()) {
+        (Some(manifest), Some(code)) => {
+            match esc_node::behavior::BehaviorBridge::from_manifest(manifest, code) {
+                Ok(Some(bridge)) => {
+                    let config = bridge.config();
+                    println!(
+                        "BEHAVIOR wasm sm2=0x{:04X}/{}B sm3=0x{:04X}/{}B tick_hz={} timeout={}ms",
+                        config.sm2_address,
+                        config.sm2_len,
+                        config.sm3_address,
+                        config.sm3_len,
+                        config.tick_hz,
+                        config.tick_timeout_ms
+                    );
+                    Some(bridge)
+                }
+                Ok(None) => None,
+                Err(error) => {
+                    eprintln!("ec-sim-esc: 启动行为插件失败：{error}");
+                    return std::process::ExitCode::from(7);
+                }
+            }
+        }
+        _ => None,
+    };
+    #[cfg(not(feature = "wasm-runtime"))]
+    if behavior_code.is_some() {
+        eprintln!(
+            "ec-sim-esc: manifest 声明了 behavior，但本构建未启用 wasm-runtime feature（--features wasm-runtime），已忽略"
+        );
+    }
     if let Some(addr) = serve {
         let shared = std::sync::Arc::clone(&responders);
         let root = web_root.clone();
@@ -1663,7 +1757,14 @@ fn run(
             for responder in guard.iter_mut() {
                 responder.tick(now_ms());
             }
-            esc_node::handle_frame_chain(&mut guard, &buf[..len], mac)
+            let reply = esc_node::handle_frame_chain(&mut guard, &buf[..len], mac);
+            #[cfg(feature = "wasm-runtime")]
+            if let Some(bridge) = behavior_bridge.as_mut() {
+                if let Some(first) = guard.first_mut() {
+                    bridge.on_frame(first);
+                }
+            }
+            reply
         };
         let Some(reply) = reply else {
             continue;
@@ -1687,6 +1788,7 @@ fn run(
     _verbose: bool,
     _esm_preconditions: bool,
     _manifest: Option<plugin_host::manifest::PluginManifest>,
+    _behavior_code: Option<std::path::PathBuf>,
     _esi: Option<plugin_host::esi::EsiDevice>,
     _behavior: Option<String>,
     _fault: Option<u16>,
@@ -1707,6 +1809,7 @@ fn run_uds(
     _verbose: bool,
     _esm_preconditions: bool,
     _manifest: Option<plugin_host::manifest::PluginManifest>,
+    _behavior_code: Option<std::path::PathBuf>,
     _esi: Option<plugin_host::esi::EsiDevice>,
     _behavior: Option<String>,
     _fault: Option<u16>,

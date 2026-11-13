@@ -520,6 +520,18 @@ user.email = deepseek-harness@users.noreply.github.com
     ⚠️ 未在 Linux 验证机跑（需 crates.io 拉 wasmi）；wasmi 0.31 无异步中断 →
     `Timeout` 只是宿主不再等，CPU 上界仍须配有限 `fuel_per_tick`；插件 panic 会杀线程；
     未接 `esc-node`、未做多插件配额。
+  - 进度（2026-11-13 08:20 班）：**W2 子项 3：行为插件接 `esc-node` 非实时线程已实现**——
+    `plugin-host::manifest` 新增 `behavior:`（`BehaviorConfig`：code/tick_hz/fuel_per_tick/
+    max_memory_bytes/tick_timeout_ms，默认 1kHz/50ms；code 相对 manifest 目录并拒绝绝对路径/`..`）；
+    `plugin-host::behavior::BehaviorRuntime`（`wasm-runtime`）——宿主只 `publish` arena +
+    `poll_output`（`try_lock`、同 generation 只交付一次），独立 ticker 线程按 `tick_hz` 节流、
+    每 generation 至多一次 tick、超时只放弃本次结果、`Drop` 只置位并 detach（不 join 卡死的插件）；
+    `esc-node` 新增 feature `wasm-runtime` + `esc_node::behavior::BehaviorBridge`（SM2/SM3 ↔
+    arena ↔ worker，无分配读路径 `copy_process_data`）；`ec-sim-esc` 的 UDS/TAP 帧循环在
+    `--manifest` 声明 `behavior:` 后每帧 publish+poll，未启用 feature 时打印忽略提示。
+    测试 **238 passed**（默认）/ `wasm-runtime` 下 plugin-host **53**、esc-node **73**；
+    Linux 目标交叉 `cargo check`（默认 + feature）exit 0。⚠️ 仓库内暂无声明 behavior 的画像、
+    bin 运行时未在验证机端到端（验证机无 crates.io）；未做 panic 重启/多实例配额。
 
 ## 7. 目录约定
 

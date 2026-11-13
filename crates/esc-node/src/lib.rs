@@ -25,6 +25,12 @@ use std::collections::BTreeMap;
 
 pub mod cia402;
 
+/// WASM 行为插件的非实时桥（B44 子项 3）：SM2/SM3 ↔ arena ↔ worker 线程。
+///
+/// 仅 `wasm-runtime` feature；宿主帧循环只做 arena 发布与输出取回，**不** tick 插件。
+#[cfg(feature = "wasm-runtime")]
+pub mod behavior;
+
 use esc_core::eeprom::EepromInterface;
 use esc_core::fmmu::{Fmmu, FMMU_MAX};
 use esc_core::mailbox::{self, MailboxHeader, SdoInfoRequest, SdoRequest};
@@ -511,6 +517,17 @@ impl Responder {
         self.memory
             .read(address, len)
             .unwrap_or_else(|| vec![0u8; len])
+    }
+
+    /// 把 DL 用户内存/过程数据拷到调用方缓冲（**无堆分配**，供实时环使用）。
+    ///
+    /// 越界时补 0 且返回 `false`。
+    pub fn copy_process_data(&self, address: u16, dst: &mut [u8]) -> bool {
+        if self.memory.read_into(address, dst).is_some() {
+            return true;
+        }
+        dst.fill(0);
+        false
     }
 
     /// 帧驱动时钟 tick：由线缆层每收到一帧调用一次（TAP/UDS 均如此）。

@@ -19,3 +19,9 @@ esc-core = { path = "../esc-core" }
 plugin-host = { path = "../plugin-host" }
 wire = { path = "../wire" }
 control-plane = { path = "../control-plane" }
+
+[features]
+default = []
+# WASM 行为插件（M3-W2 / B44）：把 plugin-host 的 wasm 运行时接进 esc-node。
+# 默认关闭 → 默认构建仍零第三方依赖、无需 crates.io。
+wasm-runtime = ["plugin-host/wasm-runtime"]

@@ -38,6 +38,13 @@ pub mod wasm;
 #[cfg(feature = "wasm-runtime")]
 pub mod wasm_worker;
 
+/// WASM 行为插件的**非实时运行时**（B44 子项 3 / M3-W2）。
+///
+/// 仅 `wasm-runtime` feature：宿主线程只 publish arena / try-poll 输出，
+/// 插件编译/实例化/tick 全在独立 ticker 线程，宿主永不阻塞在插件上。
+#[cfg(feature = "wasm-runtime")]
+pub mod behavior;
+
 /// 设备插件的最小契约。
 ///
 /// 真实实现由声明式 `plugin.yaml` 生成（或 WASM 导出），宿主按此 trait 分发；
