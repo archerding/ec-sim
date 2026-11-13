@@ -618,8 +618,14 @@ user.email = deepseek-harness@users.noreply.github.com
   `BehaviorStats` 增 `restarts/quarantined`。feature 单测 **56**（+3：重启恢复 / 隔离 / 配额）。
   ⚠️ `esc-node` 仍每进程 1 个行为桥（配额未接线，多实例接线后续）；线程死亡(panic)与 trap 共用重建路径，
   trap 路径已测、真实 panic 路径未单独注入测试。
-- [ ] **B52 M4 Agent Skills 只读技能文档与示例（建议，backlog 顶部）**：把 9 个只读 MCP 工具映射为
-  可安装技能（查询/排障/回归报告），写清只读边界与错误码；不引入写工具、不宣称认证。
+- [x] ~~**B52 M4 Agent Skills 只读技能文档与示例**~~ ✅ **2026-11-13 完成**：新增 `docs/skills/`
+  （README 格式/索引 + `ecsim-diagnose/SKILL.md` + 静态/实时示例 `.jsonl`），把 9 个只读 MCP 工具映射为
+  诊断技能（步骤/成功判据/错误码/只读与快照边界/归档摘要模板）；新增 `scripts/spikes/agent-skills-check.py`
+  （校验 frontmatter、mode=read-only、工具目录一致且无写工具、示例 JSON-RPC 合法且无 token、相对链接）
+  并登记进 `run-all-probes.sh`（`agent-skills`，any）。本机 `EXIT=0`、run-all 本机 **7 PASS/14 SKIP**。
+  不引入写工具、不宣称认证。
+- [ ] **B53 DC 仿真 Tier1（建议，backlog 顶部）**：DC 寄存器 + SYNC0/tick（帧驱动）实现与画像验证；
+  **不承诺**真实同步精度/抖动（需真机/HIL），SII DC 声明需在验证后复核。
 
 ## 7. 目录约定
 

@@ -1,5 +1,43 @@
 ---
 
+## 2026-11-13 12:37 班（低峰）— **B52：M4 Agent Skills 只读技能文档与示例 + 静态校验**
+
+> 调度上下文计划重点（B2b / B8 / B4）均早已完成；按 `AGENTS.md` §6 取 backlog 顶部 **B52**
+> （M4：把 9 个只读 MCP 工具映射为 Agent 可加载技能）。
+
+**做了什么**
+- 新增 `docs/skills/`：
+  - `README.md`：技能索引、SKILL.md 约定（frontmatter `name/description/version/mode/tools`）、
+    只读边界（写工具永不映射、token 不保存、快照语义）、验证方式；
+  - `ecsim-diagnose/SKILL.md`：诊断技能（health→state→拓扑→单站→PDO→SDO→指标/审计→归档摘要），
+    含成功判据、稳定错误码表（AUTH_REQUIRED/FORBIDDEN/NOT_FOUND/MODE_UNAVAILABLE/BAD_ARGUMENT 等）、
+    DC/停帧等"仿真不判"边界与摘要模板；
+  - `ecsim-diagnose/examples/static-session.jsonl` 与 `live-session.jsonl`：合法 JSON-RPC 2.0 请求序列
+    （静态 / 实时工具）；响应省略，实跑由 `mcp-stdio-probe` 覆盖。
+- 新增 `scripts/spikes/agent-skills-check.py`（零第三方依赖）：校验 frontmatter、`mode=read-only`、
+  `tools` ⊆ MCP 工具目录且无 write/post、正文只读/快照边界与错误码、示例每行 JSON-RPC 合法且无 token、
+  相对链接可解析；登记进 `run-all-probes.sh`（`agent-skills`，`any`，注册表 **20 → 21 项**）。
+- 文档同步：`VERIFICATION`（新增探针行、整轮/本机计数）、`STATUS`（B52 ✅ + B53 DC 建议）、
+  `AGENTS.md` §6（B52 ✅ + B53）、`README` roadmap（M4 Agent Skills done）。
+
+**验证结果**
+- `python3 scripts/spikes/agent-skills-check.py` → **EXIT=0**（1 个技能、9 个工具引用、15 行示例；
+  frontmatter/只读/目录一致/示例/链接全过）。
+- `bash scripts/spikes/run-all-probes.sh`（本机）→ **7 PASS / 0 FAIL / 14 SKIP（共 21 项）**；
+  `control-plane-doc-check.py`、`mcp-tools-check.py` 仍 **EXIT=0**。
+- 未改代码/依赖/许可；`git diff --check` PASS。⚠️ CI `docs-and-probes` 含新探针的 21 项整轮待推送后确认。
+
+**卡点**
+- 无硬阻塞。技能示例是"请求序列"（不内嵌响应，避免把运行值当规范）；实时示例的实际返回由
+  `mcp-stdio-probe.sh` 的 live 段覆盖。
+
+**下次开工第一件事**
+- 取 backlog 顶部 **B53（建议）DC 仿真 Tier1**：DC 寄存器 + SYNC0/tick（帧驱动）实现与画像验证；
+  **不承诺**真实同步精度/抖动（需真机/HIL），SII DC 声明需验证后复核。或先补 W6 真人点击关闭 M3。
+  仍不宣称一致性/认证。
+
+---
+
 ## 2026-11-13 12:32 班（低峰）— **B51：插件 panic 重启 + 实例配额（plugin-host::behavior）**
 
 > 调度上下文计划重点（B2b / B8 / B4）均早已完成；按 `AGENTS.md` §6 取 backlog 顶部 **B51**

@@ -118,9 +118,13 @@ cargo test --workspace
    自动重启（`max_restarts`，默认 3），预算耗尽**隔离**；新增 `BehaviorQuota` 实例配额（显式传入）；
    统计加 `restarts/quarantined`；feature 单测 **56**（+3）覆盖重启恢复/隔离/配额。
    `esc-node` 仍单实例（配额未接线，⚠️ 多实例接线属后续）。
-5. **B52（建议）M4 Agent Skills 只读技能文档与示例**：把 9 个只读 MCP 工具映射为可安装技能
-   （查询/排障/回归报告），写清只读边界与错误码；不引入写工具、不宣称认证。
-6. 验证机补跑 `wasm-plugin-probe.sh` / `wasm-behavior-probe.sh` 与 Linux CLI UDS/TAP 行为插件端到端（需 crates.io，或先 vendor wasmi/wat）。
-7. DC 仿真（寄存器 + SYNC0/tick），实现后在测试画像上验证再声明 SII DC。
+5. ~~**B52（backlog 顶部）M4 Agent Skills 只读技能文档与示例**~~ ✅ 2026-11-13 完成——新增
+   `docs/skills/`（README + `ecsim-diagnose/SKILL.md` + 静态/实时示例 `.jsonl`），把 9 个只读 MCP 工具
+   映射为诊断技能（诊断步骤、错误码、只读/快照边界、归档摘要模板）；新增
+   `scripts/spikes/agent-skills-check.py` 并登记进 `run-all-probes.sh`（`agent-skills`，any）——
+   校验 frontmatter/只读边界/工具目录一致/示例 JSON-RPC 合法性/无 token。本机 **EXIT=0**。
+6. **B53（建议）DC 仿真 Tier1**：寄存器 + SYNC0/tick（帧驱动）；实现后在测试画像上验证再声明 SII DC。
+   **不承诺**真实同步精度/抖动（需真机/HIL）。
+7. 验证机补跑 `wasm-plugin-probe.sh` / `wasm-behavior-probe.sh` 与 Linux CLI UDS/TAP 行为插件端到端（需 crates.io，或先 vendor wasmi/wat）。
 8. CA 部分写/子索引顺序语义完善；fuzz 升级。
 9. 性能：TAP/UDS 闭环 32 站 @1 kHz 与 DC 下的长稳测试（B46 未覆盖部分，⚠️ 待验证）。

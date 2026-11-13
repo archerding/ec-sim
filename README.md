@@ -69,7 +69,7 @@ Current implementation status, known gaps and reproduction commands: [docs/STATU
 - **M1** minimal closed loop: ESC core (registers/SM/FMMU/AL/EEPROM) + CoE expedited SDO + UDS shim + CLI → `ethercat slaves` and `slaveinfo` see the virtual slave.
 - **M2** network-level transport (TAP) + Web UI (topology, AL state machine, PDO, frame decode).
 - **M3** plugin host (declarative + WASM) + write paths + token/audit — **exit candidate (2026-11-13)**: 20/20 probes, 256 tests; see [M3 exit checklist](docs/plan/M3-exit-checklist.md) (W6 browser click acceptance pending).
-- **M4** MCP server (read-only, done) + Agent Skills + test reports.
+- **M4** MCP server (read-only, done) + Agent Skills (docs + static checker, done) + test reports (done).
 - **M5** marketplace + signed packages + LinuxCNC template market, fault injection matrix.
 
 ## Repository conventions

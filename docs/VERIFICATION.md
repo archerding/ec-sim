@@ -5,11 +5,12 @@
 
 > 环境基线：Linux 验证机（见 `docs/LINUX-SERVER.md`）上的**未修改** SOEM 2.0.0 与 IgH 1.6.13；
 > IgH 的 ecrt 应用夹具只在验证机本地构建、**不入库**（GPL 边界，见 `AGENTS.md` §3）。
-> 最近的完整验证状态：**2026-11-13（M3 退出核对，HEAD `d7089da`）**（详见 `WORKLOG.md` 同日条目、
+> 最近的完整验证状态：**2026-11-13（B52 Agent Skills 静态校验）**（详见 `WORKLOG.md` 同日条目、
 > [STATUS.md](STATUS.md) 与 [M3 退出清单](plan/M3-exit-checklist.md)）；
-> 验证机整轮 `run-all-probes.sh` **20 PASS / 0 FAIL / 0 SKIP**（含 TAP live、M3 写路径/token/Web SDO 面板、
-> `mcp-tools`、`mcp-stdio`）；本机 `cargo test --workspace` **258 passed / 0 failed**。
-> `mcp-tools`/`mcp-stdio` 本机与验证机均 PASS（B45/B47 引入，2026-11-13 整轮覆盖）。
+> 探针注册表 **21 项**（B52 新增 `agent-skills`）：本机 any 类 **7 PASS / 14 SKIP**；
+> 验证机整轮最近一次 **20 PASS / 0 FAIL / 0 SKIP**（B50 时；含新探针的整轮由 CI `docs-and-probes` 覆盖，
+> 推送后验证）；本机 `cargo test --workspace` **258 passed / 0 failed**。
+> `mcp-tools`/`mcp-stdio`/`agent-skills` 本机与 CI/验证机均 PASS（B45/B47/B52 引入，2026-11-13）。
 
 ## 无特权（UDS 合成主站，任意平台可跑）
 
@@ -59,12 +60,13 @@
 | `serve-token-probe.sh` | 可选静态 Bearer token（`--serve-token-env`）：默认/空变量维持不鉴权；非空时缺头→401（`WWW-Authenticate`）、错误 token→403、正确→200；静态资源与 `/health` 豁免；实时 `POST /sdo`、`/sdo-audit`、`/metrics`、`/events` 同保护 | **EXIT=0** |
 | `web-sdo-panel-check.py` | Web SDO 面板静态资源回归：`index.html` 控件 id（索引/子索引/读取/结果/写开关/写值/写按钮）+ token 提示；`app.js` 含 `readSdo`/`writeSdo`/`window.confirm`/405/401/403/404 提示与 `POST` 小端字节体；`node --check` 通过（无 node 时 SKIP）；⚠️ 无 DOM 自动化点击 | **EXIT=0** |
 | `sdo-read-probe.sh` | `GET /sdo`：静态/实时均返回 sdo-v1（0x6040 Controlword/0x0006/16/rw），缺 index/非法/未知对象/未知子索引 → 404 | **EXIT=0** |
-| `run-all-probes.sh` | 一键聚合：按平台/root 选择探针并汇总；本机 any 类 **6 PASS / 14 SKIP**，验证机 **20 PASS / 0 FAIL / 0 SKIP**（2026-11-13 B50 整轮复跑） | **EXIT=0**（验证机） |
+| `run-all-probes.sh` | 一键聚合：按平台/root 选择探针并汇总；本机 any 类 **7 PASS / 14 SKIP**（注册表 21 项），验证机 **20 PASS / 0 FAIL / 0 SKIP**（2026-11-13 B50 整轮；B52 新增 `agent-skills` 后待 CI/下一轮覆盖） | **EXIT=0**（本机/验证机） |
 | `write-pdo-probe.sh` | `POST /pdo` 写操作：默认 405 且 PDO 不变；`--serve-write` 后写 slave0=beef、slave1=1234；`POST /state` 404 | **EXIT=0** |
 | `events-probe.sh` | SSE `/events`：Content-Type、state-v1 + live、两事件间 frames_in 递增（0→2）、断开后 `/state` 仍 200 | **EXIT=0** |
 | `serve-web-probe.sh` | `--serve --web-root web`：`/` HTML（含 B42 SDO 面板控件）、`/app.js` JS（含 `readSdo`/`writeSdo`）、`/state` JSON、未知 404；实时模式同源+live；无效 web-root 回退 API | **EXIT=0** |
 | `control-plane-doc-check.py` | 文档 `docs/CONTROL-PLANE.md` 路由表/探针/源码引用与代码逐条一致（14 条路径、17 个探针） | **EXIT=0** |
 | `mcp-tools-check.py` | MCP/Agent 桥接 stub 工具目录（`m3-w8-mcp-tools-v1.json`）与 `CONTROL-PLANE.md` 只读路由逐项一致：9 个 `ecsim_*` 工具全为 GET、无写工具、查询参数变体有声明、文档 GET 路由全覆盖或显式排除、设计文档/M3 清单/`run-all-probes.sh` 已互链 | **EXIT=0**（本机，2026-11-13） |
+| `agent-skills-check.py` | B52 Agent Skills 静态校验：`docs/skills/` frontmatter（name/description/version/mode=read-only/tools）、工具 ⊆ MCP 目录且无写工具、正文声明只读/快照边界与稳定错误码、`examples/*.jsonl` 为合法 JSON-RPC 2.0 且无 token、相对链接可解析；已登记 `run-all-probes.sh`（`agent-skills`，any） | **EXIT=0**（本机，2026-11-13） |
 | `mcp-stdio-probe.sh` | MCP/Agent 桥接端到端：真实控制面 + python 合成 MCP client（stdio JSON-RPC）——`initialize`/`tools/list` 恰好 9 个只读工具、`state`/`dict`/`sdo` 读取、错误路径、`--serve-write` 下工具表不变；**B50 扩展**：token 矩阵（缺/错/对 → 401/403/200）、调用审计 JSON Lines、Linux 实时（`--uds`）live-only 工具端到端（topology/pdo/history/metrics/sdo_audit，含受控写审计），共 **31 项断言** | **EXIT=0**（本机 + 验证机，2026-11-13） |
 | `metrics-filter-probe.sh` | `/metrics?slave=1` 仅导出 1 站（全量 3 站），越界/非法 slave → 404 | **EXIT=0** |
 | `metrics-probe.sh` | `/metrics` Prometheus 文本：Content-Type、`# TYPE ecsim_frames_in_total counter`、两站 label 行、发帧后计数单调递增 | **EXIT=0** |
