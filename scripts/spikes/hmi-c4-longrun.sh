@@ -78,7 +78,8 @@ while :; do
   rss=$(awk '/VmRSS/ {print $2}' "/proc/$SIM_PID/status" 2>/dev/null || echo "")
   fds=$(ls "/proc/$SIM_PID/fd" 2>/dev/null | wc -l)
   threads=$(awk '/Threads/ {print $2}' "/proc/$SIM_PID/status" 2>/dev/null || echo "")
-  sse_events=$(grep -c " event " "$OUT/sse.log" 2>/dev/null || echo 0)
+  sse_events=$(grep -c " event " "$OUT/sse.log" 2>/dev/null || true)
+  sse_events=${sse_events:-0}
   echo "$(date -Is),${rss:-},${fds:-},${threads:-},${state_metrics},${pdo_metrics},${al:-},${frames:-},${mbox:-},${sse_events},${http_fail}" >>"$OUT/samples.csv"
   sleep "$SAMPLE_SECONDS"
 done
