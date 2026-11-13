@@ -1,0 +1,207 @@
+[
+  {
+    "label": "1024x768",
+    "width": 1024,
+    "height": 768,
+    "scale": 1,
+    "innerWidth": 1024,
+    "innerHeight": 768,
+    "devicePixelRatio": 1,
+    "scrollWidth": 1009,
+    "overflowX": -15,
+    "counts": {
+      "interactive": 29,
+      "visible": 25,
+      "under44": 0
+    },
+    "renderedSections": 2,
+    "htmlLang": "zh-CN",
+    "hasI18n": true,
+    "langToggle": true,
+    "appTextLength": 516,
+    "under44": [],
+    "paint": [
+      {
+        "name": "first-paint",
+        "startTime": 68
+      },
+      {
+        "name": "first-contentful-paint",
+        "startTime": 68
+      }
+    ],
+    "navigation": {
+      "domContentLoaded": 15.9,
+      "load": 56.5,
+      "transferSize": 16862
+    },
+    "resources": [
+      {
+        "name": "i18n.js",
+        "duration": 4.3,
+        "transferSize": 21695
+      },
+      {
+        "name": "app.js",
+        "duration": 4.6,
+        "transferSize": 74884
+      },
+      {
+        "name": "favicon.ico",
+        "duration": 1.2,
+        "transferSize": 356
+      }
+    ],
+    "screenshot": ".local\\hmi-capture\\serve-zh\\1024x768.png"
+  },
+  {
+    "label": "1280x900",
+    "width": 1280,
+    "height": 900,
+    "scale": 1,
+    "innerWidth": 1280,
+    "innerHeight": 900,
+    "devicePixelRatio": 1,
+    "scrollWidth": 1265,
+    "overflowX": -15,
+    "counts": {
+      "interactive": 29,
+      "visible": 25,
+      "under44": 0
+    },
+    "renderedSections": 2,
+    "htmlLang": "zh-CN",
+    "hasI18n": true,
+    "langToggle": true,
+    "appTextLength": 516,
+    "under44": [],
+    "paint": [
+      {
+        "name": "first-paint",
+        "startTime": 24
+      },
+      {
+        "name": "first-contentful-paint",
+        "startTime": 24
+      }
+    ],
+    "navigation": {
+      "domContentLoaded": 13.3,
+      "load": 14.6,
+      "transferSize": 16862
+    },
+    "resources": [
+      {
+        "name": "i18n.js",
+        "duration": 3.3,
+        "transferSize": 21695
+      },
+      {
+        "name": "app.js",
+        "duration": 3.5,
+        "transferSize": 74884
+      }
+    ],
+    "screenshot": ".local\\hmi-capture\\serve-zh\\1280x900.png"
+  },
+  {
+    "label": "1920x1080",
+    "width": 1920,
+    "height": 1080,
+    "scale": 1,
+    "innerWidth": 1920,
+    "innerHeight": 1080,
+    "devicePixelRatio": 1,
+    "scrollWidth": 1905,
+    "overflowX": -15,
+    "counts": {
+      "interactive": 29,
+      "visible": 25,
+      "under44": 0
+    },
+    "renderedSections": 2,
+    "htmlLang": "zh-CN",
+    "hasI18n": true,
+    "langToggle": true,
+    "appTextLength": 516,
+    "under44": [],
+    "paint": [
+      {
+        "name": "first-paint",
+        "startTime": 36
+      },
+      {
+        "name": "first-contentful-paint",
+        "startTime": 36
+      }
+    ],
+    "navigation": {
+      "domContentLoaded": 16.9,
+      "load": 19.4,
+      "transferSize": 16862
+    },
+    "resources": [
+      {
+        "name": "i18n.js",
+        "duration": 2.7,
+        "transferSize": 21695
+      },
+      {
+        "name": "app.js",
+        "duration": 3,
+        "transferSize": 74884
+      }
+    ],
+    "screenshot": ".local\\hmi-capture\\serve-zh\\1920x1080.png"
+  },
+  {
+    "label": "1024x768@125",
+    "width": 1024,
+    "height": 768,
+    "scale": 1.25,
+    "innerWidth": 1024,
+    "innerHeight": 768,
+    "devicePixelRatio": 1.25,
+    "scrollWidth": 1009,
+    "overflowX": -15,
+    "counts": {
+      "interactive": 29,
+      "visible": 25,
+      "under44": 0
+    },
+    "renderedSections": 2,
+    "htmlLang": "zh-CN",
+    "hasI18n": true,
+    "langToggle": true,
+    "appTextLength": 516,
+    "under44": [],
+    "paint": [
+      {
+        "name": "first-paint",
+        "startTime": 44
+      },
+      {
+        "name": "first-contentful-paint",
+        "startTime": 44
+      }
+    ],
+    "navigation": {
+      "domContentLoaded": 21.8,
+      "load": 24.5,
+      "transferSize": 16862
+    },
+    "resources": [
+      {
+        "name": "i18n.js",
+        "duration": 2.9,
+        "transferSize": 21695
+      },
+      {
+        "name": "app.js",
+        "duration": 3,
+        "transferSize": 74884
+      }
+    ],
+    "screenshot": ".local\\hmi-capture\\serve-zh\\1024x768@125.png"
+  }
+]

@@ -178,7 +178,7 @@ function updateShellContext() {
   const source = document.getElementById("api-source");
   if (source) {
     const hostPort = sourceHostPort();
-    source.textContent = `数据源：${hostPort || "-"}`;
+    source.textContent = `${tz("数据源：")}${hostPort || "-"}`;
   }
   const address = document.querySelector('[data-testid="shell-context-address"]');
   const alChipNode = document.querySelector('[data-testid="shell-context-al-chip"]');
@@ -216,7 +216,7 @@ function updateConnUi() {
     }
   }
   if (dataTime) {
-    dataTime.textContent = `数据时间：${conn.lastDataAt ? new Date(conn.lastDataAt).toLocaleTimeString() : "-"}（${ageText()}）`;
+    dataTime.textContent = `${tz("数据时间：")}${conn.lastDataAt ? new Date(conn.lastDataAt).toLocaleTimeString() : "-"}（${ageText()}）`;
   }
   if (pauseButton) {
     pauseButton.setAttribute("aria-pressed", conn.paused ? "true" : "false");
@@ -611,7 +611,7 @@ function renderDict(dict) {
         ? el(
             "p",
             { class: "sub", "data-testid": "dict-empty" },
-            "无结果：空字典或筛选条件过严。",
+            tz("无结果：空字典或筛选条件过严。"),
             " ",
             el(
               "button",
@@ -1073,8 +1073,8 @@ function renderEvidence() {
       el(
         "p",
         { class: "sub", "data-testid": "evidence-meta" },
-        `版本：ecsim-evidence-v1 · 模式：${connBadgeText(conn.mode)} · 来源：${liveBase || "本地 JSON"} · ` +
-          `时间：${new Date().toLocaleString()} · 站：${selectedSlave()}（0-based）`,
+        `${tz("版本：ecsim-evidence-v1 · 模式：")}${connBadgeText(conn.mode)} · ${tz("来源：")}${liveBase || "local JSON"} · ` +
+          `${tz("时间：")}${new Date().toLocaleString()} · ${tz("站：")}${selectedSlave()} (0-based)`,
       ),
       el("div", { class: "row", "data-testid": "evidence-checklist" }, ...checklist),
       el(
@@ -1113,12 +1113,12 @@ function renderAbout() {
       el(
         "p",
         { class: "sub", "data-testid": "about-version" },
-        "EC-Sim 只读状态视图 · 版本：ec-sim-web（与 ec-sim-esc 同仓发布）",
+        tz("EC-Sim 只读状态视图 · 版本：ec-sim-web（与 ec-sim-esc 同仓发布）"),
       ),
       el(
         "p",
         { class: "sub", "data-testid": "about-health" },
-        aboutHealth == null ? "健康检查：未检查（需实时模式）" : `健康检查：${aboutHealth}`,
+        aboutHealth == null ? tz("健康检查：未检查（需实时模式）") : `健康检查：${aboutHealth}`,
       ),
       el(
         "div",
@@ -1189,7 +1189,7 @@ function renderAll() {
         el(
           "p",
           { class: "sub" },
-          "请选择 --dump-state / --dump-dict --json 生成的 JSON，或使用上方只读 API（--serve）。",
+          tz("请选择 --dump-state / --dump-dict --json 生成的 JSON，或使用上方只读 API（--serve）。"),
         ),
       ),
     );
@@ -1200,7 +1200,7 @@ function renderAll() {
       el(
         "p",
         { class: "sub", "data-testid": viewTestid("overview", "empty") },
-        "尚未载入数据：请选择 JSON 文件或填写 API 地址后点“从 API 载入”。",
+        tz("尚未载入数据：请选择 JSON 文件或填写 API 地址后点“从 API 载入”。"),
       ),
     );
   }
@@ -1232,7 +1232,7 @@ function renderAll() {
       ),
     );
   }
-  app.append(el("p", { class: "sub" }, "只读视图，不构成一致性/认证结论。"));
+  app.append(el("p", { class: "sub" }, tz("只读视图，不构成一致性/认证结论。")));
   // DOD-02：静态模式说明（无 live 数据时显式提示，不再静默缺失）。
   setStaticModeNotice(Boolean(currentState && !currentState.live));
   updateSdoCurrent();
@@ -1250,13 +1250,13 @@ function updateSdoCurrent() {
   const age = conn.lastDataAt ? ageText() : "静态/未刷新";
   const staleNote =
     conn.mode === "STALE" || conn.mode === "PAUSED" || conn.mode === "STOPPED"
-      ? `；⚠️ 数据可能过期（${connBadgeText(conn.mode)}）`
+      ? `；${tz("⚠️ 当前数据可能过期（")}${connBadgeText(conn.mode)}）`
       : "";
   node.append(
     el(
       "span",
       {},
-      `当前站：${selectedSlave()}（0-based，0..N-1） · API：${sourceHostPort() || "未填写"} · 数据：${age}${staleNote}`,
+      `${tz("当前站：")}${selectedSlave()}${tz("（0-based，0..N-1）")} · ${tz("API：")}${sourceHostPort() || tz("未填写")} · ${tz("数据：")}${age}${staleNote}`,
     ),
   );
 }
@@ -1267,12 +1267,12 @@ function renderAudit() {
   if (!container) return;
   container.replaceChildren();
   if (!currentAudit || !Array.isArray(currentAudit.events)) {
-    if (statusNode) statusNode.textContent = "无审计数据（需实时模式且发生过受控写）。";
+    if (statusNode) statusNode.textContent = tz("无审计数据（需实时模式且发生过受控写）。");
     return;
   }
   if (currentAudit.events.length === 0) {
-    if (statusNode) statusNode.textContent = "审计为空：尚未发生受控写。";
-    container.append(el("p", { class: "sub", "data-testid": "sdo-audit-empty" }, "暂无写事件。"));
+    if (statusNode) statusNode.textContent = tz("审计为空：尚未发生受控写。");
+    container.append(el("p", { class: "sub", "data-testid": "sdo-audit-empty" }, tz("暂无写事件。")));
     return;
   }
   const rows = currentAudit.events.map((event) => [
@@ -1290,14 +1290,14 @@ function renderAudit() {
       "sdo-audit-row-",
     ),
   );
-  if (statusNode) statusNode.textContent = `共 ${currentAudit.events.length} 条（服务端最多 64 条）。`;
+  if (statusNode) statusNode.textContent = `${tz("共")} ${currentAudit.events.length} ${tz("条（服务端最多 64 条）。")}`;
 }
 
 async function loadAudit() {
   const statusNode = document.getElementById("sdo-audit-status");
   const base = liveBase;
   if (!base) {
-    if (statusNode) statusNode.textContent = "需要实时模式（--serve + --uds/--tap）。";
+    if (statusNode) statusNode.textContent = tz("需要实时模式（--serve + --uds/--tap）。");
     return;
   }
   try {
@@ -1317,7 +1317,7 @@ async function loadAudit() {
       renderAudit();
     }
   } catch (error) {
-    if (statusNode) statusNode.textContent = `审计读取失败：${error.message}`;
+    if (statusNode) statusNode.textContent = `${tz("审计读取失败：")}${error.message}`;
   }
 }
 
@@ -1499,7 +1499,7 @@ function startLive() {
 
 function reconnectNow() {
   if (!liveBase) {
-    message.textContent = "请先填写 API 地址并载入。";
+    message.textContent = tz("请先填写 API 地址并载入。");
     return;
   }
   stopLive();
@@ -1960,7 +1960,7 @@ document.addEventListener("click", (event) => {
       downloadText("ecsim-evidence.json", JSON.stringify(currentExport(), null, 2), "application/json"),
     "about-copy-version": () =>
       copyText(
-        `ec-sim-web；模式=${connBadgeText(conn.mode)}；数据=${ageText()}；不宣称一致性/CTT/认证`,
+        `ec-sim-web; mode=${connBadgeText(conn.mode)}; data=${ageText()}; no conformance/CTT/certification claimed`,
         "版本信息已复制",
       ),
     "dict-drawer-goto-sdo": () => {

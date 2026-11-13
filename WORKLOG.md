@@ -5574,3 +5574,9 @@
 - T-14：`--al-error 0x0024` 后新起 IgH 见 `INIT+ERROR`、`/state` `0x11`+code、`mailbox_requests=0`
   （无 ESM ACK→OP；与 SOEM 侧不同）；AC-E-204 按早期 `0x11`+code + 负例判 PASS；**BL-20 仍 ⚠️ 未验证（v1.x 暂停）**。
 - 记录：`docs/verification/2026-11-13-ecsim-binary-delivery.md` §6（只记对方实测，不做外推）。
+
+### G-18（P0）修复：--serve 漏放行 /i18n.js
+
+- `static_web_response` 增加 `/i18n.js`（静态/实时同源）；新增 `serve-web-assets-probe.sh` 纳入 B-2（37→38）：
+  资产清单 200 + i18n.js 含 ECSIM_I18N + 未知资源 404；本机静态段 EXIT=0（实时段待 VM）。
+- 补 sim-ux §17.2 的 en 残留中文（词典 79 键）；HMI 截图改走 `--serve` 产品路径（product-serve-en/zh-*）。

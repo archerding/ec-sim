@@ -90,7 +90,7 @@
   </style>
 </head>
 <body>
-  <a class="skip-link" href="#app" data-testid="shell-skip-link">跳到主内容</a>
+  <a class="skip-link" href="#app" data-testid="shell-skip-link" data-i18n="skipLink">跳到主内容</a>
   <h1 data-i18n="app.title">EC-Sim 状态视图</h1>
   <div class="sub" data-i18n="intro.dataSource">
     数据源：ec-sim-esc --dump-state 生成的 JSON（状态/PDO/拓扑/指标只读，SDO 面板只读浏览，写入需显式开启且二次确认）。可直接把 JSON 文件拖入下方，或执行 ec-sim-esc --dump-state --manifest plugins/… &gt; web/state.json 后用 python3 -m http.server 8080 --directory web 打开页面（页面会自动读取同目录 state.json）。
@@ -198,7 +198,7 @@
       <p class="sub"><span data-i18n="confirm.object">对象：</span><code data-testid="sdo-confirm-object">-</code> · <span data-i18n="confirm.meta">位长/访问：</span><span data-testid="sdo-confirm-meta">-</span></p>
       <p class="sub"><span data-i18n="confirm.old">旧值（小端 hex）：</span><code data-testid="sdo-confirm-old-value">-</code></p>
       <p class="sub"><span data-i18n="confirm.new">新值（小端 hex，含字节数）：</span><code data-testid="sdo-confirm-new-value">-</code></p>
-      <p class="sub" id="sdo-confirm-stale" hidden>⚠️ 数据可能过期（STALE/PAUSED）：写入前请确认现场状态。</p>
+      <p class="sub" id="sdo-confirm-stale" hidden data-i18n="confirm.stale">⚠️ 数据可能过期（STALE/PAUSED）：写入前请确认现场状态。</p>
       <p class="sub" data-i18n="confirm.note">该操作仅在服务端以 --serve-write 启动时生效；写入会记入 /sdo-audit。</p>
       <div class="row" style="justify-content:flex-end">
         <button id="sdo-confirm-cancel" data-testid="sdo-confirm-cancel" type="button" data-i18n="confirm.cancel">取消（Esc）</button>

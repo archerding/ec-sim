@@ -93,6 +93,7 @@ topology-probe|linux|ACC-27 交叉
 invalid-slave-probe|any|ACC-27②
 al-error-probe|linux|ACC-11..13 / AC-E-203 交叉（AL 注入）
 pdo-byteorder-probe|linux|ACC-07 / GAP-14（TxPDO 字节序端到端）
+serve-web-assets-probe|any|G-18（--serve 静态/实时资产齐全 + i18n.js 200）
 "
 
 skip_reason() {

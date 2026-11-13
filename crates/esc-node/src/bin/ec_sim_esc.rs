@@ -347,6 +347,9 @@ fn static_web_response(path: &str, web_root: Option<&str>) -> Option<control_pla
     let (file, content_type) = match path {
         "/" | "/index.html" => ("index.html", "text/html; charset=utf-8"),
         "/app.js" => ("app.js", "application/javascript; charset=utf-8"),
+        // G-18（P0）：i18n.js 是 index.html 的 `<script src>` 依赖；漏放行会让 `?lang=en`/切换在
+        // `--serve` 产品路径下静默失效（静态与实时同源 serve 都必须放行）。
+        "/i18n.js" => ("i18n.js", "application/javascript; charset=utf-8"),
         _ => return None,
     };
     let body = std::fs::read_to_string(format!("{root}/{file}")).ok()?;
