@@ -233,6 +233,105 @@
     "⚠️ 数据可能过期（STALE/PAUSED）：写入前请确认现场状态。": "⚠️ Data may be stale (STALE/PAUSED): confirm the machine state before writing.",
   };
 
+  // G-19：渲染后中文残留兜底层（en 时对文本节点做"源串→英文"覆盖，覆盖动态模板/拼接/证据 Markdown）。
+  const enExtras = {
+    "身份/画像": "Identity", "AL / 实时": "AL / live", "PDO 当前": "PDO current", "PDO 历史": "PDO history",
+    "拓扑": "Topology", "指标": "Metrics", "SDO 审计": "SDO audit", "名称：": "Name: ", " · 画像：": " · Profile: ",
+    "邮箱已声明": "Mailbox declared", "无邮箱": "No mailbox", "无 DC": "No DC", "内置": "built-in",
+    "位": "-bit", "（子索引 ": " (sub ", "）：": "): ", "对象名": "Object", "条目名": "Entry", "类型": "Type",
+    "大端显示": "big-endian display", "原始小端": "raw LE", "复制": "Copy", "字段": "Field", "值": "Value",
+    "索引": "Index", "子索引": "Sub", "名称": "Name", "位长": "Bits", "访问": "Access",
+    "审计不可用：该路由需要实时模式（静态快照无写事件）。": "Audit unavailable: this route needs live mode (static snapshots have no writes).",
+    "起始地址": "Start", "长度": "Length", "Enable": "Enable", "Status": "Status", "Control": "Control",
+    "个从站": "slaves", "站 / OP ": " slaves / OP ", " / 异常 ": " / problems ",
+    "样本 ": "samples: ", " 个（按 PDO 变化去重）": " (dedup by PDO changes)", "展开前 20 条采样（共 ": "Show first 20 samples (of ",
+    "条）": ")", "SM2（RxPDO / 输出）": "SM2 (RxPDO/out)", "SM3（TxPDO / 输入）": "SM3 (TxPDO/in)",
+    "站地址 ": "Station ", " / AL ": " / AL ", "；hex 为小端原始字节，右侧为按 u16 小端解码。": "; hex is raw LE; right column decodes u16 LE.",
+    "依据 state 的 PDO 映射与 dict-v1 的对象名/类型解码；有符号类型按符号扩展。": "Decoded by state PDO mapping and dict-v1 names/types; signed types are sign-extended.",
+    "蓝线 = SM2 前 2 字节（u16 小端）；绿线 = SM3 前 2 字节；纵轴按两者最大值归一化。": "Blue = SM2 first 2 bytes (u16 LE); green = SM3 first 2 bytes; y-axis normalized by max.",
+    "节点色 = AL 状态（INIT 橙 / PREOP 蓝 / SAFEOP 紫 / OP 绿），点击节点切换到该从站；站地址未配置显示 0x0000。": "Node color = AL state (INIT orange / PREOP blue / SAFEOP purple / OP green); click to switch slave; unconfigured station shows 0x0000.",
+    "无异常从站（全部 OP 且无 error/ID 请求）。": "No problem slaves (all OP, no error/ID request).",
+    "AL 派生（DOD-13）：": "AL derived (DOD-13): ", "只读快照；AL 状态码为 0x0000 时省略显示。": "Read-only snapshot; AL code omitted when 0x0000.",
+    "⚠️ Tier0：模拟器只有帧驱动模拟时钟，无真实 SYNC0/漂移补偿。": "⚠️ Tier0: frame-driven simulated clock only; no real SYNC0/drift compensation.",
+    "搜索索引/名称（/ 聚焦）": "Search index/name (/ to focus)", "对象详情": "Object details",
+    "行": " rows", "对象 ": "objects ", " 个 / 条目 ": " / entries ", "（值按小端存储，显示为 0x 大端十六进制）。": " (stored LE, shown as 0x big-endian).",
+    "当前筛选命中 ": "Current filter hits ", " 行。": " rows.", "无结果：空字典或筛选条件过严。": "No results: empty dictionary or filters too narrow.",
+    "复制成功": "Copied", "已复制": "copied", "复制失败（权限/非安全上下文）": "Copy failed (permissions/insecure context)",
+    "复制不可用（浏览器未提供 clipboard）": "Copy unavailable (no clipboard)", "已暂停": "Paused",
+    "数据时间：": "Data time: ", "；⚠️ 当前数据可能过期（": "; ⚠️ current data may be stale (",
+    "；⚠️ 数据可能过期（": "; ⚠️ data may be stale (", "）": ")", "写审计": "write audit",
+    "SDO 写审计（只读 API：GET /sdo-audit）": "SDO Write Audit (read-only API: GET /sdo-audit)",
+    "## 边界（必读）": "## Boundaries (read first)", "生成时间：": "Generated: ", "模式：": "Mode: ",
+    "站：": "Slave: ", "来源：": "Source: ", "时间：": "Time: ", "## 对象字典（元信息）": "## Object Dictionary (meta)",
+    "# EC-Sim 证据导出": "# EC-Sim Evidence Export", "⚠️ 边界：": "⚠️ Boundaries: ",
+    "快照语义，非实时 SLA": "snapshot semantics, no realtime SLA", "不宣称一致性/CTT/认证": "no conformance/CTT/certification claimed",
+    "0x18 维持 NOT-JUDGED（BL-20 v1.x）": "0x18 remains NOT-JUDGED (BL-20 v1.x)",
+    "组件": "Component", "已验证": "Verified", "备注": "Notes", "IgH 主站（ethercat）": "IgH master (ethercat)",
+    "SOEM（夹具）": "SOEM (fixture)", "LinuxCNC + lcec": "LinuxCNC + lcec", "验收机/虚拟闭环": "test VM / virtual loop",
+    "TAP/UDS 夹具": "TAP/UDS fixture", "V1/V2 虚拟闭环由 CNC 侧验收": "V1/V2 virtual loop judged by CNC side",
+    "其它主站/系统": "Other masters/systems", "不在本视图支持范围": "out of scope for this view",
+    "token 只提示不输入：": "Token shown as a hint only: ", "不宣称：": "Not claimed: ",
+    "只读视图，不构成一致性/认证结论。": "Read-only view; not a conformance/certification conclusion.",
+    "加载中：正在拉取首次快照（确定性文案，无转圈动画）。": "Loading: fetching the first snapshot (deterministic text, no spinner).",
+    "无结果：空字典或筛选条件过严。": "No results: empty dictionary or filters too narrow.",
+    "请选择 --dump-state / --dump-dict --json 生成的 JSON，或使用只读 API（--serve）。": "Choose a JSON from --dump-state / --dump-dict --json, or use the read-only API above (--serve).",
+    "请选择": "Choose ", "生成的": "generated ", "或使用只读": "or use the read-only ", "载入状态": "Load State",
+    "静态/未刷新": "static/not refreshed", "静态": "static", "未刷新": "not refreshed",
+    "待验证": "pending verification", "未验证": "unverified",
+    "token 模式：若服务端以 --serve-token-env 开启鉴权，浏览器 fetch 无法自动携带 Authorization 头，请经反向代理注入请求头，或改用 curl；本页不保存 token。": "Token mode: with --serve-token-env the browser fetch cannot add Authorization automatically — use a reverse proxy or curl; this page never stores tokens.",
+    "模式下浏览器": "browser", "无法自动带": "cannot add", "需反向代理或": "use a reverse proxy or", "本页不保存": "this page never stores",
+    "不宣称：EtherCAT 一致性 / CTT / LinuxCNC 认证 / 实时 SLA。快照语义，观察值为读取时刻近似值。": "Not claimed: EtherCAT conformance / CTT / LinuxCNC certification / realtime SLA. Snapshot semantics; values are approximations at read time.",
+    "一致性": "conformance", "认证": "certification", "实时": "realtime", "快照语义": "snapshot semantics",
+    "观察": "observe", "为读取时刻近似": "approximated at read time", "值": "value",    "条（服务端最多 64 条）。": " entries (server keeps up to 64).",
+  };
+  const rules = [
+    [/(\d+(?:\.\d+)?) ms 前/g, "$1 ms ago"], [/(\d+(?:\.\d+)?) s 前/g, "$1 s ago"],
+    [/（(\d+(?:\.\d+)?) ms 前）/g, "($1 ms ago)"], [/（(\d+(?:\.\d+)?) s 前）/g, "($1 s ago)"],
+    [/(\d+) 位/g, "$1-bit"], [/(\d+) 站 \//g, "$1 slaves /"], [/异常 (\d+)/g, "problems $1"],
+    [/(\d+) 个从站/g, "$1 slaves"], [/(\d+) 条/g, "$1 entries"],
+  ];
+  let localizing = false;
+  function localizeString(source) {
+    let text = source;
+    for (const [pattern, replacement] of rules) text = text.replace(pattern, replacement);
+    for (const key of Object.keys(enExtras).sort((a, b) => b.length - a.length)) {
+      if (text.includes(key)) text = text.split(key).join(enExtras[key]);
+    }
+    return text;
+  }
+  function localizeDom(root) {
+    if (lang !== "en") return;
+    if (localizing) return;
+    localizing = true;
+    try {
+      const target = root || document.body;
+      if (!target) return;
+      const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT);
+      const nodes = [];
+      while (walker.nextNode()) nodes.push(walker.currentNode);
+      for (const node of nodes) {
+        const value = node.nodeValue || "";
+        if (!/[\u4e00-\u9fff]/.test(value)) continue;
+        const next = localizeString(value);
+        if (next !== value) node.nodeValue = next;
+      }
+    } finally {
+      localizing = false;
+    }
+  }
+  function observeDom() {
+    if (typeof MutationObserver !== "function" || !document.body) return;
+    let scheduled = false;
+    const observer = new MutationObserver(() => {
+      if (scheduled) return;
+      scheduled = true;
+      setTimeout(() => {
+        scheduled = false;
+        localizeDom(document.body);
+      }, 20);
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+  }
   function readLang() {
     // 支持 `?lang=en` 静态覆盖（便于截图/自动化验收；不写 localStorage）。
     try {
@@ -288,6 +387,7 @@
       // 隐私模式：忽略持久化失败
     }
     applyStatic(document);
+    localizeDom(document.body);
     window.dispatchEvent(new CustomEvent("ecsim-lang", { detail: { lang } }));
   }
 
@@ -301,6 +401,7 @@
     applyStatic,
     setLang,
     keys: dict,
+    localize: localizeDom,
     get lang() {
       return lang;
     },
@@ -310,8 +411,14 @@
   };
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => applyStatic(document));
+    document.addEventListener("DOMContentLoaded", () => {
+      applyStatic(document);
+      localizeDom(document.body);
+      observeDom();
+    });
   } else {
     applyStatic(document);
+    localizeDom(document.body);
+    observeDom();
   }
 })();

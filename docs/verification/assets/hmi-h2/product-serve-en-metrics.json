@@ -18,7 +18,10 @@
     "htmlLang": "en",
     "hasI18n": true,
     "langToggle": true,
-    "appTextLength": 711,
+    "cjk": [
+      "中文"
+    ],
+    "appTextLength": 966,
     "under44": [],
     "paint": [
       {
@@ -31,28 +34,28 @@
       }
     ],
     "navigation": {
-      "domContentLoaded": 21.8,
-      "load": 54.8,
+      "domContentLoaded": 22.8,
+      "load": 52.9,
       "transferSize": 16862
     },
     "resources": [
       {
         "name": "i18n.js",
-        "duration": 6.3,
-        "transferSize": 21695
+        "duration": 7.6,
+        "transferSize": 30743
       },
       {
         "name": "app.js",
-        "duration": 6.4,
+        "duration": 7.7,
         "transferSize": 74884
       },
       {
         "name": "favicon.ico",
-        "duration": 1.2,
+        "duration": 1.4,
         "transferSize": 356
       }
     ],
-    "screenshot": ".local\\hmi-capture\\serve-en\\1024x768.png"
+    "screenshot": ".local\\hmi-capture\\final-en\\1024x768.png"
   },
   {
     "label": "1280x900",
@@ -73,7 +76,10 @@
     "htmlLang": "en",
     "hasI18n": true,
     "langToggle": true,
-    "appTextLength": 711,
+    "cjk": [
+      "中文"
+    ],
+    "appTextLength": 966,
     "under44": [],
     "paint": [
       {
@@ -86,23 +92,23 @@
       }
     ],
     "navigation": {
-      "domContentLoaded": 8.5,
-      "load": 9.8,
+      "domContentLoaded": 11.3,
+      "load": 12.9,
       "transferSize": 16862
     },
     "resources": [
       {
         "name": "i18n.js",
-        "duration": 1.2,
-        "transferSize": 21695
+        "duration": 1.9,
+        "transferSize": 30743
       },
       {
         "name": "app.js",
-        "duration": 1.3,
+        "duration": 2,
         "transferSize": 74884
       }
     ],
-    "screenshot": ".local\\hmi-capture\\serve-en\\1280x900.png"
+    "screenshot": ".local\\hmi-capture\\final-en\\1280x900.png"
   },
   {
     "label": "1920x1080",
@@ -123,36 +129,39 @@
     "htmlLang": "en",
     "hasI18n": true,
     "langToggle": true,
-    "appTextLength": 711,
+    "cjk": [
+      "中文"
+    ],
+    "appTextLength": 966,
     "under44": [],
     "paint": [
       {
         "name": "first-paint",
-        "startTime": 56
+        "startTime": 40
       },
       {
         "name": "first-contentful-paint",
-        "startTime": 56
+        "startTime": 40
       }
     ],
     "navigation": {
-      "domContentLoaded": 36.1,
-      "load": 38.5,
+      "domContentLoaded": 17.9,
+      "load": 19.8,
       "transferSize": 16862
     },
     "resources": [
       {
         "name": "i18n.js",
-        "duration": 1.7,
-        "transferSize": 21695
+        "duration": 2.7,
+        "transferSize": 30743
       },
       {
         "name": "app.js",
-        "duration": 2.3,
+        "duration": 2.7,
         "transferSize": 74884
       }
     ],
-    "screenshot": ".local\\hmi-capture\\serve-en\\1920x1080.png"
+    "screenshot": ".local\\hmi-capture\\final-en\\1920x1080.png"
   },
   {
     "label": "1024x768@125",
@@ -173,35 +182,38 @@
     "htmlLang": "en",
     "hasI18n": true,
     "langToggle": true,
-    "appTextLength": 711,
+    "cjk": [
+      "中文"
+    ],
+    "appTextLength": 966,
     "under44": [],
     "paint": [
       {
         "name": "first-paint",
-        "startTime": 40
+        "startTime": 48
       },
       {
         "name": "first-contentful-paint",
-        "startTime": 40
+        "startTime": 48
       }
     ],
     "navigation": {
-      "domContentLoaded": 15.9,
-      "load": 18.1,
+      "domContentLoaded": 17.7,
+      "load": 20,
       "transferSize": 16862
     },
     "resources": [
       {
         "name": "i18n.js",
-        "duration": 2.1,
-        "transferSize": 21695
+        "duration": 2.9,
+        "transferSize": 30743
       },
       {
         "name": "app.js",
-        "duration": 2.2,
+        "duration": 3.1,
         "transferSize": 74884
       }
     ],
-    "screenshot": ".local\\hmi-capture\\serve-en\\1024x768@125.png"
+    "screenshot": ".local\\hmi-capture\\final-en\\1024x768@125.png"
   }
 ]

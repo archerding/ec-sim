@@ -5588,3 +5588,10 @@
   （IgH 时序/ACK 行为），非负载伪影；去掉"待复验"字样，保留与 SOEM 侧 OP 0x08 不同的如实记录；判据不变。
 - AC-E-202 sanity 再 PASS（SM3 `3706393000000000000008`、`tx_layout=LcecCsp`、lcec 逐值、5/5 轮）。
 - BL-17/BL-18 维持关闭；BL-20 仍 ⚠️ 未验证。
+
+### G-19（P1）修复：en 残留中文清零（batch 3）
+
+- 渲染后覆盖层：`i18n.js` 增 `localizeDom`/`MutationObserver` + `enExtras`/`rules`，覆盖动态模板/拼接/证据
+  Markdown/关于页；en CJK 仅剩白名单 `中文`（toggle 文案）。
+- `--serve` 产品路径复测：4 视口 en 无溢出、<44px=0；`web-i18n-check`/`contract`/`writing-boundary`/
+  `web-sdo-panel`/`serve-web-assets-probe` 全 EXIT=0；截图 `product-serve-en/zh-*` 更新。

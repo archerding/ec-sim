@@ -132,6 +132,7 @@ function measureExpression() {
       htmlLang: document.documentElement.lang,
       hasI18n: Boolean(window.ECSIM_I18N),
       langToggle: Boolean(document.getElementById("lang-toggle")),
+      cjk: (document.body.innerText.match(/[\u4e00-\u9fff]+/g) || []).slice(0, 80),
       appTextLength: (document.getElementById("app")?.innerText || "").length,
       under44: small.slice(0, 30),
       paint: performance.getEntriesByType('paint').map((entry) => ({ name: entry.name, startTime: Number(entry.startTime.toFixed(1)) })),
