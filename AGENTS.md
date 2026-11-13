@@ -598,9 +598,16 @@ user.email = deepseek-harness@users.noreply.github.com
   可选 `wasm-runtime` 25 个均宽松许可；无 NOTICE 义务）；ADR 0002 → **Accepted**；STATUS/VERIFICATION/M3
   清单互链。W6 渲染烟测（无头 Edge 截图）发现"载入区重复渲染"低危缺陷，**Web HMI 冻结**未修，转交 HMI GO 后。
   只写"用例映射/预回归"，**不宣称 CTT/认证**。
-- [ ] **B49 M4 测试报告与 CI 接入（建议，backlog 顶部）**：脚本生成 JSON/Markdown 测试报告
-  （版本/环境/探针结果/证据链接，对应 ECSIM-PRD `REQ-TST-05`），CI 增加文档一致性检查 +
-  非 root UDS 探针（`REQ-TST-08`）；补 MCP live-only/token 矩阵覆盖（B47 遗留）。不宣称认证。
+- [x] ~~**B49 M4 测试报告与 CI 接入**~~ ✅ **2026-11-13 完成**：新增
+  `scripts/spikes/gen-test-report.py`（零第三方依赖、跨平台；生成 `report.json` + `report.md`：
+  Git HEAD/dirty、OS/rustc/cargo、fmt/clippy/test/doc、`run-all-probes.sh` 明细与证据链接；
+  默认写 `target/test-reports/` 不入库；失败退出 1）。CI 新增 `docs-and-probes` job
+  （ubuntu 非 root：文档一致性 + UDS 探针 + artifact 上传）；`run-all-probes.sh` 的 Python 探测改为
+  `python3 || python`（修复 Windows/Git Bash 下 `python3` 不存在导致探针整体 exit 1 的问题）。
+  本机整轮报告 **PASS**（cargo 4 项 + 探针 any 项）；⚠️ CI 首次运行待推送后观察。
+- [ ] **B50 MCP 覆盖矩阵（建议，backlog 顶部）**：live-only 工具（topology/pdo/history/metrics/
+  sdo-audit）在实时模式下端到端、token 模式矩阵（200/401/403）、调用审计结构化 JSON Lines
+  （B47 遗留）；不宣称认证。
 
 ## 7. 目录约定
 

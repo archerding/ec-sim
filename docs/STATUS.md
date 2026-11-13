@@ -105,10 +105,14 @@ cargo test --workspace
 1. ~~**B48（backlog 顶部）**：M3 退出条件核对与收尾~~ ✅ 2026-11-13 完成——验证机整轮 **20 PASS**、
    本机 256 passed、许可/依赖核对（默认 0 第三方；可选 25 个宽松许可）、ADR 0002 → Accepted；
    见 [M3 退出清单](plan/M3-exit-checklist.md)。**M3 = 退出候选，W6 真人浏览器点击验收待补**。
-2. **B49（建议）M4 测试报告与 CI 接入**：脚本生成 JSON/Markdown 报告（版本/环境/结果/证据链接），
-   CI 增加文档一致性 + 非 root UDS 探针；按 ECSIM-PRD（`REQ-TST-05/08`）与 M3-W8 §9 补覆盖。
-3. B44 剩余增量项：插件 panic 重启、多实例配额。
-4. 验证机补跑 `wasm-plugin-probe.sh` / `wasm-behavior-probe.sh` 与 Linux CLI UDS/TAP 行为插件端到端（需 crates.io，或先 vendor wasmi/wat）。
-5. DC 仿真（寄存器 + SYNC0/tick），实现后在测试画像上验证再声明 SII DC。
-6. CA 部分写/子索引顺序语义完善；fuzz 升级。
-7. 性能：TAP/UDS 闭环 32 站 @1 kHz 与 DC 下的长稳测试（B46 未覆盖部分，⚠️ 待验证）。
+2. ~~**B49（backlog 顶部）M4 测试报告与 CI 接入**~~ ✅ 2026-11-13 完成——新增
+   `scripts/spikes/gen-test-report.py`（JSON/Markdown 报告：环境/HEAD/检查/探针/证据链接，零第三方依赖）；
+   CI 新增 `docs-and-probes` job（文档一致性 + 非 root UDS 探针 + 报告 artifact）；`run-all-probes.sh`
+   的 Python 探测修正为 `python3 || python`（Windows/Git Bash）。⚠️ CI 首次运行待推送后观察。
+3. **B50（建议）MCP 覆盖矩阵**：live-only 工具（topology/pdo/history/metrics/sdo-audit）实时模式端到端、
+   token 模式矩阵（200/401/403）、调用审计结构化日志（B47 遗留）。
+4. B44 剩余增量项：插件 panic 重启、多实例配额。
+5. 验证机补跑 `wasm-plugin-probe.sh` / `wasm-behavior-probe.sh` 与 Linux CLI UDS/TAP 行为插件端到端（需 crates.io，或先 vendor wasmi/wat）。
+6. DC 仿真（寄存器 + SYNC0/tick），实现后在测试画像上验证再声明 SII DC。
+7. CA 部分写/子索引顺序语义完善；fuzz 升级。
+8. 性能：TAP/UDS 闭环 32 站 @1 kHz 与 DC 下的长稳测试（B46 未覆盖部分，⚠️ 待验证）。

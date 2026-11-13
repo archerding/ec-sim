@@ -45,3 +45,42 @@ jobs:
         run: cargo doc --workspace --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
+
+  # B49（M4）：文档一致性 + 非 root UDS 探针 + 可归档测试报告。
+  # TAP/root 探针在探针脚本内自动 SKIP（CI 无 root、无内核模块），由验证机覆盖。
+  docs-and-probes:
+    name: docs + probes (ubuntu-latest, non-root)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo build（release，供 UDS 探针）
+        run: cargo build --release -p esc-node -p mcp-server
+
+      - name: 文档一致性检查（路由/工具目录）
+        run: |
+          python3 scripts/spikes/control-plane-doc-check.py
+          python3 scripts/spikes/mcp-tools-check.py
+
+      - name: 非 root UDS 探针（run-all-probes.sh）
+        shell: bash
+        run: |
+          set -o pipefail
+          bash scripts/spikes/run-all-probes.sh 2>&1 | tee /tmp/ec-sim-probes.log
+
+      - name: 生成测试报告（JSON + Markdown）
+        if: always()
+        run: |
+          python3 scripts/spikes/gen-test-report.py \
+            --skip-cargo --skip-probes --probes-log /tmp/ec-sim-probes.log \
+            --out target/test-reports
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ec-sim-test-report
+          path: target/test-reports/
+          if-no-files-found: warn

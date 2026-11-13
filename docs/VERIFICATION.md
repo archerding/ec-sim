@@ -93,6 +93,15 @@
 > 可选 feature 与 crates.io 拉取依赖（离线应 SKIP），属 M3-W1/W2 证据；手动运行见
 > [spike-6](spikes/spike-6-wasm-host.md) 与 `plugins/behavior-counter/README.md`。
 
+## 测试报告与 CI（B49 / M4）
+
+| 脚本/配置 | 作用 | 最近结果 |
+|---|---|---|
+| `scripts/spikes/gen-test-report.py` | 一次生成 JSON + Markdown 测试报告：环境/HEAD/检查/探针/证据链接；零第三方依赖、跨平台；默认写 `target/test-reports/`（不入库） | 本机运行 **EXIT=0**（cargo fmt/clippy/test/doc + 探针；2026-11-13）；⚠️ CI 首次运行待观察 |
+| `.github/workflows/ci.yml` → `docs-and-probes` job | Ubuntu 非 root：文档一致性（`control-plane-doc-check`/`mcp-tools-check`）+ `run-all-probes.sh`（UDS 类）+ 上传报告 artifact | 新增（⚠️ 推送后首次 CI 运行待验证；TAP/root 项由验证机覆盖） |
+
+> 报告只记录"用例映射/预回归"，**不构成**认证；SKIP 表示该环境不适用（如非 root 跳过 TAP）。
+
 ## 辅助工具
 
 | 文件 | 用途 |

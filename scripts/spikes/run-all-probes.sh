@@ -14,7 +14,7 @@ set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
 
 BIN="${BIN:-target/release/ec-sim-esc}"
-PY="${PY:-python3}"
+PY="${PY:-$(command -v python3 || command -v python || echo python3)}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-120}"
 RUN_TAP="${RUN_TAP:-auto}"
 LOG_DIR="${LOG_DIR:-/tmp/ec-sim-probes}"

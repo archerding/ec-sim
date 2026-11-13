@@ -1,5 +1,40 @@
 ---
 
+## 2026-11-13 12:23 班（低峰）— **B49：M4 测试报告生成器 + CI 文档/探针 job**
+
+> 调度上下文计划重点（B2b / B8 / B4）均早已完成；按 `AGENTS.md` §6 取 backlog 顶部未完成项 **B49**
+> （M3-W8/M4 后续：可归档测试报告 + CI 覆盖）。
+
+**做了什么**
+- 新增 `scripts/spikes/gen-test-report.py`（**零第三方依赖**、跨平台）：一次生成 `report.json` + `report.md`；
+  字段：schema/时间、Git HEAD+dirty、环境（OS/rustc/cargo/Python/CI）、检查明细
+  （fmt/clippy/test/doc/probes 的退出码/耗时/日志）、单测 passed/failed、探针 PASS/FAIL/SKIP 明细与汇总、
+  证据链接（VERIFICATION/STATUS/M3 清单）；失败退出 1，默认写 `target/test-reports/`（已 gitignore）。
+- 新增 CI job **`docs-and-probes`**（ubuntu-latest，非 root）：build release（esc-node + mcp-server）→
+  `control-plane-doc-check` + `mcp-tools-check` → `run-all-probes.sh`（UDS 类，tee 日志）→
+  生成报告（`--skip-cargo --skip-probes --probes-log`）→ `upload-artifact`；TAP/root 项由验证机覆盖。
+- 修复 `run-all-probes.sh` 的 Python 探测：`python3 || python`（Windows/Git Bash 无 `python3` 时，
+  此前整轮探针直接 `exit 1`）；报告生成器状态判定相应收紧（unknown → fail，SKIP 仍允许）。
+- 文档同步：VERIFICATION 新增"测试报告与 CI"；STATUS 下一步（B49 ✅ + B50 建议）；
+  AGENTS §6（B49 ✅ + B50 建议）。
+
+**验证结果**
+- 本机整轮报告 **PASS**：fmt/clippy/test/doc 全 0、**256 passed / 0 failed**；
+  探针 **6 PASS / 0 FAIL / 14 SKIP**（Windows 非 root；SKIP 均为需 Linux/root 的项）；
+  `report.json`/`report.md` 生成；CI 模式（复用 `--probes-log`）复跑 **PASS**。
+- `python -m py_compile` 与 `bash -n` OK；CI yaml 经 PyYAML 解析通过（jobs: `test`、`docs-and-probes`）。
+- ⚠️ CI 首次实跑需 push 后观察；报告产物不入库（`target/`）；W6 真人点击仍待补（M3 关闭依据）。
+
+**卡点**
+- 无硬阻塞。CI 绿需在 GitHub Actions 实际验证（本班仅本地校验 YAML/脚本）。
+
+**下次开工第一件事**
+- 取 backlog 顶部 **B50（建议）MCP 覆盖矩阵**：live-only 工具（topology/pdo/history/metrics/sdo-audit）
+  实时模式端到端、token 模式矩阵（200/401/403）、调用审计结构化 JSON Lines（B47 遗留）；
+  或先补 W6 真人点击以关闭 M3。仍不宣称一致性/认证。
+
+---
+
 ## 2026-11-13 12:19 班（低峰）— **B48：M3 退出条件核对与收尾（20/20 探针 + 256 单测 + 许可核对，ADR 0002 → Accepted）**
 
 > 调度上下文计划重点（B2b / B8 / B4）均早已完成；按 `AGENTS.md` §5 取 backlog 顶部未完成项 **B48**
