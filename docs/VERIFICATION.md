@@ -11,8 +11,9 @@
 > ＋ **B-2 验收面 37 项**（`run-acceptance-probes.sh`，含 B57 `al-error`）。
 > 验证机 2026-11-13 轮次 B（clean VM / 单 runner）：**B-1 `23 PASS / 0 FAIL / 0 SKIP（共 23）`**、
 > **B-2 `30 PASS / 0 FAIL / 7 SKIP（共 37；7 项 `igh-*` = NOT-JUDGED/PV-01/PV-14）`**，明细见
-> `docs/verification/2026-11-13-gate-b2-acceptance-probes.md` §4；**B62 `al-telemetry` 为本轮新增（24 项），
-> 验证机结果单独记录，不改变上述 M3 结论**。
+> `docs/verification/2026-11-13-gate-b2-acceptance-probes.md` §4；**B62 `al-telemetry` 为本轮新增
+> （24 项），EC-Sim 验证机随即整轮跑通：`B-1 24 PASS / 0 FAIL / 0 SKIP（共 24）`**（见
+> `docs/verification/2026-11-14-b62-al-telemetry.md`），不改变上述 M3 结论。
 > 本机 `cargo test --workspace` **265 passed / 0 failed**（B62 +1：SII 命令计数镜像；B55/B57/B58 增量见
 > `docs/STATUS.md`）。
 > `mcp-tools`/`mcp-stdio`/`agent-skills`/`tap-cia402`/`invalid-slave`/`al-error`/`al-telemetry` 分见
@@ -38,7 +39,7 @@
 | `cia402-modes-probe.sh` | 三个 CiA 402 画像经 SDO 上传的 `0x6502` 与布局一致（0x01C1/0x03CD/0x0410） | **EXIT=0** |
 | `dc-clock-probe.sh` | 模拟 DC 时钟：0x0910 系统时间随帧前进（Tier0 帧驱动） | **EXIT=0** |
 | `cia402-sdo-download-probe.sh` | 20 字节可写配置字符串 `0x2100` 的分段 SDO 下载 + 回读一致 | **EXIT=0** |
-| `al-telemetry-probe.sh` | B62 AL 遥测：过程数据活跃时 SII 并发读 40 轮、SM watchdog `0x001B`/`watchdog` 事件、Error ACK + 重新 OP 恢复；`/state.live.stats`、`last_al_event`、`/metrics` 6 个新计数器、stderr `AL_EVENT` 行 | **待验证机**（本机仅脚本语法 + cargo 单测） |
+| `al-telemetry-probe.sh` | B62 AL 遥测：过程数据活跃时 SII 并发读 40 轮、SM watchdog `0x001B`/`watchdog` 事件、Error ACK + 重新 OP 恢复；`/state.live.stats`、`last_al_event`、`/metrics` 6 个新计数器、stderr `AL_EVENT` 行 | **EXIT=0**（2026-11-14 EC-Sim 验证机；B-1 整轮 24 PASS/0 FAIL/0 SKIP，见 [B62 记录](verification/2026-11-14-b62-al-telemetry.md)） |
 
 ## 需要 Linux TAP + root（真实主站/内核模块）
 

@@ -5621,4 +5621,8 @@
 - 新探针 `scripts/spikes/al-telemetry-probe.sh` + `uds_al_telemetry_probe.py`：ESM 进 OP → PDO 活跃时
   SII 读 40 轮 → 停 PDO 触发 watchdog `0x001B` → Error ACK + 重新 OP → 核对 `/state`/`/metrics`/`AL_EVENT`；
   登记 B-1（注册表 24 项）；仅 Linux/UDS，不占 CNC 验证机。本机 `cargo test --workspace` 265 passed、
-  fmt/clippy 0；验证机证据待补。
+  fmt/clippy 0；EC-Sim 验证机（`git archive HEAD` → `cargo build --release -p esc-node`）整轮
+  **B-1 `24 PASS / 0 FAIL / 0 SKIP（共 24）`**，新探针 `PROBE_EXIT=0`、6 条 `AL_EVENT`（含
+  `watchdog=true code=0x001B` 与恢复 `watchdog=false`）；过程中修掉 `/state.last_al_event` 被日志消费
+  清空（拆分持久/待打印事件槽，`0bb5818`）与 `AL_EVENT watchdog=1` 打印（改 `true/false`，`36d6dc7`）。
+  证据见 [B62](docs/verification/2026-11-14-b62-al-telemetry.md)。
