@@ -117,6 +117,7 @@ def main():
             before = live_state(http_base)
             probe.check(before["al_status"] == "0x08", f"OP 前 /state al_status={before['al_status']}")
             before_sii = before["stats"]["sii_read_commands"]
+            before_last_event = before["last_al_event"]
 
         # 3) 过程数据活跃时并发读 SII（每轮先写 PDO，再读 SII word 0x0008）。
         for round_index in range(SII_CONCURRENT_READS):
@@ -135,10 +136,12 @@ def main():
             stats = after_sii["stats"]
             probe.check(stats["sii_read_commands"] >= before_sii + SII_CONCURRENT_READS,
                         f"SII 读计数未累计：{before_sii} -> {stats['sii_read_commands']}")
-            probe.check(after_sii["last_al_event"] is None,
-                        f"SII 并发期间不应产生 AL 事件：{after_sii['last_al_event']}")
             probe.check(stats["sm_watchdog_triggers"] == 0,
                         f"SII 并发期间不应触发看门狗：{stats['sm_watchdog_triggers']}")
+            probe.check(stats["al_errors"] == 0,
+                        f"SII 并发期间不应产生 AL error：{stats['al_errors']}")
+            probe.check(after_sii["last_al_event"] == before_last_event,
+                        f"SII 并发期间不应新增 AL 事件：{before_last_event} -> {after_sii['last_al_event']}")
 
         # 4) 停止过程数据 > 10 ms → 下一帧触发 SM watchdog（OP→SAFEOP + 0x001B）。
         time.sleep(WATCHDOG_TIMEOUT_S)

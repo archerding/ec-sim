@@ -255,8 +255,10 @@ pub struct Responder {
     /// 可选的 CiA 402 状态机行为（SM2 控制字 → SM3 状态字），见 [Responder::with_cia402_behavior]。
     cia402: Option<Cia402Behavior>,
     stats: Stats,
-    /// 最近一次 AL 状态/错误码变化（`poll_al_event` 取出后清空，避免重复记录）。
+    /// 最近一次 AL 状态/错误码变化（保留，供 `/state` 只读展示；不随日志消费清空）。
     last_al_event: Option<AlEvent>,
+    /// 尚未被运行期日志消费的 AL 事件（`poll_al_event` 取出后清空，避免重复打印）。
+    pending_al_event: Option<AlEvent>,
 }
 
 impl Default for Responder {
@@ -290,6 +292,7 @@ impl Responder {
             cia402: None,
             stats: Stats::default(),
             last_al_event: None,
+            pending_al_event: None,
         }
     }
 
@@ -548,10 +551,13 @@ impl Responder {
         self.regs.read_u16(reg::AL_STATUS_CODE).unwrap_or(0)
     }
 
-    /// 取出最近一次 AL 状态/错误码变化（取出后清空，避免控制面重复上报）。
+    /// 取出尚未打印的最近一次 AL 状态/错误码变化（取出后清空，避免运行期日志重复打印）。
+    ///
+    /// 与 [`Responder::last_al_event`] 不同：本方法消费事件，供 `AL_EVENT` 日志使用；
+    /// `/state` 等只读观测应使用 `last_al_event`，不受日志消费影响。
     #[must_use]
     pub fn poll_al_event(&mut self) -> Option<AlEvent> {
-        self.last_al_event.take()
+        self.pending_al_event.take()
     }
 
     /// 查看最近一次 AL 状态/错误码变化（不消费；供 `/state` 只读展示）。
@@ -588,6 +594,7 @@ impl Responder {
             watchdog,
             at_ms: self.now_ms,
         });
+        self.pending_al_event = self.last_al_event;
     }
 
     /// 验收/调试注入：强制置 AL Status error 位与 AL Status Code（写 `0x0130`/`0x0134`）。
