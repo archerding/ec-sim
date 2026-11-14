@@ -638,7 +638,7 @@ fn log_al_events(responders: &mut [esc_node::Responder]) {
                 event.to,
                 event.from_code,
                 event.code,
-                u8::from(event.watchdog),
+                event.watchdog,
                 event.at_ms
             );
         }
