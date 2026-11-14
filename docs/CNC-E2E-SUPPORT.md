@@ -1,9 +1,9 @@
-# CNC E2E 支撑：EC-Sim 供给清单与可观察量接口约定（v0.1）
+# CNC E2E 支撑：EC-Sim 供给清单与可观察量接口约定（v0.2）
 
 > 状态：**草案（2026-11-15，CNC E2E 支撑期）** ｜ 作者：PM（sim-pm / DeepSeek Harness）
 > 定位：本文件回答"**CNC 端到端闭环测试要 EC-Sim 提供什么、EC-Sim 现在能提供什么、缺什么**"，并给出 **AC-E-926（CNC HMI 逐页功能一致性）所需的可观察量接口约定**。它是**供给侧清单 + 接口契约**，不是验收结论，也不改变 CNC 侧任何判据。
 > 背景：用户 2026-11-15 指令（经 Lead 转达）：**SIM 暂停其他任务，转去支撑 CNC E2E；由 CNC E2E 需求驱动 SIM 开发**。供给项映射 task-101 / task-102 / task-103。
-> 配套判据（**权威**）：`docs/verification/2026-11-15-cnc-e2e-support-audit.md` **v0.2**（sim-expert，task-101 A1–A7 / task-102 B1–B6 / task-103 C1–C5 + Lead 裁决）；本文件只做**供给侧映射**，不重复判据、不替代该文件。
+> 配套判据（**权威**）：`docs/verification/2026-11-15-cnc-e2e-support-audit.md` **v0.2**（sim-expert，task-101 A1–A7 / task-102 B1–B6 / task-103 C1–C5 + Lead 裁决）；本文件只做**供给侧映射**，不重复判据、不替代该文件。v0.2 已按 sim-expert 复核意见修正 4 处事实口径 + 2 处 minor，并登记 cnc-pm 对 §7 的确认。
 > 技术基线：EC-Sim HEAD `acba541`（B62 遥测 `73b5151` + E2E 判据两笔 docs；写作时 sim-impl 正在实现 task-101/102/103，工作区有未提交改动，以下"现状"以 HEAD 已落地能力为准）。C5 栈固定资产：`ec-sim-esc` sha256 `75fa8a1a…`、`cnc-csp-servo` manifest sha256 `5f96adc1…`（以 `cnc-station/scripts/vm-verify/c5-stack-up.sh` 内置值为准）。
 > 事实依据：`docs/plan/CNC-V1-integration.md`（V1/V2 PDO 布局）、`docs/CONTROL-PLANE.md`（控制面协议）、`docs/STATUS.md`、`docs/VERIFICATION.md`、`docs/verification/2026-11-14-b62-al-telemetry.md`。
 > 真实性红线：不宣称 EtherCAT 一致性 / CTT / 认证 / 与厂商设备兼容 / 实时 SLA；未验证项标 `⚠️`；`0x18` 等未知 AL 码一律 NOT-JUDGED（`G-17`）；PENDING 不得写成 PASS。
@@ -14,7 +14,7 @@
 
 - **已能提供（P0）**：固定场景骨架（3×`cnc-csp-servo` 克隆，TAP）、PDO 双向可见（`/pdo` raw+decoded）、启动期故障/错误注入、B62 运行期 AL 遥测（`/state.live.stats` + `last_al_event` + `AL_EVENT` + `/metrics`）、只读控制面（`/state`、`/topology`、`/events`、`/health`）、可重复脚本与二进制/manifest 指纹。
 - **尚缺（P0，sim-impl 实现中）**：`docs/CNC-E2E-PROFILE.md` + 启动/复位脚本 + lcec XML（task-101）、`POST /fault` 与审计/恢复（task-102，P0 仅 F-LINK/F-PROC/F-SDO）、可观测性补齐与证据矩阵（task-103：WKC/抖动来源、`/events?since=`、harness 侧 run_id）。
-- **P1**：运行期单站 AL 注入（与 BL-20 冲突，Lead 裁决降 P1/可选）、混合画像拓扑（多轴 + IO 同链）、DC 真实同步（不承诺）、控制面 run_id 字段。
+- **P1**：运行期单站 AL 注入（与 BL-20 冲突，Lead 裁决降 P1/可选）、混合画像拓扑（多轴 + IO 同链）、DC 真实同步（不承诺）、控制面 run_id 回显。
 - **AC-E-926 的接口原则**：CNC 侧主证据 = **LinuxCNC 可观察量**（HAL pin / `stat` / NML·日志 / 运动·DRO·报警码）；EC-Sim 提供**第二来源对账**（同一次动作在从站侧的 PDO/SDO/AL 变化），用于证明"不是 UI 动画/本地缓存/假值"，**不能替代** LCNC 证据。
 
 ---
@@ -43,15 +43,15 @@
 | --- | --- | --- | --- | --- | --- |
 | **S1** | 固定场景：TAP + 3×CiA402 CSP（+8 路 IO 或裁剪）+ REF 状态 | **P0** | task-101 | 🟡 场景骨架可复现（`--slaves 3` 克隆同画像；C5 栈已按此起跑） | `docs/CNC-E2E-PROFILE.md` + `REF.json` 待 sim-impl 产出；混合画像不支持 → S6/P1；C5 栈可作基线参考 |
 | **S2** | 一键起停 / 健康 / 重置（EC-Sim 侧） | **P0** | task-101 | 🟡 部分：进程级起停 + `GET /health`；CNC 侧 `scripts/vm-verify/c5-stack-up.sh`/`c5-stack-down.sh` 可作参照 | 无 EC-Sim 侧 up/down/reset 脚本；"健康"未定义深度判据 → §6 |
-| **S3** | REF 状态定义与判据（可机读） | **P0** | task-101 | ✅ 本文 §3 定稿（观测全部来自现有端点）；权威算法见判据文件 A2/A3 | 需与 cnc-impl demo-state 对齐后写入 `REF.json`（Lead 裁决 #6） |
+| **S3** | REF 状态定义与判据（可机读） | **P0** | task-101 | 🟡 定义完成（本文 §3，观测全部来自现有端点；权威算法见判据文件 A2/A3） | `REF.json` 机读文件 + 与 cnc-impl demo-state 对齐**未完成**（task-101） |
 | **S4** | 故障注入（F-LINK / F-PROC / F-SDO 为 P0；AL/DC 为 P1/可选） | **P0**（三类） | task-102 | 🟡 仅**启动期**：`--fault <hex>`（CiA402）、`--al-error <hex>`（AL error+code，已知码白名单） | 运行期 `/fault` **不存在**；无审计/恢复；AL 运行期注入与 BL-20 冲突 → P1/可选 |
 | **S5** | 可观测性（遥测 / 事件 / 指标 / SSE） | **P0** | task-103 | 🟡 B62 遥测已落地；`/events` SSE 已有 | 缺 WKC/周期抖动来源（C1）、`/events?since=`（C2）、harness 侧 run_id（C3，P0）、证据矩阵（C4） |
 | **S6** | 多从站与拓扑（含混合画像） | **P1** | task-101 后续 | 🟡 `--slaves N` 克隆同画像（TAP/UDS 8 从站已验证；`tap-cia402-multi-slave-probe.sh` N=2 断言 WKC `3N`、`/topology` 全 OP） | **混合画像不支持**（3 伺服 + IO 需"每从站画像列表"）⚠️ |
 | **S7** | 控制面契约（只读、站号、错误语义） | **P0** | 跨 task | ✅ 只读 GET；`?slave=N` 0-based、非法/越界统一 404（B55 `validate_slave_param`）；写路径默认 405（`--serve-write` 才开） | 虚拟闭环不需要写路径；保持默认关闭 |
-| **S8** | 证据与可重复性（脚本 / 指纹 / 注册表） | **P0** | task-103 | ✅ 脚本自算注册表：B-1 **24 项**（`run-all-probes.sh`）、B-2 **37 项**（`run-acceptance-probes.sh`；EC-Sim VM 2026-11-14 轮：30 PASS/0 FAIL/7 SKIP，7 SKIP=`igh-*` NOT-JUDGED） | EC-Sim VM 无 IgH 应用 → `igh-*` 类不判；CNC VM 侧由 C5 栈承接 |
+| **S8** | 证据与可重复性（脚本 / 指纹 / 注册表） | **P0** | task-103 | ✅ 脚本自算注册表：B-1 **24 项**（`run-all-probes.sh`）、B-2 **38 项**（`run-acceptance-probes.sh`；`e334780` 新增 `serve-web-assets-probe`；EC-Sim VM 2026-11-14 轮 **30 PASS/0 FAIL/7 SKIP** 为 **37 项**口径，7 SKIP=`igh-*` NOT-JUDGED，新探针尚未进该轮） | EC-Sim VM 无 IgH 应用 → `igh-*` 类不判；CNC VM 侧由 C5 栈承接；38 项整轮待重跑 |
 | **S9** | 边界与真实性（不宣称、不造假） | **P0** | 全部 | ✅ 文档/代码口径一致：仿真器侧计数 ≠ 链路质量；`0x18` NOT-JUDGED；无认证声明 | 新增供给项须逐条过本文件 §9 |
 
-> 计数纪律：B-1/B-2 项数一律"以脚本 `--list` 自算"；本文所记 24/37 为 HEAD `73b5151` 口径（见 `docs/STATUS.md`），后续以脚本输出为准。
+> 计数纪律：B-1/B-2 项数一律"以脚本 `--list` 自算"；本文所记 **24/38** 为 HEAD `e334780` 口径（B-1 24 正确），VM 整轮 30/0/7 为**37 项**口径（新增 `serve-web-assets-probe` 未进该轮），后续以脚本输出为准。
 
 ---
 
@@ -106,7 +106,7 @@
 | `GET /state?slave=N` | `ec-sim/state-v1`；实时模式含 `live` | 从站身份/画像、AL 状态、`live.stats`、`last_al_event` |
 | `GET /pdo?slave=N` | `ec-sim/pdo-v1`：`sm2/sm3` raw hex + `decoded` | 动作前后 PDO 对账（0x6040/0x6041/0x6060/0x6061/0x6064/0x606C/0x607A） |
 | `GET /pdo?slave=N&history=1` | `ec-sim/pdo-history-v1`（按变化去重，每站 256 条） | 变化时序（谁先变、间隔） |
-| `GET /topology` | `ec-sim/topology-v1`：全局，无 `?slave` | 3 站全 OP / 逐站 `frames_in` 等摘要（WKC 无独立计数，见 §4.4） |
+| `GET /topology` | `ec-sim/topology-v1`：全局，无 `?slave` | 3 站全 OP / 逐站 `frames_in` 等摘要（`sm2/sm3` 为 SM2/SM3 原始 PDO 字节，**非 WKC**，见 §4.4） |
 | `GET /metrics?slave=N` | Prometheus 文本，`ecsim_*`（AL 迁移/错误/ACK/watchdog/SII/帧/邮箱/DC 计数） | 长跑计数器增量；ALARM-DIAG 对账 |
 | `GET /events?slave=N&interval_ms=` | SSE 推 `state-v1`（默认 500 ms，100..5000 可调） | 实时观察；断流/降级判据由 CNC 侧定义；`?since=` 待 task-103（C2） |
 | `GET /health` | 内联 JSON 存活级 | 起停后"已就绪"的快速判据（REF-4） |
@@ -132,7 +132,7 @@
 ### 4.4 指标口径与已知缺口
 
 - `/metrics` 的 `frames_in/out/dropped`、`datagrams_hit` 等是**模拟器侧计数器**，**不是链路质量/丢包率**；不得据此写"链路无损/实时性"结论。
-- **WKC 与周期抖动**：`/metrics` 当前**无** WKC/抖动指标；WKC 仅在 `/topology` 的 `sm2/sm3` hex 与内核侧可核对 → 判据 C1 要求"须有来源（新增指标或 IgH 侧派生并文档化）"（task-103）。
+- **WKC 与周期抖动**：`/metrics` 当前**无** WKC/抖动指标；`/topology` 的 `sm2{address,hex}`/`sm3{address,hex}` 是 **SM2/SM3 原始 PDO 字节**（CONTROL-PLANE §4.7），**不是 WKC**。WKC 只能由内核/IgH 侧派生并文档化 → 判据 C1 要求"须有来源（新增指标或 IgH 侧派生并文档化）"（task-103）。
 - **`ack_latency_ms`**：SIM 侧无真实值（计划 `null`），由桥侧测量（判据 C1/C3 对齐）。
 - DC 仅 Tier0 帧驱动时钟，**不承诺**真实同步。
 
@@ -147,7 +147,7 @@
 | 开关 | 行为 | 观测 | 边界 |
 | --- | --- | --- | --- |
 | `--fault <hex>` | 需 `--behavior cia402`：注入 CiA402 Fault（`0x6041` bit3、`0x603F`=码）；单测覆盖 fault→reset 恢复 | `/pdo` 的 `0x6041` bit3、`/sdo` 的 `0x603F`、`/state` | 仅启动期一次性注入；不能运行中触发 |
-| `--al-error <hex>` | 启动即置 AL Status error 位 + code（写 `0x0130`/`0x0134`），**不改变** AL 状态；主站 Error ACK 可清；只接受已知码（`0x0011/12/13/15/16/17/18/19/1B/24/25/2B`），未知码/0 拒启动（exit 2） | `/state.live.al_status`（如 `0x11`）、`al_status_code`；`/metrics` `ecsim_al_status*`；`AL_EVENT`（`watchdog=false`） | 作用于本进程**全部**模拟从站；`0x18` 等未知码 NOT-JUDGED；可作"重启后单站错误"场景 |
+| `--al-error <hex>` | 启动即置 AL Status error 位 + code（写 `0x0130`/`0x0134`），**不改变** AL 状态；主站 Error ACK 可清；只接受已知码（`0x0011/12/13/15/16/17/18/19/1B/24/25/2B`），未知码/0 拒启动（exit 2） | `/state.live.al_status`（如 `0x11`）、`al_status_code`；`/metrics` `ecsim_al_status*`；`AL_EVENT`（`watchdog=false`） | 作用于本进程**全部**模拟从站（当前**无按站选择参数**）；`0x18` 等未知码 NOT-JUDGED；可作"重启后**全站**错误"场景；单站错误需每从站独立进程或后续能力（P1），**不得暗示已支持** |
 
 ### 5.2 P0 故障类与规格（task-102）
 
@@ -161,7 +161,7 @@
 
 | 项 | 裁决/状态 | 说明 |
 | --- | --- | --- |
-| 单站运行期 AL 注入（`0x11`/`0x24`） | **P1/可选**（Lead 2026-11-15） | 与 BL-20（task-42 暂停）冲突；若实现须 enabled 门禁 + 二次确认 + 审计，**不得据此写 v1.0 PASS**；AL 显示测试用 `--al-error` 启动参数 |
+| 单站运行期 AL 注入（`0x11`/`0x24`） | **P1/可选**（Lead 2026-11-15） | 与 BL-20（task-42 暂停）冲突；若实现须 enabled 门禁 + 二次确认 + 审计，**不得据此写 v1.0 PASS**；AL 显示测试用 `--al-error` 启动参数（全站） |
 | `POST /fault` 通用端点 | P0 三类可复用该端点；AL 类为可选参数 | 默认 405；显式开启；审计 who/时间/类型/目标/持续/前值→后值/run_id（B1） |
 | DC 丢失 / 主站重启 | P1/可选（B4） | 控制面无运行期 DC 故障 API；DC 本身不承诺真实同步 |
 
@@ -226,13 +226,13 @@
 | EDIT/程序编辑 | 打开/保存/校验 | 无实时动作 | `N/A(SIM)`；不得注入假 PDO |
 | OFFSETS | 设置/应用偏置 | 无 PDO 字段（位置影响在 LCNC 侧） | `N/A(SIM)` |
 | TOOL | 换刀（虚拟轴无 ATC） | 无 | `not_available` / P1（依赖 IO/ATC 画像） |
-| PROBE | 探测动作 | 若触发报警：`0x6041` bit3 + `0x603F`（`--fault`）；否则位置变化 | 报警码对账；探测逻辑本身 LCNC 判 |
+| PROBE | 探测动作 | 若触发报警：`0x6041` bit3 + `0x603F`（`--fault`，**启动期一次性，运行中触发需重启进程**）；否则位置变化 | 报警码对账；探测逻辑本身 LCNC 判 |
 | SETTINGS | 修改配置→重启栈 | 重启后 REF-1..5 复现；指纹（二进制/manifest sha256）不变 | 配置生效判据在 LCNC；SIM 只证"重启后仍 REF" |
-| ALARM-DIAG | 触发 AL 错误/看门狗 | `--al-error` / SM watchdog：`last_al_event`、`AL_EVENT`、`ecsim_al_errors_total`/`ecsim_al_error_acks_total`（ACK 清零）、`sm_watchdog_triggers_total` | 报警码/时序对账；`0x18` NOT-JUDGED |
+| ALARM-DIAG | 触发 AL 错误/看门狗 | `--al-error`（**启动期、全站**）/ SM watchdog：`last_al_event`、`AL_EVENT`、`ecsim_al_errors_total`/`ecsim_al_error_acks_total`（ACK 清零）、`sm_watchdog_triggers_total` | 报警码/时序对账；`0x18` NOT-JUDGED；运行期单站 AL 注入 = P1 |
 | 全局 JOG + Home | Jog 点动 / 回零 | Jog：`0x607A` 目标→`0x6064` 实际；`0x6041` bit10（target reached）；Home：`0x6060=6`（HM）、`0x6061=6`、位置变化 | 方向/符号/比例按 CSP 语义；回零结果以 LCNC 为准 |
 | 断链/恢复 | 拔线/停主站/停进程 | `frames_in` 停增、AL 迁移事件、恢复后 REF | 断链翻红/恢复判据在 GUI/桥（AC-E-104/106/107/110）；故障类见 §5 |
 
-> 表中"SIM 无对应字段"的域**明确 `N/A(SIM)`**，这是诚实清单的一部分；不得为了凑"全覆盖"而伪造对账。
+> 表中"SIM 无对应字段"的域**明确 `N/A(SIM)`**，这是诚实清单的一部分；不得为了凑"全覆盖"而伪造对账。cnc-pm 已确认（2026-11-15）：task-98 映射直接引用本表，`N/A(SIM)` 照原表标注。
 
 ### 7.4 证据格式（与判据 A7/C3 对齐）
 
@@ -243,7 +243,7 @@
 ### 7.5 run_id（Lead 裁决：harness 侧先做）
 
 - **定义**：`run_id` = **UUID v4**，由测试 harness 生成，导出为 `E2E_RUN_ID`，写入 `runs/<run_id>/run.json`；`run_id` 同时进入桥日志、LCNC 日志、SIM 采样 JSON、截图文件名。
-- **控制面**：**不新增字段**（`state-v1` 等协议不变）；`/events?since=` 与 `run_id` 回显列为 **P1**（task-103，只增不改）。
+- **控制面**：C3 以 **harness 侧关联为权威**；sim-impl 已计划 `--run-id` 启动参数 + `/state.run_id` **可选回显（P1，只增不改，默认行为不变）**，与 `/events?since=` 同列 P1（task-103）。
 - **对齐**：SIM 事件（`AL_EVENT`/`/events`）按时间戳与 harness 的 run 边界对齐；三处（CNC 脚本 / 证据 manifest / SIM 证据）`run_id` 必须一致（判据 C3）。
 
 ---
@@ -268,7 +268,7 @@
 | 运行期 `/fault` | 🟡 待 sim-impl（task-102） | P0 三类可先由外部动作实现（TAP/进程/写路径），通用端点按需 |
 | AL 运行期注入 | **P1/可选** | 与 BL-20 冲突；Lead 裁决不阻塞 E2E；`0x18` NOT-JUDGED |
 | 混合画像拓扑 | ❌ 不支持 | `--slaves N` 克隆同画像；3 伺服+IO 需 P1；当前 IO 可"裁剪" |
-| WKC / 周期抖动指标 | ❌ 无 | `/metrics` 无；仅在 `/topology` hex 与内核侧核对；C1 要求补来源（task-103） |
+| WKC / 周期抖动指标 | ❌ 无 | `/metrics` 无；`/topology` 的 `sm2/sm3` 为 SM2/SM3 原始 PDO 字节**非 WKC**；WKC 仅内核/IgH 侧派生（需文档化）；C1 要求补来源（task-103） |
 | `ack_latency_ms` | ⚠️ SIM 侧 null | 由桥侧测量；SIM 不造值 |
 | DC 真实同步 | ⚠️ 不承诺 | 仅 Tier0 帧驱动时钟；不得写"DC 同步通过" |
 | IgH ecrt SDO（EC-Sim VM） | ⚠️ 阻塞 | PV-01/PV-14：EC-Sim VM 上不判；CNC VM 侧由 C5 承接 |
@@ -285,7 +285,7 @@
 - **接口稳定性**：`state-v1`/`pdo-v1`/`topology-v1`/`metrics` 等 schema 名不变；新增字段**只增不改**（B62 先例）；破坏性变更必须升版本并在本文登记。
 - **证据纪律**：PASS = `HEAD + env + date + command` + 可复现证据 + 3 次运行（判据 §2）；PENDING/PAUSED 不写成 PASS/FAIL；不写未验证 PASS；CNC 侧判据由 CNC 文档维护，本文不复制为判据。
 - **VM/窗口**：C5 至 18:25；18:25–18:45 收尾归档；18:45–19:30 Lead 独占 CNC VM（G1 像素/截图）；19:30–24:00 CNC E2E 功能验证；SIM 任务在 EC-Sim VM 随时进行、不占 CNC VM；C5 运行期禁止执行故障注入（B6）。
-- **与 cnc-pm 对齐（Lead 要求）**：本文 §7（AC-E-926 第 6 列 + 对账规则 + 功能域映射）即接口约定；请 cnc-pm 确认后，CNC 侧 task-98 映射表可直接引用本文件 §7.2/§7.3，避免两边各写一套。
+- **与 cnc-pm 对齐（Lead 要求）**：本文 §7（AC-E-926 第 6 列 + 对账规则 + 功能域映射）即接口约定。**cnc-pm 已确认（2026-11-15）**：第 6 列/4 条对账规则/`N/A(SIM)` 域**无需改动**；确认要点 = ⑤ 仅证据侧从属（③ LCNC 为主证据；缺 ⑤ 标 `N/A(SIM)` 不自动 FAIL，缺 ③ 必 FAIL/BLOCKED；⑤ 与 ③ 矛盾以 ③ 为准并记 WARN；`run_id` 三处一致）；task-98 映射将直接引用 §7.3，不为凑覆盖率伪造对账；`interaction-map.json`（708 交互/wired 462）仍为未审计工作件、**不写 PASS**。CNC 侧已落文：`CNC-ACCEPTANCE` **v0.40** §3.14（新增 SIM 对账段）、`CNC-ACCEPTANCE-CHECKLIST` **v0.2.64** §4.5（判定加 SIM 说明），commit `7230c4a` + `926cb3f`。
 
 ---
 
@@ -294,3 +294,4 @@
 | 日期 | 版本 | 变更 | 作者 |
 | --- | --- | --- | --- |
 | 2026-11-15 | v0.1 | 首版：CNC E2E 支撑期声明与暂停边界 + 供给清单 S1–S9 + REF 状态（对齐判据 A1–A7）+ 可观察量（含 WKC/抖动/`ack_latency_ms` 缺口）+ 故障注入现状/缺口（P0=F-LINK/F-PROC/F-SDO，AL 运行期 P1）+ 一键起停需求 + AC-E-926 第 6 列接口约定 + task-101/102/103 映射 + 协作/VM 窗口 | PM（sim-pm / DeepSeek Harness） |
+| 2026-11-15 | v0.2 | 按 sim-expert 复核修正 4 处 + 2 minor：B-2 注册表 **37→38**（`e334780` 新增 `serve-web-assets-probe`；VM 整轮 30/0/7 为 37 项口径、待重跑）；**WKC 来源纠正**（`/topology` 的 `sm2/sm3` 是 SM2/SM3 原始 PDO 字节、非 WKC）；`--al-error` 为**全站**注入（无按站参数，单站=P1）；run_id 控制面列为 **P1 可选回显**（`--run-id` + `/state.run_id`，只增不改；C3 以 harness 侧为权威）；S3 改 🟡（`REF.json`/demo-state 对齐待 task-101）；PROBE/ALARM-DIAG 注明 `--fault`/`--al-error` 为**启动期一次性/全站**。并登记 **cnc-pm 已确认 §7 接口**（2026-11-15；CNC 侧 ACCEPTANCE v0.40 / CHECKLIST v0.2.64，commit `7230c4a`+`926cb3f`） | PM（sim-pm / DeepSeek Harness） |
