@@ -282,3 +282,42 @@ token 模式下 `fetch` 不能自动带 `Authorization`，页面提示经反向�
 | TAP 实时 | `scripts/spikes/tap-live-state-probe.sh`（root，验证机） |
 | 文档与代码路由一致 | `python3 scripts/spikes/control-plane-doc-check.py` |
 | M2 退出条件 | [plan/M2-exit-checklist.md](plan/M2-exit-checklist.md) |
+
+## 10. CNC E2E 扩展（task-101/102/103）
+
+> 只增不改：不替换既有 `/state` 字段，不改变 24h 判据；运行期故障注入**默认关闭**，
+> 只能通过 `--serve-write` + 每请求 `confirm:true` 打开。`run_id` 是 P1（可选），
+> C3 验收以 harness 侧关联为权威。
+
+### 10.1 路由
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/state` | 在既有 state-v1 基础上增加顶层 `run_id`、`master`（含 `pdo`）与顶层 `slaves`（逐站 AL/PDO 计数）；`al_state` 全 OP 时 `0x08`，否则 `0x00` |
+| GET | `/metrics` | 新增 `ecsim_al_transitions_total`、`ecsim_al_errors_total`、`ecsim_al_error_acks_total`、`ecsim_sm_watchdog_triggers_total`、`ecsim_sii_read_commands_total`、`ecsim_sii_write_commands_total`、`ecsim_wkc_errors_total`；`ecsim_al_status`/`ecsim_al_status_code` 保持 |
+| GET | `/events?since=<seq>` | 返回 `ec-sim/events-v1` JSON（`seq` 单调、`ts_ms`、`run_id`）；无 `since` 仍为 SSE |
+| POST | `/fault` | 运行期故障注入（需 `--serve-write` + `confirm:true`）；请求 `{"fault","target","duration_ms","code","confirm","run_id"}`；幂等（同 kind+target 返回 `idempotent:true`）；`run_id` 不一致 409 |
+| GET | `/fault/status` | 当前 active 故障、剩余时长、`applied_count`、`run_id` |
+| POST | `/probe` | 验收探针 tripped 置位/清除（需 `--serve-write` + `confirm:true` + `tripped`） |
+| GET | `/probe` | 逐站 tripped 状态 |
+
+`fault` 取值：`link_loss`、`slave_drop`、`al_error`（P1）、`watchdog`（P1）、`pdo_loss`、
+`estop`（仅记录，modeled=false）、`hard_limit`（仅记录）。故障事件写入 `/events`：
+`fault_injected`、`fault_cleared`、`link`（down/up）、`pdo_loss`、`probe_state`、`watchdog`、
+`al_transition`、`state_change`。
+
+### 10.2 口径（勿误读）
+
+- `--al-error` 是**启动期、全站**注入；运行期单站 AL 注入属于 P1，不要写成“单站启动注入”。
+- `/topology` 的 `sm2_hex`/`sm3_hex` 是 SM2/SM3 **原始字节**，不是 WKC；`/state` 的
+  `wkc_errors` 与 `ecsim_wkc_errors_total` 当前恒 0，WKC 由内核/IgH 侧派生，SIM 不声称提供。
+- `ack_latency_ms` 当前为 `null`（由桥/HMI 侧测量）；`fps` 取从站 0 的 `frames_in` 差值。
+- `run_id` 缺省为 `ecsim-<unix秒>-<pid>`，仅供兜底；CNC E2E 运行时由 harness 通过
+  `--run-id` 传入，并贯穿 `/state`、每条 `/events`、`/fault` 审计。
+
+### 10.3 验证
+
+- `scripts/spikes/e2e-control-probe.sh`（Linux/UDS）：门禁 400/405/409、幂等、事件、
+  `duration_ms` 到期恢复、`al_error` 恢复、`/probe`、`/events?since`。
+- `scripts/spikes/cnc-e2e-fixed-scene.sh`（Linux/UDS）：3×`cnc-csp-servo` 连续 3 轮
+  3/3 OP、7B/11B 布局；证据格式见 [verification/2026-11-15-cnc-e2e-control-plane.md](verification/2026-11-15-cnc-e2e-control-plane.md)。

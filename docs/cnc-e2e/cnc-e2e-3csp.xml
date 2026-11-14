@@ -1,0 +1,27 @@
+<!--
+  REF-CNC-E2E-3CSP 的 lcec 配置样例（CNC 侧使用；EC-Sim 作为 TAP 后端）。
+
+  事实来源（不构成认证）：
+  - lcec commit c6f8820，basic_cia402；Tx 读方向 [0x6041,0x6064,0x606C,0x6061]（GAP-14）。
+  - cnc-csp-servo：VID 0x00000EC5 / PID 0x0000E5E3；Rx 7B、Tx 11B；0x6502=0x01C1。
+  - enablePV=false：lcec 默认 enable_pv=1 会写 11B Rx 并对 0x60FF 做 init SDO。
+  - 不配置 DC（V1/V2）。
+
+  放置：CNC 侧 lcec XML（路径由 cnc-impl 的 harness 决定），appTimePeriod=1000000。
+-->
+<masters>
+  <master idx="0" appTimePeriod="1000000" refClockSyncCycles="0">
+    <slave idx="0" type="basic_cia402" vid="0x00000ec5" pid="0x0000e5e3" name="servo0">
+      <modParam name="enablePV" value="false"/>
+      <modParam name="enableCSP" value="true"/>
+    </slave>
+    <slave idx="1" type="basic_cia402" vid="0x00000ec5" pid="0x0000e5e3" name="servo1">
+      <modParam name="enablePV" value="false"/>
+      <modParam name="enableCSP" value="true"/>
+    </slave>
+    <slave idx="2" type="basic_cia402" vid="0x00000ec5" pid="0x0000e5e3" name="servo2">
+      <modParam name="enablePV" value="false"/>
+      <modParam name="enableCSP" value="true"/>
+    </slave>
+  </master>
+</masters>

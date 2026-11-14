@@ -130,6 +130,8 @@ pub struct Stats {
     pub sii_read_commands: u64,
     /// SII 写命令数（镜像 EEPROM 窗口控制器计数，累计）。
     pub sii_write_commands: u64,
+    /// 逻辑寻址 WKC 未命中次数（LRD/LWR/LRW 无 FMMU 命中，用于 E2E 遥测）。
+    pub wkc_errors: u64,
 }
 
 /// 最近一次 AL 状态/错误码变化快照（供控制面与事件日志取证）。
@@ -259,6 +261,12 @@ pub struct Responder {
     last_al_event: Option<AlEvent>,
     /// 尚未被运行期日志消费的 AL 事件（`poll_al_event` 取出后清空，避免重复打印）。
     pending_al_event: Option<AlEvent>,
+    /// 运行期故障注入：静默（不回应主站帧；模拟从站掉线/链路中断）。
+    muted: bool,
+    /// 运行期故障注入：冻结 CiA 402 过程数据更新（模拟 PDO 丢失/陈旧值）。
+    pdo_frozen: bool,
+    /// 运行期探针输入状态（E2E probe tripped；当前不映射到 PDO，仅控制面/事件）。
+    probe_tripped: bool,
 }
 
 impl Default for Responder {
@@ -293,6 +301,9 @@ impl Responder {
             stats: Stats::default(),
             last_al_event: None,
             pending_al_event: None,
+            muted: false,
+            pdo_frozen: false,
+            probe_tripped: false,
         }
     }
 
@@ -622,6 +633,61 @@ impl Responder {
         true
     }
 
+    /// 运行期故障注入：静默该从站（不回应主站帧，模拟掉线/链路中断）。
+    pub fn set_muted(&mut self, muted: bool) {
+        self.muted = muted;
+    }
+
+    /// 当前是否静默。
+    #[must_use]
+    pub fn is_muted(&self) -> bool {
+        self.muted
+    }
+
+    /// 运行期故障注入：冻结 CiA 402 过程数据更新（TxPDO 保持旧值，模拟 PDO 丢失）。
+    pub fn set_pdo_frozen(&mut self, frozen: bool) {
+        self.pdo_frozen = frozen;
+    }
+
+    /// 当前是否冻结过程数据。
+    #[must_use]
+    pub fn is_pdo_frozen(&self) -> bool {
+        self.pdo_frozen
+    }
+
+    /// 运行期故障注入：显式触发一次 SM 过程数据看门狗（AL 0x001B，OP → SAFEOP）。
+    pub fn force_watchdog(&mut self) {
+        let now_ms = self.now_ms;
+        self.trigger_watchdog(now_ms);
+    }
+
+    /// 设置/清除探针触发状态（E2E probe tripped；仅控制面/事件，不映射到 PDO）。
+    pub fn set_probe_tripped(&mut self, tripped: bool) {
+        self.probe_tripped = tripped;
+    }
+
+    /// 探针是否已触发。
+    #[must_use]
+    pub fn probe_tripped(&self) -> bool {
+        self.probe_tripped
+    }
+
+    /// E2E 故障恢复：清除 AL Status error 位与错误码（主站未 ACK 时的直接恢复路径）。
+    pub fn clear_al_error(&mut self) {
+        if !self.al.error && self.al.status_code == 0 {
+            return;
+        }
+        let from_status = self.al.status_byte();
+        let from_code = self.al.status_code;
+        self.al.error = false;
+        self.al.status_code = 0;
+        self.regs
+            .set_internal(reg::AL_STATUS, &[self.al.status_byte()]);
+        self.regs
+            .set_internal(reg::AL_STATUS_CODE, &self.al.status_code.to_le_bytes());
+        self.record_al_event(from_status, from_code, false);
+    }
+
     /// 模拟 DC 系统时间（ns，帧驱动时钟；非真实同步）。
     #[must_use]
     pub fn dc_time_ns(&self) -> u64 {
@@ -691,7 +757,10 @@ impl Responder {
         // 模拟 DC 系统时间：每帧前进固定步长（Tier0：无真实时钟/SYNC0 脉冲）。
         self.dc_time_ns = self.dc_time_ns.wrapping_add(DC_TICK_NS);
         // Tier0 行为：每帧推进一次 CiA 402 状态机（SM2 控制字 → SM3 状态字）。
-        self.step_cia402_behavior();
+        // E2E 故障注入 pdo_loss：冻结时保持 TxPDO 旧值，不推进行为状态机。
+        if !self.pdo_frozen {
+            self.step_cia402_behavior();
+        }
         if !self.watchdog_enabled() {
             self.last_process_data_ms = None;
             return;
@@ -772,6 +841,11 @@ impl Responder {
     /// `own_mac` 用作应答帧源 MAC（真实主站不校验，但保持线缆语义正确）。
     pub fn handle_frame(&mut self, frame: &[u8], own_mac: [u8; 6]) -> Option<Vec<u8>> {
         self.stats.frames_in = self.stats.frames_in.saturating_add(1);
+        // 运行期故障注入：静默期间不回应主站（帧仍计入 frames_in，另计 dropped）。
+        if self.muted {
+            self.stats.frames_dropped = self.stats.frames_dropped.saturating_add(1);
+            return None;
+        }
         if Frame::parse_ethernet(frame).is_err() && !Self::is_padded_ethercat_frame(frame) {
             self.stats.frames_dropped = self.stats.frames_dropped.saturating_add(1);
             return None;

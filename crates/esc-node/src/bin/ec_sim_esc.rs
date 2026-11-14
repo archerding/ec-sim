@@ -627,9 +627,13 @@ fn al_event_state(event: esc_node::AlEvent) -> control_plane::AlEventState {
     }
 }
 
-/// 打印运行期 AL 状态/错误码变化（每条事件一行，stderr；供 24h 长跑取证）。
+/// 打印运行期 AL 状态/错误码变化（每条事件一行，stderr；供 24h 长跑取证），
+/// 同时写入 E2E 事件环（`/events?since=` 数据源）。
 #[cfg(target_os = "linux")]
-fn log_al_events(responders: &mut [esc_node::Responder]) {
+fn log_al_events(
+    responders: &mut [esc_node::Responder],
+    runtime: &std::sync::Arc<std::sync::Mutex<E2eRuntime>>,
+) {
     for (index, responder) in responders.iter_mut().enumerate() {
         if let Some(event) = responder.poll_al_event() {
             eprintln!(
@@ -641,8 +645,603 @@ fn log_al_events(responders: &mut [esc_node::Responder]) {
                 event.watchdog,
                 event.at_ms
             );
+            let details = format!(
+                "{{\"from\": \"0x{:02X}\", \"to\": \"0x{:02X}\", \"from_code\": \"0x{:04X}\", \"code\": \"0x{:04X}\", \"watchdog\": {}, \"at_ms\": {}}}",
+                event.from, event.to, event.from_code, event.code, event.watchdog, event.at_ms
+            );
+            let mut rt = runtime.lock().unwrap();
+            rt.record_at(
+                event.at_ms,
+                if event.watchdog {
+                    "watchdog"
+                } else {
+                    "al_transition"
+                },
+                Some(index),
+                &details,
+            );
+            if event.from & 0x0F != event.to & 0x0F {
+                rt.record_at(
+                    event.at_ms,
+                    "state_change",
+                    Some(index),
+                    &format!(
+                        "{{\"from\": \"0x{:02X}\", \"to\": \"0x{:02X}\"}}",
+                        event.from & 0x0F,
+                        event.to & 0x0F
+                    ),
+                );
+            }
         }
     }
+}
+
+/// E2E 事件环容量（seq 单调；超出时丢最旧并计 dropped）。
+#[cfg(target_os = "linux")]
+const EVENT_CAPACITY: usize = 4096;
+
+/// E2E 运行期共享状态：run_id、事件环、故障注入与探针状态（task-102/103）。
+#[cfg(target_os = "linux")]
+struct E2eRuntime {
+    run_id: String,
+    seq: u64,
+    events: std::collections::VecDeque<String>,
+    dropped: u64,
+    faults: Vec<ActiveFault>,
+    applied_count: u64,
+    probe: Vec<bool>,
+}
+
+/// 已注入的故障（`duration_ms = 0` 表示无期限，直到显式清理/进程退出）。
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ActiveFault {
+    kind: String,
+    target: Option<usize>,
+    duration_ms: u64,
+    injected_at_ms: u64,
+    expires_at_ms: Option<u64>,
+    applied_count: u64,
+}
+
+/// 解析后的 `/fault` 请求。
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FaultSpec {
+    kind: String,
+    target: Option<usize>,
+    duration_ms: u64,
+    code: Option<u16>,
+    confirm: bool,
+    run_id: Option<String>,
+}
+
+#[cfg(target_os = "linux")]
+impl E2eRuntime {
+    fn new(run_id: String, slave_count: usize) -> Self {
+        Self {
+            run_id,
+            seq: 0,
+            events: std::collections::VecDeque::with_capacity(EVENT_CAPACITY),
+            dropped: 0,
+            faults: Vec::new(),
+            applied_count: 0,
+            probe: vec![false; slave_count],
+        }
+    }
+
+    fn record_at(
+        &mut self,
+        ts_ms: u64,
+        event_type: &str,
+        slave: Option<usize>,
+        details: &str,
+    ) -> String {
+        self.seq = self.seq.saturating_add(1);
+        let event =
+            control_plane::event_json(self.seq, ts_ms, &self.run_id, event_type, slave, details);
+        self.events.push_back(event.clone());
+        if self.events.len() > EVENT_CAPACITY {
+            self.events.pop_front();
+            self.dropped = self.dropped.saturating_add(1);
+        }
+        event
+    }
+
+    fn record(&mut self, event_type: &str, slave: Option<usize>, details: &str) -> String {
+        self.record_at(now_ms(), event_type, slave, details)
+    }
+
+    fn events_since(&self, since: u64) -> Vec<String> {
+        self.events
+            .iter()
+            .filter(|event| json_u64_field(event, "seq").is_some_and(|seq| seq > since))
+            .cloned()
+            .collect()
+    }
+
+    fn has_fault(&self, kind: &str, target: Option<usize>) -> bool {
+        self.faults
+            .iter()
+            .any(|fault| fault.kind == kind && fault.target == target)
+    }
+
+    fn link_loss_active(&self, now_ms: u64) -> bool {
+        self.faults.iter().any(|fault| {
+            fault.kind == "link_loss"
+                && fault.expires_at_ms.map_or(true, |expires| now_ms < expires)
+        })
+    }
+
+    fn active_views(&self, now_ms: u64) -> Vec<control_plane::FaultView> {
+        self.faults
+            .iter()
+            .map(|fault| control_plane::FaultView {
+                kind: fault.kind.clone(),
+                target: fault.target,
+                remaining_ms: fault
+                    .expires_at_ms
+                    .map_or(0, |expires| expires.saturating_sub(now_ms)),
+                injected_at_ms: fault.injected_at_ms,
+                applied_count: fault.applied_count,
+            })
+            .collect()
+    }
+
+    /// 清除到期故障并恢复侧效，返回 `(kind, target, duration_ms)` 供事件记录。
+    fn expire_faults(
+        &mut self,
+        now_ms: u64,
+        responders: &mut [esc_node::Responder],
+    ) -> Vec<(String, Option<usize>, u64)> {
+        let expired: Vec<ActiveFault> = self
+            .faults
+            .iter()
+            .filter(|fault| fault.expires_at_ms.is_some_and(|expires| now_ms >= expires))
+            .cloned()
+            .collect();
+        if expired.is_empty() {
+            return Vec::new();
+        }
+        self.faults
+            .retain(|fault| !fault.expires_at_ms.is_some_and(|expires| now_ms >= expires));
+        for fault in &expired {
+            release_fault_effects(fault, responders);
+            let details = format!(
+                "{{\"fault\": \"{}\", \"duration_ms\": {}, \"applied_count\": {}}}",
+                control_plane::json_escape(&fault.kind),
+                fault.duration_ms,
+                fault.applied_count
+            );
+            self.record_at(now_ms, "fault_cleared", fault.target, &details);
+        }
+        expired
+            .into_iter()
+            .map(|fault| (fault.kind, fault.target, fault.duration_ms))
+            .collect()
+    }
+}
+
+/// 应用故障侧效（调用方持有 responders 锁）。
+#[cfg(target_os = "linux")]
+fn apply_fault_effects(
+    spec: &FaultSpec,
+    responders: &mut [esc_node::Responder],
+) -> Result<String, String> {
+    let (before_status, before_code) = spec
+        .target
+        .and_then(|index| responders.get(index))
+        .map_or((0, 0), |responder| {
+            (responder.al_status(), responder.al_status_code())
+        });
+    match spec.kind.as_str() {
+        "link_loss" => {
+            // 整条链路：由帧循环在故障期间直接丢弃帧（不调用本函数改单站）。
+        }
+        "slave_drop" => {
+            let index = spec
+                .target
+                .ok_or_else(|| "slave_drop 需要 target".to_string())?;
+            let responder = responders
+                .get_mut(index)
+                .ok_or_else(|| format!("target {index} 不存在"))?;
+            responder.set_muted(true);
+        }
+        "al_error" => {
+            let index = spec
+                .target
+                .ok_or_else(|| "al_error 需要 target".to_string())?;
+            let code = spec.code.unwrap_or(0x0011);
+            let responder = responders
+                .get_mut(index)
+                .ok_or_else(|| format!("target {index} 不存在"))?;
+            if !responder.force_al_error(code) {
+                return Err(format!("未知 AL Status Code 0x{code:04X}"));
+            }
+        }
+        "watchdog" => {
+            let index = spec
+                .target
+                .ok_or_else(|| "watchdog 需要 target".to_string())?;
+            let responder = responders
+                .get_mut(index)
+                .ok_or_else(|| format!("target {index} 不存在"))?;
+            responder.force_watchdog();
+        }
+        "pdo_loss" => {
+            let index = spec
+                .target
+                .ok_or_else(|| "pdo_loss 需要 target".to_string())?;
+            let responder = responders
+                .get_mut(index)
+                .ok_or_else(|| format!("target {index} 不存在"))?;
+            responder.set_pdo_frozen(true);
+        }
+        // P1：安全链不在 EC-Sim 建模范围，仅记录事件（不伪造 PDO 行为）。
+        "estop" | "hard_limit" => {}
+        other => return Err(format!("未知 fault：{other}")),
+    }
+    let (after_status, after_code) = spec
+        .target
+        .and_then(|index| responders.get(index))
+        .map_or((0, 0), |responder| {
+            (responder.al_status(), responder.al_status_code())
+        });
+    Ok(format!(
+        "{{\"fault\": \"{}\", \"target\": {}, \"duration_ms\": {}, \"modeled\": {}, \"before\": {{\"al_status\": \"0x{:02X}\", \"al_status_code\": \"0x{:04X}\"}}, \"after\": {{\"al_status\": \"0x{:02X}\", \"al_status_code\": \"0x{:04X}\"}}}}",
+        control_plane::json_escape(&spec.kind),
+        match spec.target {
+            Some(index) => index.to_string(),
+            None => "null".to_string(),
+        },
+        spec.duration_ms,
+        !matches!(spec.kind.as_str(), "estop" | "hard_limit"),
+        before_status,
+        before_code,
+        after_status,
+        after_code
+    ))
+}
+
+/// 恢复故障侧效（到期/显式清理）。
+#[cfg(target_os = "linux")]
+fn release_fault_effects(fault: &ActiveFault, responders: &mut [esc_node::Responder]) {
+    let Some(index) = fault.target else {
+        return;
+    };
+    let Some(responder) = responders.get_mut(index) else {
+        return;
+    };
+    match fault.kind.as_str() {
+        "slave_drop" => responder.set_muted(false),
+        "pdo_loss" => responder.set_pdo_frozen(false),
+        "al_error" | "watchdog" => responder.clear_al_error(),
+        _ => {}
+    }
+}
+
+/// 从扁平 JSON 对象中取原始字段文本（`/fault`/`/probe` 请求体；无嵌套对象）。
+#[cfg(target_os = "linux")]
+fn json_raw_field<'a>(body: &'a str, key: &str) -> Option<&'a str> {
+    let needle = format!("\"{key}\"");
+    let start = body.find(&needle)? + needle.len();
+    let rest = body[start..].trim_start();
+    let rest = rest.strip_prefix(':')?.trim_start();
+    if rest.is_empty() {
+        return None;
+    }
+    if let Some(tail) = rest.strip_prefix('"') {
+        let end = tail.find('"')?;
+        Some(&tail[..end])
+    } else {
+        let end = rest
+            .find([',', '}', ']', ' ', '\n', '\r', '\t'])
+            .unwrap_or(rest.len());
+        Some(rest[..end].trim())
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn json_string_field(body: &str, key: &str) -> Option<String> {
+    json_raw_field(body, key).map(ToString::to_string)
+}
+
+#[cfg(target_os = "linux")]
+fn json_u64_field(body: &str, key: &str) -> Option<u64> {
+    json_raw_field(body, key).and_then(|raw| raw.parse::<u64>().ok())
+}
+
+#[cfg(target_os = "linux")]
+fn json_bool_field(body: &str, key: &str) -> Option<bool> {
+    json_raw_field(body, key).and_then(|raw| match raw {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    })
+}
+
+/// 采样窗口帧率（`/state.master.fps`；按站 0 的 `frames_in` 差值 / 墙钟）。
+#[cfg(target_os = "linux")]
+#[derive(Default)]
+struct FpsTracker {
+    last_ts_ms: u64,
+    last_frames: u64,
+}
+
+#[cfg(target_os = "linux")]
+impl FpsTracker {
+    fn observe(&mut self, frames_in: u64, now_ms: u64) -> f64 {
+        if self.last_ts_ms == 0 {
+            self.last_ts_ms = now_ms;
+            self.last_frames = frames_in;
+            return 0.0;
+        }
+        let dt_ms = now_ms.saturating_sub(self.last_ts_ms);
+        let delta = frames_in.saturating_sub(self.last_frames);
+        self.last_ts_ms = now_ms;
+        self.last_frames = frames_in;
+        if dt_ms == 0 {
+            0.0
+        } else {
+            delta as f64 * 1000.0 / dt_ms as f64
+        }
+    }
+}
+
+/// 处理 `/fault`、`/fault/status`、`/probe`（task-102；`POST` 需 `--serve-write` + per-request 二次确认）。
+#[cfg(target_os = "linux")]
+fn handle_e2e_control(
+    method: &str,
+    path_only: &str,
+    body: &[u8],
+    serve_write: bool,
+    runtime: &std::sync::Arc<std::sync::Mutex<E2eRuntime>>,
+    responders: &std::sync::Arc<std::sync::Mutex<Vec<esc_node::Responder>>>,
+) -> control_plane::HttpResponse {
+    let json = |status: &'static str, body: String| control_plane::HttpResponse {
+        status_line: status,
+        content_type: "application/json; charset=utf-8",
+        body,
+    };
+    let text = String::from_utf8_lossy(body).to_string();
+    match (method, path_only) {
+        ("GET", "/fault/status") => {
+            let rt = runtime.lock().unwrap();
+            json(
+                "HTTP/1.1 200 OK",
+                control_plane::fault_status_json(
+                    &rt.active_views(now_ms()),
+                    rt.applied_count,
+                    &rt.run_id,
+                ),
+            )
+        }
+        ("GET", "/probe") => {
+            let rt = runtime.lock().unwrap();
+            let entries: Vec<String> = rt
+                .probe
+                .iter()
+                .enumerate()
+                .map(|(index, tripped)| format!("{{\"target\": {index}, \"tripped\": {tripped}}}"))
+                .collect();
+            json(
+                "HTTP/1.1 200 OK",
+                format!(
+                    "{{\"schema\": \"ec-sim/probe-v1\", \"run_id\": \"{}\", \"probe\": [{}]}}",
+                    control_plane::json_escape(&rt.run_id),
+                    entries.join(",")
+                ),
+            )
+        }
+        ("POST", "/fault") => {
+            if !serve_write {
+                return json(
+                    "HTTP/1.1 405 Method Not Allowed",
+                    "{\"error\": \"写操作未启用（需要 --serve-write）\"}".to_string(),
+                );
+            }
+            let spec = match parse_fault_request(&text) {
+                Ok(spec) => spec,
+                Err(error) => return bad_request_json(&error),
+            };
+            if !spec.confirm {
+                return bad_request_json("故障注入需要 per-request 二次确认（confirm:true）");
+            }
+            const KINDS: [&str; 7] = [
+                "link_loss",
+                "slave_drop",
+                "al_error",
+                "watchdog",
+                "pdo_loss",
+                "estop",
+                "hard_limit",
+            ];
+            if !KINDS.contains(&spec.kind.as_str()) {
+                return bad_request_json(&format!("未知 fault：{}", spec.kind));
+            }
+            let mut guard = responders.lock().unwrap();
+            let mut rt = runtime.lock().unwrap();
+            if let Some(run_id) = &spec.run_id {
+                if run_id != &rt.run_id {
+                    return json(
+                        "HTTP/1.1 409 Conflict",
+                        format!(
+                            "{{\"error\": \"run_id 不匹配\", \"expected\": \"{}\", \"got\": \"{}\"}}",
+                            control_plane::json_escape(&rt.run_id),
+                            control_plane::json_escape(run_id)
+                        ),
+                    );
+                }
+            }
+            let needs_target = matches!(
+                spec.kind.as_str(),
+                "slave_drop" | "al_error" | "watchdog" | "pdo_loss"
+            );
+            if needs_target && spec.target.is_none() {
+                return bad_request_json(&format!("{} 需要 target（0-based 从站号）", spec.kind));
+            }
+            if let Some(target) = spec.target {
+                if target >= guard.len() {
+                    return bad_request_json(&format!(
+                        "target {target} 越界（0..{}）",
+                        guard.len().saturating_sub(1)
+                    ));
+                }
+            }
+            if rt.has_fault(&spec.kind, spec.target) {
+                return json(
+                    "HTTP/1.1 200 OK",
+                    format!(
+                        "{{\"ok\": true, \"idempotent\": true, \"run_id\": \"{}\", \"fault\": \"{}\", \"target\": {}, \"applied_count\": {}}}",
+                        control_plane::json_escape(&rt.run_id),
+                        control_plane::json_escape(&spec.kind),
+                        spec.target.map_or("null".to_string(), |index| index.to_string()),
+                        rt.applied_count
+                    ),
+                );
+            }
+            let audit = match apply_fault_effects(&spec, guard.as_mut_slice()) {
+                Ok(audit) => audit,
+                Err(error) => return bad_request_json(&error),
+            };
+            let now = now_ms();
+            let expires_at_ms = (spec.duration_ms > 0).then_some(now + spec.duration_ms);
+            rt.faults.push(ActiveFault {
+                kind: spec.kind.clone(),
+                target: spec.target,
+                duration_ms: spec.duration_ms,
+                injected_at_ms: now,
+                expires_at_ms,
+                applied_count: 1,
+            });
+            rt.applied_count = rt.applied_count.saturating_add(1);
+            // `audit` 是完整 JSON 对象；把审计字段并进 details 同一个对象，
+            // 避免 `/events` 里出现 `{...}, "confirm": ...` 这样的非法 JSON。
+            let audit_fields = audit
+                .strip_prefix('{')
+                .and_then(|inner| inner.strip_suffix('}'))
+                .unwrap_or(audit.as_str());
+            let details = format!(
+                "{{{audit_fields}, \"confirm\": true, \"who\": \"http\", \"run_id\": \"{}\"}}",
+                control_plane::json_escape(&rt.run_id)
+            );
+            rt.record_at(now, "fault_injected", spec.target, &details);
+            if spec.kind == "link_loss" {
+                rt.record_at(
+                    now,
+                    "link",
+                    None,
+                    &format!(
+                        "{{\"state\": \"down\", \"duration_ms\": {}}}",
+                        spec.duration_ms
+                    ),
+                );
+            }
+            if spec.kind == "pdo_loss" {
+                rt.record_at(
+                    now,
+                    "pdo_loss",
+                    spec.target,
+                    &format!(
+                        "{{\"state\": \"frozen\", \"duration_ms\": {}}}",
+                        spec.duration_ms
+                    ),
+                );
+            }
+            json(
+                "HTTP/1.1 200 OK",
+                format!(
+                    "{{\"ok\": true, \"run_id\": \"{}\", \"fault\": \"{}\", \"target\": {}, \"duration_ms\": {}, \"expires_at_ms\": {}, \"applied_count\": {}}}",
+                    control_plane::json_escape(&rt.run_id),
+                    control_plane::json_escape(&spec.kind),
+                    spec.target.map_or("null".to_string(), |index| index.to_string()),
+                    spec.duration_ms,
+                    expires_at_ms.map_or("null".to_string(), |value| value.to_string()),
+                    rt.applied_count
+                ),
+            )
+        }
+        ("POST", "/probe") => {
+            if !serve_write {
+                return json(
+                    "HTTP/1.1 405 Method Not Allowed",
+                    "{\"error\": \"写操作未启用（需要 --serve-write）\"}".to_string(),
+                );
+            }
+            let Some(tripped) = json_bool_field(&text, "tripped") else {
+                return bad_request_json("缺少 tripped（true/false）");
+            };
+            if !json_bool_field(&text, "confirm").unwrap_or(false) {
+                return bad_request_json("探针状态变更需要 per-request 二次确认（confirm:true）");
+            }
+            let Some(target) = json_u64_field(&text, "target") else {
+                return bad_request_json("缺少 target（0-based 从站号）");
+            };
+            let Ok(target) = usize::try_from(target) else {
+                return bad_request_json("target 越界");
+            };
+            let mut guard = responders.lock().unwrap();
+            let mut rt = runtime.lock().unwrap();
+            if let Some(run_id) = json_string_field(&text, "run_id") {
+                if run_id != rt.run_id {
+                    return json(
+                        "HTTP/1.1 409 Conflict",
+                        format!(
+                            "{{\"error\": \"run_id 不匹配\", \"expected\": \"{}\", \"got\": \"{}\"}}",
+                            control_plane::json_escape(&rt.run_id),
+                            control_plane::json_escape(&run_id)
+                        ),
+                    );
+                }
+            }
+            let Some(responder) = guard.get_mut(target) else {
+                return bad_request_json(&format!("target {target} 越界"));
+            };
+            responder.set_probe_tripped(tripped);
+            if let Some(slot) = rt.probe.get_mut(target) {
+                *slot = tripped;
+            }
+            let details = format!(
+                "{{\"target\": {target}, \"tripped\": {tripped}, \"confirm\": true, \"who\": \"http\"}}"
+            );
+            rt.record("probe_state", Some(target), &details);
+            json(
+                "HTTP/1.1 200 OK",
+                format!(
+                    "{{\"ok\": true, \"run_id\": \"{}\", \"target\": {target}, \"tripped\": {tripped}}}",
+                    control_plane::json_escape(&rt.run_id)
+                ),
+            )
+        }
+        _ => {
+            control_plane::not_found_json("仅支持 GET /fault/status、POST /fault、GET/POST /probe")
+        }
+    }
+}
+
+/// 解析 `/fault` 请求（幂等语义由调用方处理）。
+#[cfg(target_os = "linux")]
+fn parse_fault_request(body: &str) -> Result<FaultSpec, String> {
+    let kind = json_string_field(body, "fault").ok_or("缺少 fault 字段")?;
+    let target = match json_u64_field(body, "target") {
+        Some(value) => Some(usize::try_from(value).map_err(|_| "target 越界")?),
+        None => None,
+    };
+    let duration_ms = json_u64_field(body, "duration_ms").unwrap_or(0);
+    let code = match json_u64_field(body, "code") {
+        Some(value) => Some(u16::try_from(value).map_err(|_| "code 越界")?),
+        None => None,
+    };
+    let confirm = json_bool_field(body, "confirm").unwrap_or(false);
+    let run_id = json_string_field(body, "run_id");
+    Ok(FaultSpec {
+        kind,
+        target,
+        duration_ms,
+        code,
+        confirm,
+        run_id,
+    })
 }
 
 #[cfg(target_os = "linux")]
@@ -660,6 +1259,7 @@ fn pdo_layout(
 }
 
 #[cfg(target_os = "linux")]
+#[allow(clippy::too_many_arguments)]
 fn serve_live_http(
     addr: String,
     manifest: Option<plugin_host::manifest::PluginManifest>,
@@ -668,9 +1268,11 @@ fn serve_live_http(
     web_root: Option<String>,
     serve_write: bool,
     serve_token: Option<String>,
+    runtime: std::sync::Arc<std::sync::Mutex<E2eRuntime>>,
 ) {
     use std::io::Write as _;
     use std::net::TcpListener;
+    let mut fps_tracker = FpsTracker::default();
 
     let spec = match (&esi, &manifest) {
         (Some(device), Some(manifest)) => {
@@ -767,6 +1369,18 @@ fn serve_live_http(
             }
             0
         };
+        if matches!(path_only, "/fault" | "/fault/status" | "/probe") {
+            let response = handle_e2e_control(
+                &method,
+                path_only,
+                &body,
+                serve_write,
+                &runtime,
+                &responders,
+            );
+            write_http_response(&mut stream, &response, "");
+            continue;
+        }
         if method == "POST" && path_only == "/sdo" {
             let response = if !serve_write {
                 control_plane::HttpResponse {
@@ -902,6 +1516,61 @@ fn serve_live_http(
                 None => "{\"schema\": \"ec-sim/state-v1\", \"live\": null}".to_string(),
             }
         };
+        let state = if path_only == "/state" {
+            let guard = responders.lock().unwrap();
+            let (_, sm2_len) = pdo_layout(&manifest, "out", 0x1100, 2);
+            let (_, sm3_len) = pdo_layout(&manifest, "in", 0x1110, 2);
+            let mut slaves = Vec::with_capacity(guard.len());
+            let mut op_slaves = 0usize;
+            let mut watchdog_trips = 0u64;
+            let mut pdo_miss = 0u64;
+            let mut pdo_wkc_errors = 0u64;
+            for (index, responder) in guard.iter().enumerate() {
+                let stats = responder.stats();
+                let status = responder.al_status();
+                let op = status & 0x0F == 0x08;
+                op_slaves += usize::from(op);
+                watchdog_trips = watchdog_trips.saturating_add(stats.sm_watchdog_triggers);
+                pdo_miss = pdo_miss.saturating_add(stats.frames_dropped);
+                pdo_wkc_errors = pdo_wkc_errors.saturating_add(stats.wkc_errors);
+                slaves.push(control_plane::E2eSlaveState {
+                    index,
+                    station_address: responder.station_address(),
+                    al_status: status,
+                    al_status_code: responder.al_status_code(),
+                    op,
+                    frames_in: stats.frames_in,
+                    frames_out: stats.frames_out,
+                    frames_dropped: stats.frames_dropped,
+                    datagrams_hit: stats.datagrams_hit,
+                    wkc_errors: stats.wkc_errors,
+                });
+            }
+            let fps = guard.first().map_or(0.0, |responder| {
+                fps_tracker.observe(responder.stats().frames_in, now_ms())
+            });
+            let slave_count = guard.len();
+            let run_id = runtime.lock().unwrap().run_id.clone();
+            let master = control_plane::E2eMasterState {
+                al_state: if slave_count > 0 && op_slaves == slave_count {
+                    0x08
+                } else {
+                    0x00
+                },
+                op_slaves,
+                slave_count,
+                fps,
+                ack_latency_ms: None,
+                watchdog_trips,
+                pdo_tx_bytes: sm2_len,
+                pdo_rx_bytes: sm3_len,
+                pdo_miss,
+                pdo_wkc_errors,
+            };
+            control_plane::e2e_state_json(&state, &run_id, &master, &slaves)
+        } else {
+            state
+        };
         let want_history = path_only == "/pdo" && path.contains("history=1");
         let topology_body = if path_only == "/topology" {
             let (sm2_address, sm2_len) = pdo_layout(&manifest, "out", 0x1100, 2);
@@ -957,6 +1626,7 @@ fn serve_live_http(
                         sm_watchdog_triggers: stats.sm_watchdog_triggers,
                         sii_read_commands: stats.sii_read_commands,
                         sii_write_commands: stats.sii_write_commands,
+                        wkc_errors: stats.wkc_errors,
                         dc_time_ns: responder.dc_time_ns(),
                     }
                 })
@@ -1006,6 +1676,23 @@ fn serve_live_http(
             }
         });
         if path_only == "/events" {
+            if let Some(since_raw) = query_param(&path, "since") {
+                let since = since_raw.parse::<u64>().unwrap_or(0);
+                let response = {
+                    let rt = runtime.lock().unwrap();
+                    control_plane::HttpResponse {
+                        status_line: "HTTP/1.1 200 OK",
+                        content_type: "application/json; charset=utf-8",
+                        body: control_plane::events_json(
+                            &rt.events_since(since),
+                            rt.dropped,
+                            since,
+                        ),
+                    }
+                };
+                write_http_response(&mut stream, &response, "");
+                continue;
+            }
             let interval_ms = query_param(&path, "interval_ms")
                 .and_then(|value| value.parse::<u64>().ok())
                 .unwrap_or(500)
@@ -1148,6 +1835,8 @@ fn main() -> std::process::ExitCode {
     let mut dump_json = false;
     let mut dump_state = false;
     let mut serve_addr: Option<String> = None;
+    // task-103：E2E run_id（harness 传入即采用；缺省按启动时刻生成，作为兜底）。
+    let mut run_id: Option<String> = None;
     let mut web_root: Option<String> = None;
     let mut serve_write = false;
     // B41：可选静态 Bearer token 的环境变量名（空/未设置 = 不鉴权，保持现状）。
@@ -1272,6 +1961,19 @@ fn main() -> std::process::ExitCode {
             "--json" => dump_json = true,
             "--dump-state" => dump_state = true,
             "--serve-write" => serve_write = true,
+            "--run-id" => match args.next() {
+                Some(value)
+                    if !value.is_empty()
+                        && value.len() <= 128
+                        && !value.chars().any(char::is_whitespace) =>
+                {
+                    run_id = Some(value);
+                }
+                _ => {
+                    eprintln!("ec-sim-esc: --run-id 需要 1..128 字节且不含空白的值");
+                    return std::process::ExitCode::from(2);
+                }
+            },
             "--serve-token-env" => match args.next() {
                 Some(name) => serve_token_env = Some(name),
                 None => {
@@ -1350,6 +2052,14 @@ fn main() -> std::process::ExitCode {
         },
         None => None,
     };
+
+    let run_id = run_id.unwrap_or_else(|| {
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_secs());
+        format!("ecsim-{secs}-{}", std::process::id())
+    });
+    println!("RUN_ID {run_id}");
 
     if dump_dict {
         return dump_dict_and_exit(manifest_path.as_deref(), esi_path.as_deref(), dump_json);
@@ -1473,6 +2183,7 @@ fn main() -> std::process::ExitCode {
             web_root.clone(),
             serve_write,
             serve_token.clone(),
+            run_id.clone(),
         ),
         (Some(name), None) => run(
             &name,
@@ -1490,6 +2201,7 @@ fn main() -> std::process::ExitCode {
             web_root.clone(),
             serve_write,
             serve_token.clone(),
+            run_id.clone(),
         ),
         (None, None) => run(
             "ecsim0",
@@ -1507,6 +2219,7 @@ fn main() -> std::process::ExitCode {
             web_root.clone(),
             serve_write,
             serve_token,
+            run_id,
         ),
     }
 }
@@ -1712,6 +2425,7 @@ fn run_uds(
     web_root: Option<String>,
     serve_write: bool,
     serve_token: Option<String>,
+    run_id: String,
 ) -> std::process::ExitCode {
     use esc_node::DEFAULT_SIM_MAC;
     use std::io::Write;
@@ -1747,6 +2461,10 @@ fn run_uds(
         }
     };
     let responders = std::sync::Arc::new(std::sync::Mutex::new(responders));
+    let runtime = std::sync::Arc::new(std::sync::Mutex::new(E2eRuntime::new(
+        run_id.clone(),
+        slave_count,
+    )));
     // B44 子项 3 + B51 后续：WASM 行为桥（插件在独立 ticker 线程，帧循环只 publish/poll）。
     // `--slaves N` 时每站一个实例，共享一个实例配额（上限默认 = N；--behavior-max-instances 可收紧）。
     let _ = behavior_max_instances;
@@ -1771,6 +2489,7 @@ fn run_uds(
     }
     if let Some(addr) = serve {
         let shared = std::sync::Arc::clone(&responders);
+        let runtime = std::sync::Arc::clone(&runtime);
         let root = web_root.clone();
         std::thread::spawn(move || {
             serve_live_http(
@@ -1781,6 +2500,7 @@ fn run_uds(
                 root,
                 serve_write,
                 serve_token,
+                runtime,
             );
         });
     }
@@ -1813,16 +2533,31 @@ fn run_uds(
         }
         let reply = {
             let mut guard = responders.lock().unwrap();
-            for responder in guard.iter_mut() {
-                responder.tick(now_ms());
+            let now = now_ms();
+            {
+                let mut rt = runtime.lock().unwrap();
+                for (kind, target, _) in rt.expire_faults(now, guard.as_mut_slice()) {
+                    if kind == "link_loss" {
+                        rt.record_at(now, "link", target, "{\"state\": \"up\"}");
+                    }
+                }
             }
-            let reply = esc_node::handle_frame_chain(&mut guard, &buf[..len], DEFAULT_SIM_MAC);
-            #[cfg(feature = "wasm-runtime")]
-            if let Some(bridges) = behavior_bridges.as_mut() {
-                bridges.on_frame(guard.as_mut_slice());
+            let link_loss = runtime.lock().unwrap().link_loss_active(now);
+            if link_loss {
+                // task-102 link_loss：故障期间整帧丢弃（模拟线缆断开），恢复后主站重新握手。
+                None
+            } else {
+                for responder in guard.iter_mut() {
+                    responder.tick(now);
+                }
+                let reply = esc_node::handle_frame_chain(&mut guard, &buf[..len], DEFAULT_SIM_MAC);
+                #[cfg(feature = "wasm-runtime")]
+                if let Some(bridges) = behavior_bridges.as_mut() {
+                    bridges.on_frame(guard.as_mut_slice());
+                }
+                log_al_events(guard.as_mut_slice(), &runtime);
+                reply
             }
-            log_al_events(guard.as_mut_slice());
-            reply
         };
         let Some(reply) = reply else {
             if verbose {
@@ -1864,6 +2599,7 @@ fn run(
     web_root: Option<String>,
     serve_write: bool,
     serve_token: Option<String>,
+    run_id: String,
 ) -> std::process::ExitCode {
     use esc_node::DEFAULT_SIM_MAC;
     use std::io::Write;
@@ -1900,6 +2636,10 @@ fn run(
         }
     };
     let responders = std::sync::Arc::new(std::sync::Mutex::new(responders));
+    let runtime = std::sync::Arc::new(std::sync::Mutex::new(E2eRuntime::new(
+        run_id.clone(),
+        slave_count,
+    )));
     // B44 子项 3 + B51 后续：WASM 行为桥（插件在独立 ticker 线程，帧循环只 publish/poll）。
     // `--slaves N` 时每站一个实例，共享一个实例配额（上限默认 = N；--behavior-max-instances 可收紧）。
     let _ = behavior_max_instances;
@@ -1924,6 +2664,7 @@ fn run(
     }
     if let Some(addr) = serve {
         let shared = std::sync::Arc::clone(&responders);
+        let runtime = std::sync::Arc::clone(&runtime);
         let root = web_root.clone();
         std::thread::spawn(move || {
             serve_live_http(
@@ -1934,6 +2675,7 @@ fn run(
                 root,
                 serve_write,
                 serve_token,
+                runtime,
             );
         });
     }
@@ -1950,16 +2692,30 @@ fn run(
         };
         let reply = {
             let mut guard = responders.lock().unwrap();
-            for responder in guard.iter_mut() {
-                responder.tick(now_ms());
+            let now = now_ms();
+            {
+                let mut rt = runtime.lock().unwrap();
+                for (kind, target, _) in rt.expire_faults(now, guard.as_mut_slice()) {
+                    if kind == "link_loss" {
+                        rt.record_at(now, "link", target, "{\"state\": \"up\"}");
+                    }
+                }
             }
-            let reply = esc_node::handle_frame_chain(&mut guard, &buf[..len], mac);
-            #[cfg(feature = "wasm-runtime")]
-            if let Some(bridges) = behavior_bridges.as_mut() {
-                bridges.on_frame(guard.as_mut_slice());
+            let link_loss = runtime.lock().unwrap().link_loss_active(now);
+            if link_loss {
+                None
+            } else {
+                for responder in guard.iter_mut() {
+                    responder.tick(now);
+                }
+                let reply = esc_node::handle_frame_chain(&mut guard, &buf[..len], mac);
+                #[cfg(feature = "wasm-runtime")]
+                if let Some(bridges) = behavior_bridges.as_mut() {
+                    bridges.on_frame(guard.as_mut_slice());
+                }
+                log_al_events(guard.as_mut_slice(), &runtime);
+                reply
             }
-            log_al_events(guard.as_mut_slice());
-            reply
         };
         let Some(reply) = reply else {
             continue;
@@ -1994,6 +2750,7 @@ fn run(
     _web_root: Option<String>,
     _serve_write: bool,
     _serve_token: Option<String>,
+    _run_id: String,
 ) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)
@@ -2018,6 +2775,7 @@ fn run_uds(
     _web_root: Option<String>,
     _serve_write: bool,
     _serve_token: Option<String>,
+    _run_id: String,
 ) -> std::process::ExitCode {
     eprintln!("ec-sim-esc: TAP/UDS 线缆层仅在 Linux 可用（当前平台不支持）");
     std::process::ExitCode::from(3)

@@ -502,6 +502,190 @@ pub fn live_state_json(
     out
 }
 
+/// E2E 逐从站聚合状态（task-103；`/state` 的 `master.slaves`）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct E2eSlaveState {
+    /// 链上序号（0-based）。
+    pub index: usize,
+    /// 配置站地址。
+    pub station_address: u16,
+    /// AL Status。
+    pub al_status: u8,
+    /// AL Status Code。
+    pub al_status_code: u16,
+    /// 是否处于 OP。
+    pub op: bool,
+    /// 收帧数。
+    pub frames_in: u64,
+    /// 发帧数。
+    pub frames_out: u64,
+    /// 丢弃帧数。
+    pub frames_dropped: u64,
+    /// datagram 命中数。
+    pub datagrams_hit: u64,
+    /// 从站侧 WKC 未命中计数（当前恒 0：WKC 由主站/LinuxCNC 侧观测）。
+    pub wkc_errors: u64,
+}
+
+/// E2E 主站/全局聚合状态（task-103；`/state` 的 `master`）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct E2eMasterState {
+    /// 聚合 AL 状态：全部 OP 时为 0x08，否则 0x00（不假装中间态）。
+    pub al_state: u8,
+    /// OP 从站数。
+    pub op_slaves: usize,
+    /// 从站总数。
+    pub slave_count: usize,
+    /// 采样窗口帧率（由调用方按 frames_in 差值计算；无采样时 0）。
+    pub fps: f64,
+    /// SIM 侧不测量桥 ACK 延迟：恒 `None`（由桥侧/HMI 侧测量）。
+    pub ack_latency_ms: Option<f64>,
+    /// 看门狗触发次数（全从站求和）。
+    pub watchdog_trips: u64,
+    /// RxPDO 字节数（SM2 配置长度）。
+    pub pdo_tx_bytes: usize,
+    /// TxPDO 字节数（SM3 配置长度）。
+    pub pdo_rx_bytes: usize,
+    /// PDO 丢帧数（全从站 frames_dropped 求和）。
+    pub pdo_miss: u64,
+    /// PDO WKC 错误数（全从站求和；当前恒 0，见 [`E2eSlaveState::wkc_errors`]）。
+    pub pdo_wkc_errors: u64,
+}
+
+/// 生成 E2E `state-v1` JSON：在现有 `live` 状态基础上追加 `run_id`、`master`、`slaves`。
+#[must_use]
+pub fn e2e_state_json(
+    base: &str,
+    run_id: &str,
+    master: &E2eMasterState,
+    slaves: &[E2eSlaveState],
+) -> String {
+    let mut slaves_json = String::new();
+    for (position, slave) in slaves.iter().enumerate() {
+        let tail = if position + 1 == slaves.len() {
+            ""
+        } else {
+            ","
+        };
+        let _ = write!(
+            slaves_json,
+            "{{\"index\": {}, \"station_address\": \"0x{:04X}\", \"al_code\": \"0x{:04X}\", \"state\": \"0x{:02X}\", \"op\": {}, \"frames_in\": {}, \"frames_out\": {}, \"frames_dropped\": {}, \"datagrams_hit\": {}, \"wkc_errors\": {}}}{tail}",
+            slave.index,
+            slave.station_address,
+            slave.al_status_code,
+            slave.al_status,
+            slave.op,
+            slave.frames_in,
+            slave.frames_out,
+            slave.frames_dropped,
+            slave.datagrams_hit,
+            slave.wkc_errors
+        );
+    }
+    let fps = if master.fps.is_finite() {
+        format!("{:.3}", master.fps)
+    } else {
+        "null".to_string()
+    };
+    let ack_latency = match master.ack_latency_ms {
+        Some(value) if value.is_finite() => format!("{value:.3}"),
+        _ => "null".to_string(),
+    };
+    let insert = format!(
+        ",\n  \"run_id\": \"{}\",\n  \"master\": {{\"al_state\": \"0x{:02X}\", \"op_slaves\": {}, \"slave_count\": {}, \"fps\": {fps}, \"ack_latency_ms\": {ack_latency}, \"watchdog\": {{\"trips\": {}}}, \"pdo\": {{\"tx\": {}, \"rx\": {}, \"miss\": {}, \"wkc_errors\": {}}}}},\n  \"slaves\": [{}]\n",
+        json_escape(run_id),
+        master.al_state,
+        master.op_slaves,
+        master.slave_count,
+        master.watchdog_trips,
+        master.pdo_tx_bytes,
+        master.pdo_rx_bytes,
+        master.pdo_miss,
+        master.pdo_wkc_errors,
+        slaves_json
+    );
+    let mut out = base.to_string();
+    let insert_at = out.rfind('}').unwrap_or(out.len());
+    out.insert_str(insert_at, &insert);
+    out
+}
+
+/// 单条 E2E 事件（JSON 行；`details` 必须是合法 JSON 对象文本）。
+#[must_use]
+pub fn event_json(
+    seq: u64,
+    ts_ms: u64,
+    run_id: &str,
+    event_type: &str,
+    slave: Option<usize>,
+    details: &str,
+) -> String {
+    format!(
+        "{{\"seq\": {seq}, \"ts\": {ts_ms}, \"run_id\": \"{}\", \"type\": \"{}\", \"slave\": {}, \"details\": {details}}}",
+        json_escape(run_id),
+        json_escape(event_type),
+        match slave {
+            Some(index) => index.to_string(),
+            None => "null".to_string(),
+        }
+    )
+}
+
+/// 生成 `/events?since=` 的 JSON 响应（事件本身已是 JSON 行）。
+#[must_use]
+pub fn events_json(events: &[String], dropped: u64, since: u64) -> String {
+    format!(
+        "{{\"schema\": \"ec-sim/events-v1\", \"since\": {since}, \"count\": {}, \"dropped\": {dropped}, \"events\": [{}]}}",
+        events.len(),
+        events.join(",")
+    )
+}
+
+/// 当前故障注入状态（`/fault/status` 用）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FaultView {
+    /// 故障类型。
+    pub kind: String,
+    /// 目标从站（`None` = 整条链路/全部）。
+    pub target: Option<usize>,
+    /// 剩余毫秒（0 = 已到期/无期限）。
+    pub remaining_ms: u64,
+    /// 注入时刻（毫秒）。
+    pub injected_at_ms: u64,
+    /// 已应用次数（幂等请求只应用一次）。
+    pub applied_count: u64,
+}
+
+/// 生成 `/fault/status` JSON。
+#[must_use]
+pub fn fault_status_json(active: &[FaultView], applied_count: u64, run_id: &str) -> String {
+    let mut entries = String::new();
+    for (position, fault) in active.iter().enumerate() {
+        let tail = if position + 1 == active.len() {
+            ""
+        } else {
+            ","
+        };
+        let _ = write!(
+            entries,
+            "{{\"fault\": \"{}\", \"target\": {}, \"remaining_ms\": {}, \"injected_at_ms\": {}, \"applied_count\": {}}}{tail}",
+            json_escape(&fault.kind),
+            match fault.target {
+                Some(index) => index.to_string(),
+                None => "null".to_string(),
+            },
+            fault.remaining_ms,
+            fault.injected_at_ms,
+            fault.applied_count
+        );
+    }
+    format!(
+        "{{\"schema\": \"ec-sim/fault-v1\", \"run_id\": \"{}\", \"applied_count\": {applied_count}, \"active\": [{}]}}",
+        json_escape(run_id),
+        entries
+    )
+}
+
 /// 过程数据（PDO）只读快照（SM2 输出 / SM3 输入）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PdoSnapshot {
@@ -789,6 +973,8 @@ pub struct MetricsSlave {
     pub sii_read_commands: u64,
     /// SII 写命令数。
     pub sii_write_commands: u64,
+    /// 从站侧 WKC 未命中计数（当前恒 0；主站侧 WKC 由 LinuxCNC 观测）。
+    pub wkc_errors: u64,
     /// 模拟 DC 时间（ns）。
     pub dc_time_ns: u64,
 }
@@ -809,7 +995,7 @@ pub fn metrics_text(slaves: &[MetricsSlave]) -> String {
         )
     };
     let mut out = String::new();
-    let counters: [MetricSpec; 15] = [
+    let counters: [MetricSpec; 16] = [
         (
             "ecsim_frames_in_total",
             "收到的 EtherCAT 帧总数",
@@ -882,6 +1068,11 @@ pub fn metrics_text(slaves: &[MetricsSlave]) -> String {
             "ecsim_sii_write_commands_total",
             "SII 写命令总数",
             |slave| slave.sii_write_commands,
+        ),
+        (
+            "ecsim_wkc_errors_total",
+            "从站侧 WKC 未命中总数（当前恒 0；主站 WKC 由 LinuxCNC 观测）",
+            |slave| slave.wkc_errors,
         ),
     ];
     for (name, help, get) in counters {
@@ -1229,6 +1420,7 @@ mod tests {
             sm_watchdog_triggers: 0,
             sii_read_commands: 5,
             sii_write_commands: 1,
+            wkc_errors: 0,
             dc_time_ns: 1234,
         };
         let text = metrics_text(&[slave(0, 1), slave(1, 2)]);
@@ -1297,6 +1489,7 @@ mod tests {
                 sm_watchdog_triggers: 0,
                 sii_read_commands: 0,
                 sii_write_commands: 0,
+                wkc_errors: 0,
                 dc_time_ns: 0,
             }],
             3,
@@ -1471,5 +1664,90 @@ mod tests {
         }
         // slave_count=0 时缺省也不得返回 Ok(0)（无站可指）。
         assert!(validate_slave_param(None, 0).is_err());
+    }
+
+    #[test]
+    fn e2e_state_json_injects_run_id_master_and_slaves() {
+        let base = "{\n  \"schema\": \"ec-sim/state-v1\"\n}";
+        let master = E2eMasterState {
+            al_state: 0x08,
+            op_slaves: 1,
+            slave_count: 1,
+            fps: 10.0,
+            ack_latency_ms: None,
+            watchdog_trips: 2,
+            pdo_tx_bytes: 7,
+            pdo_rx_bytes: 11,
+            pdo_miss: 3,
+            pdo_wkc_errors: 4,
+        };
+        let slaves = [E2eSlaveState {
+            index: 0,
+            station_address: 0x1001,
+            al_status: 0x08,
+            al_status_code: 0,
+            op: true,
+            frames_in: 9,
+            frames_out: 9,
+            frames_dropped: 3,
+            datagrams_hit: 12,
+            wkc_errors: 4,
+        }];
+        let json = e2e_state_json(base, "run-1", &master, &slaves);
+        assert!(json.starts_with("{\n  \"schema\""));
+        assert!(json.contains("\"run_id\": \"run-1\""));
+        assert!(json.contains("\"al_state\": \"0x08\""));
+        assert!(json.contains("\"op_slaves\": 1"));
+        assert!(json.contains("\"fps\": 10.000"));
+        assert!(json.contains("\"ack_latency_ms\": null"));
+        assert!(json.contains("\"watchdog\": {\"trips\": 2}"));
+        assert!(json.contains("\"pdo\": {\"tx\": 7, \"rx\": 11, \"miss\": 3, \"wkc_errors\": 4}"));
+        assert!(json.contains(
+            "\"slaves\": [{\"index\": 0, \"station_address\": \"0x1001\", \"al_code\": \"0x0000\", \"state\": \"0x08\", \"op\": true"
+        ));
+        assert!(json.trim_end().ends_with('}'));
+    }
+
+    #[test]
+    fn e2e_event_and_events_json_serialize_seq_and_run_id() {
+        let event = event_json(
+            3,
+            1234,
+            "run-1",
+            "al_transition",
+            Some(1),
+            "{\"from\": \"0x08\", \"to\": \"0x14\"}",
+        );
+        assert!(event.contains("\"seq\": 3"));
+        assert!(event.contains("\"ts\": 1234"));
+        assert!(event.contains("\"run_id\": \"run-1\""));
+        assert!(event.contains("\"type\": \"al_transition\""));
+        assert!(event.contains("\"slave\": 1"));
+        assert!(event.contains("\"details\": {\"from\": \"0x08\", \"to\": \"0x14\"}"));
+
+        let body = events_json(&[event], 2, 9);
+        assert!(body.contains("\"schema\": \"ec-sim/events-v1\""));
+        assert!(body.contains("\"since\": 9"));
+        assert!(body.contains("\"count\": 1"));
+        assert!(body.contains("\"dropped\": 2"));
+        assert!(body.contains("\"events\": ["));
+    }
+
+    #[test]
+    fn fault_status_json_lists_active_faults_and_applied_count() {
+        let active = [FaultView {
+            kind: "link_loss".to_string(),
+            target: None,
+            remaining_ms: 500,
+            injected_at_ms: 100,
+            applied_count: 1,
+        }];
+        let body = fault_status_json(&active, 4, "run-1");
+        assert!(body.contains("\"schema\": \"ec-sim/fault-v1\""));
+        assert!(body.contains("\"run_id\": \"run-1\""));
+        assert!(body.contains("\"applied_count\": 4"));
+        assert!(body.contains("\"fault\": \"link_loss\""));
+        assert!(body.contains("\"target\": null"));
+        assert!(body.contains("\"remaining_ms\": 500"));
     }
 }

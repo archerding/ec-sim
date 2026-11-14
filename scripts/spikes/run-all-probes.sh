@@ -65,6 +65,8 @@ tap-live|root|tap-live-state-probe.sh|no
 tap-cia402|root|tap-cia402-multi-slave-probe.sh|no
 invalid-slave|any|invalid-slave-probe.sh|no
 al-telemetry|linux|al-telemetry-probe.sh|no
+e2e-control|linux|e2e-control-probe.sh|no
+cnc-e2e-fixed-scene|linux|cnc-e2e-fixed-scene.sh|no
 "
 
 skip_reason() {

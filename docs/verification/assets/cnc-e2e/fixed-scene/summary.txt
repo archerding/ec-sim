@@ -1,0 +1,15 @@
+stage=fixed-scene
+date=2026-11-15T07:12:17+08:00
+binary=/root/ecsim-e2e/target/release/ec-sim-esc
+binary_sha256=d2241dec1cc6fff839ccee781cd5768ad1099d0ea8fdb83e7e957607f21904db
+manifest=plugins/cnc-csp-servo/plugin.yaml
+manifest_sha256=5f96adc131c19f1448b29f8cd30577e20a12e72ed7fd8ae4ffd2d80f3dcd45e9
+slaves=3 behavior=cia402 layout=tx7B/rx11B
+rounds=3 hold_seconds=20 port=18210
+note=EC-Sim VM UDS synthetic master; CNC VM TAP+IgH+lcec E2E is separate
+round-1 PASS
+round-2 PASS
+round-3 PASS
+pass_rounds=3/3
+expected=3/3 OP per round
+RESULT: PASS

@@ -5626,3 +5626,28 @@
   `watchdog=true code=0x001B` 与恢复 `watchdog=false`）；过程中修掉 `/state.last_al_event` 被日志消费
   清空（拆分持久/待打印事件槽，`0bb5818`）与 `AL_EVENT watchdog=1` 打印（改 `true/false`，`36d6dc7`）。
   证据见 [B62](docs/verification/2026-11-14-b62-al-telemetry.md)。
+
+### CNC E2E 支持（task-101/102/103）：控制面扩展 + 固定场景 + 可观测性
+
+- 控制面（只增不改）：`/state` 顶层 `run_id`/`master{al_state,op_slaves,slave_count,fps,
+  ack_latency_ms,watchdog,pdo{tx,rx,miss,wkc_errors}}`/`slaves[]`；`/events?since=<seq>` 返回
+  单调 `seq` 的 JSON 事件；`POST /fault`+`GET /fault/status`（仅 `--serve-write`，每请求
+  `confirm:true`，审计 who=http/时间/类型/目标/时长/前值→后值/run_id，同 kind+target 幂等，
+  到期自动恢复并记 `fault_cleared`）；`POST/GET /probe`（tripped + `probe_state` 事件）；
+  `--run-id` 四处同值（缺省 `ecsim-<秒>-<pid>` 仅兜底，C3 权威仍在 harness）。
+- 新探针：`e2e_control_probe.py`/`e2e-control-probe.sh`（门禁 405、400/409、幂等、事件/审计、
+  `seq` 单调、到期恢复、al_error target=1 的 `0x0011`+恢复、probe 置位/清除）；
+  `uds_op_hold.py`+`cnc-e2e-fixed-scene.sh`（3×`cnc-csp-servo`，UDS 广播写 SM0/1、SM2 7B/SM3 11B、
+  PREOP→SAFEOP→OP，20 ms 周期 SM2；连续 3 轮各 20 s：`HOLD_OK` 采样约 970、3/3 OP、
+  `al_code=0x0000`、`pdo 7/11`、`watchdog=0`）；`e2e_observability_collect.py`（只读采集
+  state/metrics/events + summary）。
+- 本机：`cargo fmt --check`/`clippy -D warnings` 0，`cargo test --workspace` **268 passed**
+  （+3 control-plane 单测）；Linux 交叉 `cargo check`/clippy 0。
+- EC-Sim 验证机（未碰 CNC VM）：二进制 sha256 `d2241dec…1904db`、manifest `5f96adc1…45e9`；
+  `e2e-control-probe` **RESULT: PASS**；固定场景 **3/3 轮 3/3 OP**；B-1 整轮
+  **26 PASS / 0 FAIL / 0 SKIP（共 26）**。
+- 文档：`docs/CONTROL-PLANE.md` §10、`docs/CNC-E2E-PROFILE.md`、`docs/CNC-E2E-OBSERVABILITY.md`、
+  `docs/cnc-e2e/cnc-e2e-3csp.xml`；证据
+  [CNC E2E 控制面](docs/verification/2026-11-15-cnc-e2e-control-plane.md)。
+- 边界：8 IO 混合拓扑与 `REF.json` PENDING（等 cnc-impl demo-state）；`--al-error` 为启动期全站；
+  WKC 由内核/IgH 派生、SIM 的 `wkc_errors` 恒 0 占位；不宣称一致性/认证。
