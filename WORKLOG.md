@@ -5673,3 +5673,27 @@
   [故障矩阵记录](docs/verification/2026-11-15-cnc-e2e-fault-matrix.md)。
 - 边界：DC 丢失 P1/NOT-JUDGED（无硬件 DC）；8 IO P1；AL 运行期注入 P1；上述为
   EC-Sim 侧 UDS/TAP 自证，CNC VM lcec/HMI 联调仍待 G1 判定后的窗口；不宣称认证。
+
+### F-PROC 补齐（task-102 P0）：`pdo_corrupt` 确定性过程数据错误 + 进程 kill/重启
+
+- `Responder` 新增 `pdo_corrupt`：`tick()` 在正常编码后对 TxPDO 逐字节 XOR `0xA5`
+  （确定性、不累积；`pdo_frozen` 时不执行）；`tx_pdo_bytes()` 供审计前值/探针读取
+  （单测 `pdo_corrupt_injection_xors_tx_pdo_until_cleared`）。
+- `/fault` 增加 `pdo_corrupt` kind（P0，需 target/confirm/`--serve-write`）；响应的
+  `audit` 带 `pdo.before_hex` 与 `xor`，事件 `fault_injected`/`fault_cleared` 成对，
+  到期需数据面帧推进。
+- `scripts/spikes/fault_matrix_probe.py` 增 `pdo_corrupt` 用例（target=0 1.5 s：
+  正常 TxPDO → 注入后逐字节 XOR 校验、0.3 s 后再读仍一致 → 到期恢复原值）；
+  `scripts/spikes/cnc-e2e-process-fault.sh`（run_id A 3/3 OP → `kill -9` →
+  控制面不可达 → run_id B 重启 3/3 OP + `HOLD_OK`）。
+- `scripts/spikes/run-all-probes.sh` 注册 `proc-fault`，B-1 共 **29 项**。
+- EC-Sim 验证机（未碰 CNC VM）：fault-matrix **RESULT: PASS**（含 `pdo_corrupt`：
+  `normal=4002000000000000000008` → `corrupted=e5a7a5a5a5a5a5a5a5a5ad` → 恢复原值）、
+  process-fault **RESULT: PASS**（`control_plane_unreachable_after_kill=yes`）、
+  B-1 整轮 **29 PASS / 0 FAIL / 0 SKIP（共 29）**；二进制 sha256
+  `66587fa0…f30c1f`（1,157,928 B）、manifest `5f96adc1…45e9`。
+- 本机 `cargo fmt`/`clippy -D warnings` 0、`cargo test --workspace` **271 passed**
+  （270 单测 + 1 doc-test；esc-node 79）；证据
+  `docs/verification/assets/cnc-e2e/{fault-matrix,process-fault,b1-29.log}`。
+- 边界：到期清理由数据面帧推进（无帧时 `remaining_ms=0` 仍 active）；进程重启会换
+  run_id；DC/8 IO/AL 运行期注入仍 P1；不宣称认证。

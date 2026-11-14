@@ -834,6 +834,17 @@ fn apply_fault_effects(
         .map_or((0, 0), |responder| {
             (responder.al_status(), responder.al_status_code())
         });
+    let pdo_before_hex = spec
+        .target
+        .and_then(|index| responders.get(index))
+        .map(|responder| {
+            responder
+                .tx_pdo_bytes()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        })
+        .unwrap_or_default();
     match spec.kind.as_str() {
         "link_loss" => {
             // 整条链路：由帧循环在故障期间直接丢弃帧（不调用本函数改单站）。
@@ -886,6 +897,16 @@ fn apply_fault_effects(
                 .ok_or_else(|| format!("target {index} 不存在"))?;
             responder.set_sdo_reject(true);
         }
+        "pdo_corrupt" => {
+            // F-PROC（进程数据故障）：TxPDO 每个 tick 正常编码后确定性 XOR 0xA5。
+            let index = spec
+                .target
+                .ok_or_else(|| "pdo_corrupt 需要 target".to_string())?;
+            let responder = responders
+                .get_mut(index)
+                .ok_or_else(|| format!("target {index} 不存在"))?;
+            responder.set_pdo_corrupt(true);
+        }
         // P1：安全链不在 EC-Sim 建模范围，仅记录事件（不伪造 PDO 行为）。
         "estop" | "hard_limit" => {}
         other => return Err(format!("未知 fault：{other}")),
@@ -896,8 +917,13 @@ fn apply_fault_effects(
         .map_or((0, 0), |responder| {
             (responder.al_status(), responder.al_status_code())
         });
+    let pdo_fragment = if spec.kind == "pdo_corrupt" && !pdo_before_hex.is_empty() {
+        format!(", \"pdo\": {{\"before_hex\": \"{pdo_before_hex}\", \"xor\": \"0xa5\"}}")
+    } else {
+        String::new()
+    };
     Ok(format!(
-        "{{\"fault\": \"{}\", \"target\": {}, \"duration_ms\": {}, \"modeled\": {}, \"before\": {{\"al_status\": \"0x{:02X}\", \"al_status_code\": \"0x{:04X}\"}}, \"after\": {{\"al_status\": \"0x{:02X}\", \"al_status_code\": \"0x{:04X}\"}}}}",
+        "{{\"fault\": \"{}\", \"target\": {}, \"duration_ms\": {}, \"modeled\": {}, \"before\": {{\"al_status\": \"0x{:02X}\", \"al_status_code\": \"0x{:04X}\"}}, \"after\": {{\"al_status\": \"0x{:02X}\", \"al_status_code\": \"0x{:04X}\"}}{pdo_fragment}}}",
         control_plane::json_escape(&spec.kind),
         match spec.target {
             Some(index) => index.to_string(),
@@ -924,6 +950,7 @@ fn release_fault_effects(fault: &ActiveFault, responders: &mut [esc_node::Respon
     match fault.kind.as_str() {
         "slave_drop" => responder.set_muted(false),
         "pdo_loss" => responder.set_pdo_frozen(false),
+        "pdo_corrupt" => responder.set_pdo_corrupt(false),
         "sdo_reject" => responder.set_sdo_reject(false),
         "al_error" | "watchdog" => responder.clear_al_error(),
         _ => {}
@@ -1057,12 +1084,13 @@ fn handle_e2e_control(
             if !spec.confirm {
                 return bad_request_json("故障注入需要 per-request 二次确认（confirm:true）");
             }
-            const KINDS: [&str; 8] = [
+            const KINDS: [&str; 9] = [
                 "link_loss",
                 "slave_drop",
                 "al_error",
                 "watchdog",
                 "pdo_loss",
+                "pdo_corrupt",
                 "sdo_reject",
                 "estop",
                 "hard_limit",
@@ -1086,7 +1114,7 @@ fn handle_e2e_control(
             }
             let needs_target = matches!(
                 spec.kind.as_str(),
-                "slave_drop" | "al_error" | "watchdog" | "pdo_loss" | "sdo_reject"
+                "slave_drop" | "al_error" | "watchdog" | "pdo_loss" | "pdo_corrupt" | "sdo_reject"
             );
             if needs_target && spec.target.is_none() {
                 return bad_request_json(&format!("{} 需要 target（0-based 从站号）", spec.kind));
@@ -1162,7 +1190,7 @@ fn handle_e2e_control(
             json(
                 "HTTP/1.1 200 OK",
                 format!(
-                    "{{\"ok\": true, \"run_id\": \"{}\", \"fault\": \"{}\", \"target\": {}, \"duration_ms\": {}, \"expires_at_ms\": {}, \"applied_count\": {}}}",
+                    "{{\"ok\": true, \"run_id\": \"{}\", \"fault\": \"{}\", \"target\": {}, \"duration_ms\": {}, \"expires_at_ms\": {}, \"applied_count\": {}, \"audit\": {audit}}}",
                     control_plane::json_escape(&rt.run_id),
                     control_plane::json_escape(&spec.kind),
                     spec.target.map_or("null".to_string(), |index| index.to_string()),

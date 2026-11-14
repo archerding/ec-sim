@@ -6,3 +6,13 @@
 [23:23:46] 控制面就绪；开始故障矩阵
 [23:23:50] slave_drop 时间线：/root/fault-evidence/fault-matrix/slave-drop-timeline.json
 [23:23:50] sdo_reject 时间线：/root/fault-evidence/fault-matrix/sdo-reject-timeline.json
+[23:40:54] 启动 ec-sim-esc --uds（3×cnc-csp-servo，run_id=fault-matrix-20261115074054）
+[23:40:54] 控制面就绪；开始故障矩阵
+[23:41:09] 启动 ec-sim-esc --uds（3×cnc-csp-servo，run_id=fault-matrix-20261115074109）
+[23:41:09] 控制面就绪；开始故障矩阵
+[23:41:14] slave_drop 时间线：/root/ecsim-procfault/docs/verification/assets/cnc-e2e/fault-matrix/slave-drop-timeline.json
+[23:41:14] sdo_reject 时间线：/root/ecsim-procfault/docs/verification/assets/cnc-e2e/fault-matrix/sdo-reject-timeline.json
+[23:42:40] 启动 ec-sim-esc --uds（3×cnc-csp-servo，run_id=fault-matrix-20261115074240）
+[23:42:40] 控制面就绪；开始故障矩阵
+[23:42:45] slave_drop 时间线：/root/ecsim-procfault/docs/verification/assets/cnc-e2e/fault-matrix/slave-drop-timeline.json
+[23:42:45] sdo_reject 时间线：/root/ecsim-procfault/docs/verification/assets/cnc-e2e/fault-matrix/sdo-reject-timeline.json

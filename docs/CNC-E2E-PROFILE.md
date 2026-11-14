@@ -134,18 +134,24 @@ python3 scripts/spikes/e2e_observability_collect.py \
 | TAP down/up | `ip link set <tap> down/up`（OS 层） | down 期间各站 `frames_in` 停止、`/state` 仍 200、主站存活；up 后新主站重建至 3/3 OP | `assets/cnc-e2e/tap-fault/` |
 | slave-drop / 重连 | `POST /fault {"fault":"slave_drop","target":i,"duration_ms":…,"confirm":true}` | 目标站 `frames_dropped` 增长、其他站继续收帧（环网旁路）、到期 `fault_cleared` 后恢复 | `assets/cnc-e2e/fault-matrix/` |
 | SDO 拒绝 | `POST /fault {"fault":"sdo_reject","target":i,…}` | 正常 Upload `0x43` → 注入后 Abort `0x06010000` → 到期恢复 `0x43` | `assets/cnc-e2e/fault-matrix/` |
+| F-PROC 过程数据错误 | `POST /fault {"fault":"pdo_corrupt","target":i,"duration_ms":…,"confirm":true}` | 注入前 TxPDO 正常；注入后逐字节 XOR `0xA5`（结果确定、不累积）；`audit.pdo.before_hex`/`xor` 可查；到期恢复原值 | `assets/cnc-e2e/fault-matrix/pdo-corrupt-timeline.json` |
+| F-PROC 进程故障 | `bash scripts/spikes/cnc-e2e-process-fault.sh`（外部 `kill -9` + 重启） | run_id A 3/3 OP → 控制面不可达 → run_id B 重启 3/3 OP + `HOLD_OK`，run_id 可区分现场 | `assets/cnc-e2e/process-fault/` |
 | DC 丢失 | — | **P1/NOT-JUDGED**：无硬件 DC，本轮架构不做 DC 丢失注入（代价高） | — |
 | AL 单站错误 / 看门狗 | `POST /fault al_error/watchdog` | P1（仅 `--serve-write`+confirm+审计；不作为 P0 判据） | `e2e-control-probe.out` |
 
 命令：
 
 ```bash
-# UDS：slave_drop + sdo_reject（3×cnc-csp-servo，端口 18134）
+# UDS：slave_drop + sdo_reject + pdo_corrupt（3×cnc-csp-servo，端口 18134）
 EC_SIM_BIN=target/release/ec-sim-esc \
   bash scripts/spikes/cnc-e2e-fault-matrix.sh --out .scratch/fault-matrix
+# UDS：进程 kill/重启（F-PROC 进程分支）
+EC_SIM_BIN=target/release/ec-sim-esc \
+  LOG_DIR=.scratch/process-fault bash scripts/spikes/cnc-e2e-process-fault.sh
 # root：TAP down/up（SOEM simple_ng；需要 Linux TAP 权限）
 bash scripts/spikes/cnc-e2e-tap-fault.sh --tap ecsimfault0
 ```
 
 边界：上述结果来自 EC-Sim 验证机（UDS/TAP 自证），不代表 CNC VM 上 lcec/HMI 的
-STALE/LOST 行为；CNC 侧联调仍待 G1 判定后的窗口。
+STALE/LOST 行为；CNC 侧联调仍待 G1 判定后的窗口。故障到期清理由数据面帧推进：
+无帧流量时 `tick` 不前进，`/fault/status` 可能 `remaining_ms=0` 但仍 active。

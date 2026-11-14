@@ -109,6 +109,8 @@ python3 scripts/spikes/e2e_observability_collect.py \
 | link_loss / TAP down/up | `fault_injected`/`link` down/up、`/state` 帧计数停滞；TAP 层由 `ip link` 验证 | 事件成对、恢复；down 期间 `/state` 仍 200 |
 | slave_drop / 重连 | `fault_injected`、目标站 `frames_dropped` 增长、其他站继续收帧、到期 `fault_cleared` | 帧计数与事件同时成立 |
 | sdo_reject | 目标站 SDO Upload/Download 返回 Abort `0x06010000`，到期恢复；`sdo-audit` 可关联 | 正常 `0x43` → abort → 恢复 `0x43` |
+| pdo_corrupt（F-PROC 过程数据） | `fault_injected` + `audit.pdo.before_hex/xor`；注入期间 TxPDO 逐字节 XOR `0xA5`（确定、不累积）；到期恢复 | 审计前值、字节变化、恢复原值 |
+| 进程 kill/重启（F-PROC 进程） | run_id 变化；kill 后 `/state` 不可达；重启后 3/3 OP、`HOLD_OK` | 控制面不可达 → 3/3 OP 恢复 |
 | pdo_loss | `pdo_loss` 事件、`frames_dropped` 增长 | 冻结/恢复 |
 | watchdog | `sm_watchdog_triggers_total`、`watchdog` 事件、`al_code=0x001B` | 触发/ACK |
 | STALE/LOST | 无直接信号（桥/GUI 侧）；`/metrics` 帧率可辅助 | HMI 证据 |
@@ -127,6 +129,8 @@ C5 的硬判据仍是 `ethercat slaves` 全 OP + 采样；SIM 的 `/state`、`/m
 - `slave_drop` 是“静默 + 环网旁路”：帧继续下传，目标站 `frames_in` 仍增长、
   `frames_dropped` 增长；判定看 `frames_dropped`，不要期望 `frames_in` 停滞。
 - DC 丢失为 P1/NOT-JUDGED（无硬件 DC，本轮不做 DC 丢失注入）。
+- 故障**到期清理由数据面帧推进**：无帧流量时 `tick` 不前进，`/fault/status` 可能
+  `remaining_ms=0` 但仍 active；需要 keepalive/主站帧才会清 `fault_cleared`。
 - `ack_latency_ms` 当前 `null`；`fps` 依赖主站帧，合成主站空闲时可能为 0。
 - 8 IO 混合拓扑 P1/NOT-JUDGED（`--slaves` 复制同一 manifest）。
 - 不宣称 EtherCAT 一致性/CTT/LinuxCNC 认证。

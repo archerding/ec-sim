@@ -296,18 +296,23 @@ token 模式下 `fetch` 不能自动带 `Authorization`，页面提示经反向�
 | GET | `/state` | 在既有 state-v1 基础上增加顶层 `run_id`、`master`（含 `pdo`）与顶层 `slaves`（逐站 AL/PDO 计数）；`al_state` 全 OP 时 `0x08`，否则 `0x00` |
 | GET | `/metrics` | 新增 `ecsim_al_transitions_total`、`ecsim_al_errors_total`、`ecsim_al_error_acks_total`、`ecsim_sm_watchdog_triggers_total`、`ecsim_sii_read_commands_total`、`ecsim_sii_write_commands_total`、`ecsim_wkc_errors_total`；`ecsim_al_status`/`ecsim_al_status_code` 保持 |
 | GET | `/events?since=<seq>` | 返回 `ec-sim/events-v1` JSON（`seq` 单调、`ts_ms`、`run_id`）；无 `since` 仍为 SSE |
-| POST | `/fault` | 运行期故障注入（需 `--serve-write` + `confirm:true`）；请求 `{"fault","target","duration_ms","code","confirm","run_id"}`；幂等（同 kind+target 返回 `idempotent:true`）；`run_id` 不一致 409 |
+| POST | `/fault` | 运行期故障注入（需 `--serve-write` + `confirm:true`）；请求 `{"fault","target","duration_ms","code","confirm","run_id"}`；响应含 `audit`（`before`/`after` AL、`pdo.before_hex`/`xor` 等）；幂等（同 kind+target 返回 `idempotent:true`）；`run_id` 不一致 409 |
 | GET | `/fault/status` | 当前 active 故障、剩余时长、`applied_count`、`run_id` |
 | POST | `/probe` | 验收探针 tripped 置位/清除（需 `--serve-write` + `confirm:true` + `tripped`） |
 | GET | `/probe` | 逐站 tripped 状态 |
 
-`fault` 取值：`link_loss`、`slave_drop`、`sdo_reject`、`pdo_loss`（以上 P0）；
+`fault` 取值：`link_loss`、`slave_drop`、`sdo_reject`、`pdo_loss`、`pdo_corrupt`（P0）；
 `al_error`、`watchdog`（P1）；`estop`（仅记录，modeled=false）、`hard_limit`（仅记录）。
 `sdo_reject` 对目标站所有 SDO Upload/Download 回 Abort `0x06010000`
 （Unsupported Access），到期恢复；`link_loss` 由帧循环整帧丢弃；`slave_drop` 为
 “静默从站 + 环网旁路”——该站本帧不应答/不置 WKC，但帧继续传给下游，`frames_in`
 仍计、`frames_dropped` 增长（断言看 `frames_dropped`，不是 `frames_in` 停滞）。
-TAP 层 down/up 不是 `/fault` 类型，由验证脚本 `ip link set <tap> down|up` 完成。
+`pdo_loss` 冻结 CiA 402 更新（TxPDO 保持旧值）；`pdo_corrupt`（F-PROC 过程数据故障）
+每帧正常编码后对目标站 TxPDO 逐字节 XOR `0xA5`，结果确定/不累积，到期恢复原编码。
+故障到期清理由**数据面帧**驱动：无帧流量时 `tick` 不前进，`/fault/status` 可能
+`remaining_ms=0` 但仍 active（需 keepalive/主站帧推进）。
+TAP 层 down/up 不是 `/fault` 类型，由验证脚本 `ip link set <tap> down|up` 完成；
+进程 kill/重启由 `cnc-e2e-process-fault.sh` 覆盖（控制面不可达 → 重启 3/3 OP、run_id 变化）。
 故障事件写入 `/events`：`fault_injected`、`fault_cleared`、`link`（down/up）、
 `pdo_loss`、`probe_state`、`watchdog`、`al_transition`、`state_change`。
 
@@ -327,8 +332,11 @@ TAP 层 down/up 不是 `/fault` 类型，由验证脚本 `ip link set <tap> down
 - `scripts/spikes/cnc-e2e-fixed-scene.sh`（Linux/UDS）：3×`cnc-csp-servo` 连续 3 轮
   3/3 OP、7B/11B 布局；证据格式见 [verification/2026-11-15-cnc-e2e-control-plane.md](verification/2026-11-15-cnc-e2e-control-plane.md)。
 - `scripts/spikes/cnc-e2e-fault-matrix.sh`（Linux/UDS）：`slave_drop`（目标站
-  `frames_dropped` 增长、其他站继续收帧、到期恢复）与 `sdo_reject`（正常
-  `0x43` → 注入 Abort `0x06010000` → 到期恢复 `0x43`）；每类写 timeline JSON。
+  `frames_dropped` 增长、其他站继续收帧、到期恢复）、`sdo_reject`（正常
+  `0x43` → 注入 Abort `0x06010000` → 到期恢复 `0x43`）、`pdo_corrupt`（TxPDO
+  逐字节 XOR `0xA5`、审计 `before_hex`/`xor`、到期还原）；每类写 timeline JSON。
+- `scripts/spikes/cnc-e2e-process-fault.sh`（Linux/UDS，F-PROC 进程分支）：run_id A
+  3/3 OP → `kill -9` → 控制面不可达 → run_id B 重启 3/3 OP + `HOLD_OK`。
 - `scripts/spikes/cnc-e2e-tap-fault.sh`（root，SOEM `simple_ng`）：TAP down 期间
   `frames_in` 停止、控制面 `/state` 仍 200、主站存活；TAP up 后第二个主站重新
   `all slaves are now operational`、3/3 OP、帧恢复。证据

@@ -7,18 +7,18 @@
 > IgH 的 ecrt 应用夹具只在验证机本地构建、**不入库**（GPL 边界，见 `AGENTS.md` §3）。
 > 最近的完整验证状态：**2026-11-15 团队班（CNC E2E 控制面 + 固定场景 + 故障矩阵）**
 > （详见 `WORKLOG.md` 同日条目、[STATUS.md](STATUS.md) 与 [CNC E2E 记录](verification/2026-11-15-cnc-e2e-control-plane.md)）；
-> 探针注册表 **28 项**（B-1 观测面；B55 `invalid-slave`、B54 `tap-cia402`、B52 `agent-skills`、B62 `al-telemetry`、CNC E2E `e2e-control`/`cnc-e2e-fixed-scene`/`fault-matrix`/`tap-fault`）
+> 探针注册表 **29 项**（B-1 观测面；B55 `invalid-slave`、B54 `tap-cia402`、B52 `agent-skills`、B62 `al-telemetry`、CNC E2E `e2e-control`/`cnc-e2e-fixed-scene`/`fault-matrix`/`tap-fault`/`proc-fault`）
 > ＋ **B-2 验收面 37 项**（`run-acceptance-probes.sh`，含 B57 `al-error`）。
 > 验证机 2026-11-13 轮次 B（clean VM / 单 runner）：**B-1 `23 PASS / 0 FAIL / 0 SKIP（共 23）`**、
 > **B-2 `30 PASS / 0 FAIL / 7 SKIP（共 37；7 项 `igh-*` = NOT-JUDGED/PV-01/PV-14）`**，明细见
 > `docs/verification/2026-11-13-gate-b2-acceptance-probes.md` §4；**B62 `al-telemetry` 为本轮新增
 > （24 项），EC-Sim 验证机随即整轮跑通：`B-1 24 PASS / 0 FAIL / 0 SKIP（共 24）`**（见
-> `docs/verification/2026-11-14-b62-al-telemetry.md`），不改变上述 M3 结论。**CNC E2E 新增四项后
-> EC-Sim 验证机整轮：`B-1 28 PASS / 0 FAIL / 0 SKIP（共 28）`**（见
+> `docs/verification/2026-11-14-b62-al-telemetry.md`），不改变上述 M3 结论。**CNC E2E + F-PROC 新增后
+> EC-Sim 验证机整轮：`B-1 29 PASS / 0 FAIL / 0 SKIP（共 29）`**（见
 > `docs/verification/2026-11-15-cnc-e2e-control-plane.md` 与
 > `docs/verification/2026-11-15-cnc-e2e-fault-matrix.md`）。
-> 本机 `cargo test --workspace` **270 passed / 0 failed**（269 单测 + 1 doc-test；CNC E2E +3：state/events/fault JSON 单测；
-> esc-node +2：`sdo_reject` 与静默从站旁路；B62 +1：SII 命令计数镜像；B55/B57/B58 增量见 `docs/STATUS.md`）。
+> 本机 `cargo test --workspace` **271 passed / 0 failed**（270 单测 + 1 doc-test；CNC E2E +3：state/events/fault JSON 单测；
+> esc-node +3：`sdo_reject`、静默从站旁路、`pdo_corrupt`；B62 +1：SII 命令计数镜像；B55/B57/B58 增量见 `docs/STATUS.md`）。
 > `mcp-tools`/`mcp-stdio`/`agent-skills`/`tap-cia402`/`invalid-slave`/`al-error`/`al-telemetry`/`e2e-control`/`cnc-e2e-fixed-scene` 分见
 > B45/B47/B52/B54/B55/B57/B62/CNC-E2E（2026-11-13/14/15）。
 

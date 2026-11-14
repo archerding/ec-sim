@@ -69,6 +69,7 @@ e2e-control|linux|e2e-control-probe.sh|no
 cnc-e2e-fixed-scene|linux|cnc-e2e-fixed-scene.sh|no
 fault-matrix|linux|cnc-e2e-fault-matrix.sh|no
 tap-fault|root|cnc-e2e-tap-fault.sh|no
+proc-fault|linux|cnc-e2e-process-fault.sh|no
 "
 
 skip_reason() {

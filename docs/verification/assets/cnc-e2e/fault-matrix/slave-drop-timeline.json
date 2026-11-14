@@ -130,10 +130,10 @@
         "from_code": "0x0000",
         "code": "0x0000",
         "watchdog": false,
-        "at_ms": 1794698626918
+        "at_ms": 1794699760324
       }
     },
-    "run_id": "fault-matrix-20261115072346",
+    "run_id": "fault-matrix-20261115074240",
     "master": {
       "al_state": "0x08",
       "op_slaves": 3,
@@ -320,10 +320,10 @@
         "from_code": "0x0000",
         "code": "0x0000",
         "watchdog": false,
-        "at_ms": 1794698626918
+        "at_ms": 1794699760324
       }
     },
-    "run_id": "fault-matrix-20261115072346",
+    "run_id": "fault-matrix-20261115074240",
     "master": {
       "al_state": "0x08",
       "op_slaves": 3,
@@ -510,15 +510,15 @@
         "from_code": "0x0000",
         "code": "0x0000",
         "watchdog": false,
-        "at_ms": 1794698626918
+        "at_ms": 1794699760324
       }
     },
-    "run_id": "fault-matrix-20261115072346",
+    "run_id": "fault-matrix-20261115074240",
     "master": {
       "al_state": "0x08",
       "op_slaves": 3,
       "slave_count": 3,
-      "fps": 48.433,
+      "fps": 48.295,
       "ack_latency_ms": null,
       "watchdog": {
         "trips": 0
@@ -700,15 +700,15 @@
         "from_code": "0x0000",
         "code": "0x0000",
         "watchdog": false,
-        "at_ms": 1794698626918
+        "at_ms": 1794699760324
       }
     },
-    "run_id": "fault-matrix-20261115072346",
+    "run_id": "fault-matrix-20261115074240",
     "master": {
       "al_state": "0x08",
       "op_slaves": 3,
       "slave_count": 3,
-      "fps": 49.096,
+      "fps": 49.18,
       "ack_latency_ms": null,
       "watchdog": {
         "trips": 0
@@ -762,8 +762,8 @@
   "events": [
     {
       "seq": 19,
-      "ts": 1794698627221,
-      "run_id": "fault-matrix-20261115072346",
+      "ts": 1794699760627,
+      "run_id": "fault-matrix-20261115074240",
       "type": "fault_injected",
       "slave": 1,
       "details": {
@@ -781,13 +781,13 @@
         },
         "confirm": true,
         "who": "http",
-        "run_id": "fault-matrix-20261115072346"
+        "run_id": "fault-matrix-20261115074240"
       }
     },
     {
       "seq": 20,
-      "ts": 1794698628731,
-      "run_id": "fault-matrix-20261115072346",
+      "ts": 1794699762137,
+      "run_id": "fault-matrix-20261115074240",
       "type": "fault_cleared",
       "slave": 1,
       "details": {

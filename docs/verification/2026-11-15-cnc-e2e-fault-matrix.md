@@ -8,10 +8,10 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 产品改动 | `crates/esc-node/src/lib.rs`：`Responder.sdo_reject` + Abort 注入；静默从站（muted）改环网旁路语义；`crates/esc-node/src/bin/ec_sim_esc.rs`：`/fault` 增 `sdo_reject` |
-| 探针 | `scripts/spikes/fault_matrix_probe.py`、`cnc-e2e-fault-matrix.sh`、`cnc-e2e-tap-fault.sh`、`uds_keepalive.py`；B-1 注册表 **28 项** |
-| 证据目录 | `docs/verification/assets/cnc-e2e/fault-matrix/`、`docs/verification/assets/cnc-e2e/tap-fault/`、`b1-28.log` |
-| 二进制 | sha256 `912564b43977a9038e865140b35c044c2324f2c8e23db541a58d8bf63c665852`（1,153,736 B） |
+| 产品改动 | `crates/esc-node/src/lib.rs`：`Responder.sdo_reject` + Abort 注入；`Responder.pdo_corrupt`（TxPDO 每 tick 正常编码后逐字节 XOR `0xA5`）；静默从站（muted）改环网旁路语义。`crates/esc-node/src/bin/ec_sim_esc.rs`：`/fault` 增 `sdo_reject`/`pdo_corrupt`，响应带 `audit` 对象 |
+| 探针 | `scripts/spikes/fault_matrix_probe.py`、`cnc-e2e-fault-matrix.sh`、`cnc-e2e-tap-fault.sh`、`cnc-e2e-process-fault.sh`、`uds_keepalive.py`；B-1 注册表 **29 项** |
+| 证据目录 | `docs/verification/assets/cnc-e2e/fault-matrix/`、`tap-fault/`、`process-fault/`、`b1-29.log` |
+| 二进制 | sha256 `66587fa0094a94190eb82fb7ec42bd7377a3a0ab61369fc191c1ce7ba2f30c1f`（1,157,928 B） |
 | 设备画像 | `plugins/cnc-csp-servo/plugin.yaml`，sha256 `5f96adc131c19f1448b29f8cd30577e20a12e72ed7fd8ae4ffd2d80f3dcd45e9` |
 
 ## 2. 语义修复（本轮发现）
@@ -43,10 +43,14 @@ run_id：`fault-matrix-20261115072346`。`probe.out` 全部 OK：
   `fault_injected`、到期清理、恢复后帧增长、`fault_cleared`；
 - `sdo_reject` target=0 duration=1500 ms：注入前 SDO 正常 `0x43`、注入 200、
   注入后 Abort **`0x06010000`**、到期清理、恢复后正常应答、事件成对；
+- `pdo_corrupt` target=0 duration=1500 ms（F-PROC 过程数据分支）：注入前 TxPDO
+  `4002000000000000000008`；注入 200，`audit.pdo.before_hex` 与 `audit.pdo.xor="0xa5"`
+  存在；期间 TxPDO 逐字节 XOR 后为 `e5a7a5a5a5a5a5a5a5a5ad`，连续两次读一致
+  （确定性、不累积翻转）；到期清理后恢复原值、事件成对；
 - 矩阵结束仍 3/3 OP。
 
 `RESULT: PASS（0 个失败）`；timeline：`fault-matrix/slave-drop-timeline.json`、
-`fault-matrix/sdo-reject-timeline.json`。
+`sdo-reject-timeline.json`、`pdo-corrupt-timeline.json`。
 
 ## 4. TAP down/up（SOEM 主站）
 
@@ -68,17 +72,39 @@ bash scripts/spikes/cnc-e2e-tap-fault.sh --tap ecsimfault0
 `RESULT: PASS`。状态快照：`tap-fault/state-before-down.json`、
 `state-during-down-1/2.json`、`state-after-up*.json`。
 
+## 4.1 进程 kill/重启（F-PROC 进程故障分支）
+
+命令（验证机本地，无 root；脚本自动管理两个 run_id）：
+
+```bash
+EC_SIM_BIN=target/release/ec-sim-esc \
+  LOG_DIR=/tmp/process-fault bash scripts/spikes/cnc-e2e-process-fault.sh
+```
+
+时间线（`process-fault/timeline.log`，hold=8 s）：
+
+1. run_id `proc-fault-a-…` 启动、`/health` 就绪，hold-a 达到 **3/3 OP**（`state-a.json`）；
+2. `kill -9` 服务进程；随后 40×50 ms 内 `/state` 全部连接失败
+   （`control_plane_unreachable_after_kill=yes`）；
+3. 以 run_id `proc-fault-b-…` 重启，`/health` 就绪，hold-b 再次 **3/3 OP**
+   并输出 `HOLD_OK`（`state-b.json`）；
+4. 两个 run_id 不同，证明重启前后现场可区分。
+
+`RESULT: PASS`。证据：`process-fault/`（server-a/b.log、hold-a/b.out、state-a/b.json、
+timeline.log、summary.txt）。说明：hold-a 在 kill 时被终止，故 `hold-a.out` 为空属预期。
+
 ## 5. 整轮回归
 
 EC-Sim 验证机上 `bash scripts/spikes/run-all-probes.sh`：
 
 ```text
-== 汇总：28 PASS / 0 FAIL / 0 SKIP（共 28）==
+== 汇总：29 PASS / 0 FAIL / 0 SKIP（共 29）==
 RESULT: PASS
 ```
 
-完整日志见 `assets/cnc-e2e/b1-28.log`。本机 `cargo test --workspace` **270 passed**
-（269 单测 + 1 doc-test）；`cargo fmt --check` / `cargo clippy --workspace --all-targets -- -D warnings` 0。
+完整日志见 `assets/cnc-e2e/b1-29.log`。本机 `cargo test --workspace` **271 passed**
+（270 单测 + 1 doc-test；esc-node lib 79，新增 `pdo_corrupt_injection_xors_tx_pdo_until_cleared`）；
+`cargo fmt --check` / `cargo clippy --workspace --all-targets -- -D warnings` 0。
 
 ## 6. 边界（勿误读）
 
@@ -90,4 +116,9 @@ RESULT: PASS
 - AL 单站错误 / watchdog 运行期注入：P1（仅 `--serve-write` + `confirm:true` + 审计）。
 - `/state.wkc_errors`、`ecsim_wkc_errors_total` 为占位恒 0；WKC 由内核/IgH 派生。
 - `--al-error` 仍是启动期**全站**注入，不是单站语义。
+- 故障**到期清理由数据面帧推进**：没有主站帧流量时 `tick` 不前进，`/fault/status`
+  可能显示 `remaining_ms=0` 但仍列 active；需要帧流量（如 keepalive）才会清除并记
+  `fault_cleared`。这是模拟器帧驱动时钟的已知边界，不是故障泄漏。
+- 进程重启分支只证明 SIM 侧控制面/运行时可恢复；CNC 侧 LinuxCNC/lcec 在 EC-Sim
+  进程重启期间的行为（STALE→LOST、恢复）仍待 G1 判定后的联调窗口验证。
 - 不宣称 EtherCAT 一致性 / CTT / LinuxCNC 认证；未验证项不写 PASS。

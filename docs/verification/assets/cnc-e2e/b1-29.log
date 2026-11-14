@@ -1,0 +1,33 @@
+== EC-Sim 预回归（host=linux root=yes BIN=target/release/ec-sim-esc）==
+PASS  doc-check
+PASS  mcp-tools
+PASS  agent-skills
+PASS  http-state
+PASS  live-state
+PASS  pdo-live
+PASS  pdo-history
+PASS  pdo-decode
+PASS  topology
+PASS  slave-select
+PASS  metrics
+PASS  metrics-filter
+PASS  serve-web
+PASS  web-sdo-panel
+PASS  events
+PASS  write-pdo
+PASS  sdo-read
+PASS  sdo-write
+PASS  serve-token
+PASS  mcp-stdio
+PASS  tap-live
+PASS  tap-cia402
+PASS  invalid-slave
+PASS  al-telemetry
+PASS  e2e-control
+PASS  cnc-e2e-fixed-scene
+PASS  fault-matrix
+PASS  tap-fault
+PASS  proc-fault
+
+== 汇总：29 PASS / 0 FAIL / 0 SKIP（共 29）==
+RESULT: PASS

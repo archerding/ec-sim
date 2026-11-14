@@ -269,6 +269,8 @@ pub struct Responder {
     probe_tripped: bool,
     /// 运行期故障注入：对 CoE SDO 请求一律回 Abort（模拟设备拒绝/服务失败）。
     sdo_reject: bool,
+    /// 运行期故障注入：对 TxPDO 字节做确定性 XOR（模拟过程数据被破坏，F-PROC）。
+    pdo_corrupt: bool,
 }
 
 impl Default for Responder {
@@ -307,6 +309,7 @@ impl Responder {
             pdo_frozen: false,
             probe_tripped: false,
             sdo_reject: false,
+            pdo_corrupt: false,
         }
     }
 
@@ -686,6 +689,51 @@ impl Responder {
         self.sdo_reject
     }
 
+    /// 运行期故障注入（F-PROC）：对每个 tick 生成的 TxPDO 字节做确定性 XOR `0xA5`，
+    /// 模拟过程数据被破坏；`/fault` 到期后自动恢复为正常编码。
+    pub fn set_pdo_corrupt(&mut self, corrupt: bool) {
+        self.pdo_corrupt = corrupt;
+    }
+
+    /// 当前是否处于过程数据破坏注入状态。
+    #[must_use]
+    pub fn pdo_corrupt(&self) -> bool {
+        self.pdo_corrupt
+    }
+
+    /// 当前 TxPDO（SM3）原始字节；未启用 CiA 402 行为时返回空。
+    ///
+    /// 用途：故障审计的前值快照与探针断言；不经过邮箱，不改变状态。
+    #[must_use]
+    pub fn tx_pdo_bytes(&self) -> Vec<u8> {
+        let Some(behavior) = self.cia402.as_ref() else {
+            return Vec::new();
+        };
+        self.memory
+            .read(behavior.in_offset, usize::from(behavior.in_len))
+            .unwrap_or_default()
+    }
+
+    /// 对当前 TxPDO 做确定性破坏（仅当有 CiA 402 行为且长度 > 0）。
+    fn corrupt_tx_pdo(&mut self) {
+        let Some(behavior) = self.cia402.as_ref() else {
+            return;
+        };
+        let offset = behavior.in_offset;
+        let length = usize::from(behavior.in_len);
+        if length == 0 {
+            return;
+        }
+        let Some(bytes) = self.memory.read(offset, length) else {
+            return;
+        };
+        let mut corrupted = bytes.to_vec();
+        for byte in &mut corrupted {
+            *byte ^= 0xA5;
+        }
+        self.memory.write(offset, &corrupted);
+    }
+
     /// E2E 故障恢复：清除 AL Status error 位与错误码（主站未 ACK 时的直接恢复路径）。
     pub fn clear_al_error(&mut self) {
         if !self.al.error && self.al.status_code == 0 {
@@ -774,6 +822,10 @@ impl Responder {
         // E2E 故障注入 pdo_loss：冻结时保持 TxPDO 旧值，不推进行为状态机。
         if !self.pdo_frozen {
             self.step_cia402_behavior();
+            // E2E 故障注入 pdo_corrupt（F-PROC）：本 tick 正常编码后再确定性破坏。
+            if self.pdo_corrupt {
+                self.corrupt_tx_pdo();
+            }
         }
         if !self.watchdog_enabled() {
             self.last_process_data_ms = None;
@@ -3929,6 +3981,51 @@ mod tests {
         let response = read_tx_mailbox(&mut responder);
         assert_eq!(response[8], 0x43, "4 字节 expedited upload");
         assert_eq!(response[9..11], 0x1018u16.to_le_bytes());
+    }
+
+    #[test]
+    fn pdo_corrupt_injection_xors_tx_pdo_until_cleared() {
+        fn write_rx(responder: &mut Responder, controlword: u16, mode: i8, target: i32) {
+            let mut data = vec![0u8; 7];
+            data[0..2].copy_from_slice(&controlword.to_le_bytes());
+            data[2] = mode as u8;
+            data[3..7].copy_from_slice(&target.to_le_bytes());
+            let frame = request(&[DatagramData::auto_increment(
+                Command::Apwr,
+                1,
+                0,
+                0x1100,
+                data,
+            )]);
+            responder
+                .handle_frame(&frame, DEFAULT_SIM_MAC)
+                .expect("APWR reply");
+        }
+
+        let mut responder = Responder::default().with_cia402_behavior(0x1100, 7, 0x1110, 7);
+        write_rx(&mut responder, 0x0006, 8, 0); // Shutdown → Ready
+        responder.tick(1);
+        write_rx(&mut responder, 0x0007, 8, 0); // Switch on → Switched on
+        responder.tick(2);
+        write_rx(&mut responder, 0x000F, 8, 1234); // Enable operation（CSP）
+        responder.tick(3);
+        let normal = responder.tx_pdo_bytes();
+        assert_eq!(normal.len(), 7);
+
+        responder.set_pdo_corrupt(true);
+        responder.tick(4);
+        let corrupted = responder.tx_pdo_bytes();
+        assert_eq!(corrupted.len(), 7);
+        for (index, (plain, scrambled)) in normal.iter().zip(corrupted.iter()).enumerate() {
+            assert_eq!(*scrambled, plain ^ 0xA5, "TxPDO byte {index}");
+        }
+        // 下一 tick 仍先正常编码再破坏：结果确定且不累积翻转。
+        responder.tick(5);
+        assert_eq!(responder.tx_pdo_bytes(), corrupted);
+
+        responder.set_pdo_corrupt(false);
+        responder.tick(6);
+        assert_eq!(responder.tx_pdo_bytes(), normal);
     }
 
     /// 通过 APWR 写寄存器块（测试辅助）。

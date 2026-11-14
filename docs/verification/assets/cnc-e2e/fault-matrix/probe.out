@@ -1,5 +1,5 @@
 OK   初始 3/3 OP
-RUN_ID fault-matrix-20261115072346
+RUN_ID fault-matrix-20261115074240
 OK   slave_drop 注入 200
 OK   slave_drop 期间目标站帧计为丢弃
 OK   slave_drop 期间其他站仍收帧
@@ -13,5 +13,13 @@ OK   注入后 SDO 返回 Abort 0x06010000
 OK   sdo_reject 到期清理
 OK   恢复后 SDO 正常应答
 OK   sdo_reject 事件成对
+OK   pdo_corrupt 注入前 TxPDO 可读
+OK   pdo_corrupt 注入 200
+OK   pdo_corrupt 审计含前值与 XOR
+OK   pdo_corrupt 期间 TxPDO 逐字节 XOR 0xA5
+OK   pdo_corrupt 结果确定（不累积翻转）
+OK   pdo_corrupt 到期清理
+OK   pdo_corrupt 恢复后 TxPDO 还原
+OK   pdo_corrupt 事件成对
 OK   矩阵结束 3/3 OP
 RESULT: PASS（0 个失败）

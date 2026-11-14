@@ -5,10 +5,12 @@
 --behavior cia402 --serve 127.0.0.1:<port> --serve-write --run-id <id>` 已启动。
 
 覆盖（P0）：
-1. `slave_drop`（target=1，1.5 s）：注入 → `/state.slaves[1].frames_in` 停止增长、
+1. `slave_drop`（target=1，1.5 s）：注入 → `/state.slaves[1].frames_dropped` 增长、
    `fault_injected` 事件；到期 → 帧恢复、`fault_cleared`、`/fault/status` 清空。
 2. `sdo_reject`（target=0，1.5 s）：注入后 SDO upload 0x1018:01 返回 Abort
    0x06010000；到期后同一请求正常返回；事件成对。
+3. `pdo_corrupt`（target=0，1.5 s）：注入后 TxPDO 逐字节 XOR 0xA5（确定性、不累积）；
+   审计含 `pdo.before_hex`/`pdo.xor`；到期后恢复原值；事件成对。
 
 退出码：0=PASS，1=FAIL，2=环境错误。
 """
@@ -81,6 +83,14 @@ def sdo_upload(master, index, subindex):
     return probe.mailbox_exchange(master, service)
 
 
+def read_tx_pdo(master, length=11):
+    """APRD 读自动增量首站（slave 0）的 TxPDO（SM3 @ 0x1110）。"""
+    reply = master.transact([(CMD["APRD"], 0, 0x1110, bytes(length))])
+    if reply[0][4] != 1:
+        raise SystemExit(f"FAIL: APRD 0x1110 WKC {reply[0][4]} != 1")
+    return reply[0][3][:length]
+
+
 def wait_fault_cleared(base, kind, timeout_s):
     deadline = time.time() + timeout_s
     status = {}
@@ -132,13 +142,13 @@ def main():
     stop = threading.Event()
 
     def keepalive():
-        target = 0
+        # 固定 target=0 使 CSP 的 TxPDO（状态字/实际位置等）保持稳定，便于 pdo_corrupt 逐字节断言；
+        # slave_drop / sdo_reject 只依赖帧计数与邮箱，不受 target 变化影响。
         while not stop.is_set():
             try:
-                broadcast_write(master, 0x1100, struct.pack("<Hbi", 0x000F, 8, target))
+                broadcast_write(master, 0x1100, struct.pack("<Hbi", 0x000F, 8, 0))
             except Exception:
                 pass
-            target = (target + 100) % 100000
             time.sleep(0.02)
 
     try:
@@ -238,6 +248,60 @@ def main():
         if out_dir:
             with open(os.path.join(out_dir, "sdo-reject-timeline.json"), "w", encoding="utf-8") as handle:
                 json.dump({"events": events, "abort_code": abort_code}, handle, ensure_ascii=False, indent=2)
+
+        # ---- 3) pdo_corrupt / 恢复（F-PROC：过程数据确定性错误）----
+        normal = read_tx_pdo(master)
+        failures += check("pdo_corrupt 注入前 TxPDO 可读", len(normal) == 11, f"tx={normal.hex()}")
+        status, body = http_json(
+            args.http_base,
+            "/fault",
+            "POST",
+            {"fault": "pdo_corrupt", "target": 0, "duration_ms": 1500, "confirm": True, "run_id": run_id},
+        )
+        failures += check("pdo_corrupt 注入 200", status == 200 and body.get("ok") is True, f"{status} {body}")
+        audit = body.get("audit") or body
+        pdo_audit = audit.get("pdo") or {}
+        failures += check(
+            "pdo_corrupt 审计含前值与 XOR",
+            pdo_audit.get("before_hex") == normal.hex() and pdo_audit.get("xor") in ("a5", "0xa5"),
+            f"pdo_audit={pdo_audit} normal={normal.hex()}",
+        )
+        time.sleep(0.2)
+        corrupted = read_tx_pdo(master)
+        expected = bytes(byte ^ 0xA5 for byte in normal)
+        failures += check(
+            "pdo_corrupt 期间 TxPDO 逐字节 XOR 0xA5",
+            corrupted == expected,
+            f"normal={normal.hex()} corrupted={corrupted.hex()} expected={expected.hex()}",
+        )
+        time.sleep(0.3)
+        corrupted_again = read_tx_pdo(master)
+        failures += check("pdo_corrupt 结果确定（不累积翻转）", corrupted_again == corrupted, f"{corrupted.hex()} -> {corrupted_again.hex()}")
+        cleared = wait_fault_cleared(args.http_base, "pdo_corrupt", 5.0)
+        failures += check("pdo_corrupt 到期清理", cleared.get("active") == [], f"{cleared}")
+        restored = read_tx_pdo(master)
+        failures += check("pdo_corrupt 恢复后 TxPDO 还原", restored == normal, f"normal={normal.hex()} restored={restored.hex()}")
+        events = events_since(args.http_base, since)
+        kinds = [(event.get("type"), (event.get("details") or {}).get("fault")) for event in events]
+        failures += check(
+            "pdo_corrupt 事件成对",
+            ("fault_injected", "pdo_corrupt") in kinds and ("fault_cleared", "pdo_corrupt") in kinds,
+            f"kinds={kinds}",
+        )
+        if out_dir:
+            with open(os.path.join(out_dir, "pdo-corrupt-timeline.json"), "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "normal_hex": normal.hex(),
+                        "corrupted_hex": corrupted.hex(),
+                        "restored_hex": restored.hex(),
+                        "audit": body,
+                        "events": events,
+                    },
+                    handle,
+                    ensure_ascii=False,
+                    indent=2,
+                )
 
         _, final = http_json(args.http_base, "/state")
         failures += check("矩阵结束 3/3 OP", (final.get("master") or {}).get("op_slaves") == 3, f"master={final.get('master')}")

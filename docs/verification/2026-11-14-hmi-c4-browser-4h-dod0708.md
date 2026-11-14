@@ -39,6 +39,6 @@ attempt3 参数：`START.txt` 记 `PID=50004 START=2026-11-14T08:35:48+08:00 ETA
 
 ## 5. 环境清理
 
-- EC-Sim VM `192.168.31.6`：已终止旧 `ec-sim-esc --tap escsim0 --slaves 8 --serve 0.0.0.0:18210`（PID 91518/91519）与 `hmi-c4-master-loop.sh`；`ip link del escsim0` 后确认 `TAP_GONE`。
+- EC-Sim 验证机：已终止旧 `ec-sim-esc --tap escsim0 --slaves 8 --serve 0.0.0.0:18210`（PID 91518/91519）与 `hmi-c4-master-loop.sh`；`ip link del escsim0` 后确认 `TAP_GONE`。
 - `vm-ecsim.lock` 由 Lead 释放（原 owner sim-impl，task-78）。
 - EC-Sim HMI 设计线按用户指令暂停（task-89 HOLD），本证据不改变该状态。
