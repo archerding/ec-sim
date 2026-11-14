@@ -614,6 +614,37 @@ fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+/// 把 esc-node 的 AL 事件快照转成控制面类型。
+#[cfg(target_os = "linux")]
+fn al_event_state(event: esc_node::AlEvent) -> control_plane::AlEventState {
+    control_plane::AlEventState {
+        from: event.from,
+        to: event.to,
+        from_code: event.from_code,
+        code: event.code,
+        watchdog: event.watchdog,
+        at_ms: event.at_ms,
+    }
+}
+
+/// 打印运行期 AL 状态/错误码变化（每条事件一行，stderr；供 24h 长跑取证）。
+#[cfg(target_os = "linux")]
+fn log_al_events(responders: &mut [esc_node::Responder]) {
+    for (index, responder) in responders.iter_mut().enumerate() {
+        if let Some(event) = responder.poll_al_event() {
+            eprintln!(
+                "AL_EVENT slave={index} from=0x{:02X} to=0x{:02X} from_code=0x{:04X} code=0x{:04X} watchdog={} at_ms={}",
+                event.from,
+                event.to,
+                event.from_code,
+                event.code,
+                u8::from(event.watchdog),
+                event.at_ms
+            );
+        }
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn pdo_layout(
     manifest: &Option<plugin_host::manifest::PluginManifest>,
@@ -858,6 +889,13 @@ fn serve_live_http(
                         mailbox_responses: stats.mailbox_responses,
                         dc_reg_reads: stats.dc_reg_reads,
                         dc_reg_writes: stats.dc_reg_writes,
+                        al_transitions: stats.al_transitions,
+                        al_errors: stats.al_errors,
+                        al_error_acks: stats.al_error_acks,
+                        sm_watchdog_triggers: stats.sm_watchdog_triggers,
+                        sii_read_commands: stats.sii_read_commands,
+                        sii_write_commands: stats.sii_write_commands,
+                        last_al_event: responder.last_al_event().map(al_event_state),
                     };
                     control_plane::live_state_json(&spec, dict_objects, profile, &live)
                 }
@@ -913,6 +951,12 @@ fn serve_live_http(
                         mailbox_responses: stats.mailbox_responses,
                         dc_reg_reads: stats.dc_reg_reads,
                         dc_reg_writes: stats.dc_reg_writes,
+                        al_transitions: stats.al_transitions,
+                        al_errors: stats.al_errors,
+                        al_error_acks: stats.al_error_acks,
+                        sm_watchdog_triggers: stats.sm_watchdog_triggers,
+                        sii_read_commands: stats.sii_read_commands,
+                        sii_write_commands: stats.sii_write_commands,
                         dc_time_ns: responder.dc_time_ns(),
                     }
                 })
@@ -1000,6 +1044,15 @@ fn serve_live_http(
                                         mailbox_responses: stats.mailbox_responses,
                                         dc_reg_reads: stats.dc_reg_reads,
                                         dc_reg_writes: stats.dc_reg_writes,
+                                        al_transitions: stats.al_transitions,
+                                        al_errors: stats.al_errors,
+                                        al_error_acks: stats.al_error_acks,
+                                        sm_watchdog_triggers: stats.sm_watchdog_triggers,
+                                        sii_read_commands: stats.sii_read_commands,
+                                        sii_write_commands: stats.sii_write_commands,
+                                        last_al_event: responder
+                                            .last_al_event()
+                                            .map(al_event_state),
                                     }
                                 }
                                 None => break,
@@ -1768,6 +1821,7 @@ fn run_uds(
             if let Some(bridges) = behavior_bridges.as_mut() {
                 bridges.on_frame(guard.as_mut_slice());
             }
+            log_al_events(guard.as_mut_slice());
             reply
         };
         let Some(reply) = reply else {
@@ -1904,6 +1958,7 @@ fn run(
             if let Some(bridges) = behavior_bridges.as_mut() {
                 bridges.on_frame(guard.as_mut_slice());
             }
+            log_al_events(guard.as_mut_slice());
             reply
         };
         let Some(reply) = reply else {

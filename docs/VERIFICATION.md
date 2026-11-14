@@ -5,16 +5,18 @@
 
 > 环境基线：Linux 验证机（见 `docs/LINUX-SERVER.md`）上的**未修改** SOEM 2.0.0 与 IgH 1.6.13；
 > IgH 的 ecrt 应用夹具只在验证机本地构建、**不入库**（GPL 边界，见 `AGENTS.md` §3）。
-> 最近的完整验证状态：**2026-11-13 团队班（B54/B55/B57/B58 + CNC 对接包 + ACC-27② P1 + VM 整轮 B-1/B-2）**
-> （详见 `WORKLOG.md` 同日条目、[STATUS.md](STATUS.md) 与 [M3 退出清单](plan/M3-exit-checklist.md)）；
-> 探针注册表 **23 项**（B-1 观测面；B55 `invalid-slave`、B54 `tap-cia402`、B52 `agent-skills`）
+> 最近的完整验证状态：**2026-11-14 团队班（C5 24h RCA + B62 AL 遥测 + 探针）**
+> （详见 `WORKLOG.md` 同日条目、[STATUS.md](STATUS.md) 与 [C5 RCA](verification/2026-11-14-c5-fail-rca.md)）；
+> 探针注册表 **24 项**（B-1 观测面；B55 `invalid-slave`、B54 `tap-cia402`、B52 `agent-skills`、B62 `al-telemetry`）
 > ＋ **B-2 验收面 37 项**（`run-acceptance-probes.sh`，含 B57 `al-error`）。
 > 验证机 2026-11-13 轮次 B（clean VM / 单 runner）：**B-1 `23 PASS / 0 FAIL / 0 SKIP（共 23）`**、
 > **B-2 `30 PASS / 0 FAIL / 7 SKIP（共 37；7 项 `igh-*` = NOT-JUDGED/PV-01/PV-14）`**，明细见
-> `docs/verification/2026-11-13-gate-b2-acceptance-probes.md` §4。
-> 本机 `cargo test --workspace` **263 passed / 0 failed**（B55 +2：`validate_slave_param`；
-> B57 +2：`al_status::is_known`/`force_al_error`；B58 +1：`Cia402TxLayout::LcecCsp` 字节序）。
-> `mcp-tools`/`mcp-stdio`/`agent-skills`/`tap-cia402`/`invalid-slave`/`al-error` 分见 B45/B47/B52/B54/B55/B57（2026-11-13）。
+> `docs/verification/2026-11-13-gate-b2-acceptance-probes.md` §4；**B62 `al-telemetry` 为本轮新增（24 项），
+> 验证机结果单独记录，不改变上述 M3 结论**。
+> 本机 `cargo test --workspace` **265 passed / 0 failed**（B62 +1：SII 命令计数镜像；B55/B57/B58 增量见
+> `docs/STATUS.md`）。
+> `mcp-tools`/`mcp-stdio`/`agent-skills`/`tap-cia402`/`invalid-slave`/`al-error`/`al-telemetry` 分见
+> B45/B47/B52/B54/B55/B57/B62（2026-11-13/14）。
 
 ## 无特权（UDS 合成主站，任意平台可跑）
 
@@ -36,6 +38,7 @@
 | `cia402-modes-probe.sh` | 三个 CiA 402 画像经 SDO 上传的 `0x6502` 与布局一致（0x01C1/0x03CD/0x0410） | **EXIT=0** |
 | `dc-clock-probe.sh` | 模拟 DC 时钟：0x0910 系统时间随帧前进（Tier0 帧驱动） | **EXIT=0** |
 | `cia402-sdo-download-probe.sh` | 20 字节可写配置字符串 `0x2100` 的分段 SDO 下载 + 回读一致 | **EXIT=0** |
+| `al-telemetry-probe.sh` | B62 AL 遥测：过程数据活跃时 SII 并发读 40 轮、SM watchdog `0x001B`/`watchdog` 事件、Error ACK + 重新 OP 恢复；`/state.live.stats`、`last_al_event`、`/metrics` 6 个新计数器、stderr `AL_EVENT` 行 | **待验证机**（本机仅脚本语法 + cargo 单测） |
 
 ## 需要 Linux TAP + root（真实主站/内核模块）
 

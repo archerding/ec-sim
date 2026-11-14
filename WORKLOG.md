@@ -5610,3 +5610,15 @@
 - `ethercat slaves` flag 语义更正：`+`=no error、`E`=scan/config failed → slave1 PREOP(+)、slave2 OP(E)。
 - 精确 AL 码/EC-Sim 状态机缺陷：**NOT-JUDGED**（C5 未抓 `/state`、`/metrics`）；C5 必须修复隔离+补遥测后
   完整重跑 24 h。证据与修复项见 [RCA](docs/verification/2026-11-14-c5-fail-rca.md)。
+
+### B62：运行期 AL 遥测 + SII 并发/看门狗恢复探针（C5 RCA 修复项）
+
+- `esc-node`：`Stats` 增 `al_transitions/al_errors/al_error_acks/sm_watchdog_triggers/sii_read_commands/
+  sii_write_commands`；新增 `AlEvent`/`poll_al_event`/`last_al_event`，`sync_al_state`、`trigger_watchdog`、
+  `force_al_error` 记账；EEPROM 写路径镜像 SII 命令计数；`ec-sim-esc` 两个帧循环打印 `AL_EVENT ...`。
+- `control-plane`：`LiveState`/`MetricsSlave` 增 6 计数器 + `last_al_event`；`/state.live.stats`、
+  `/metrics` 的 `ecsim_*_total` 同步；只增观测、不改协议语义与 24 h 判据。
+- 新探针 `scripts/spikes/al-telemetry-probe.sh` + `uds_al_telemetry_probe.py`：ESM 进 OP → PDO 活跃时
+  SII 读 40 轮 → 停 PDO 触发 watchdog `0x001B` → Error ACK + 重新 OP → 核对 `/state`/`/metrics`/`AL_EVENT`；
+  登记 B-1（注册表 24 项）；仅 Linux/UDS，不占 CNC 验证机。本机 `cargo test --workspace` 265 passed、
+  fmt/clippy 0；验证机证据待补。

@@ -117,7 +117,19 @@ curl -si http://127.0.0.1:8091/nope   # 404 JSON
 | `dc` | 有则 `cycle_time0_ns` 等；无则 `null` |
 | `profile` | manifest 画像 `{id,name}`；内置画像 `null` |
 | `dict_objects` | 运行时字典对象数；无 manifest `null` |
-| `live`（仅实时模式） | `station_address` / `al_status` / `al_status_code` / `dc_time_ns` / `stats{frames_in,frames_out,frames_dropped,datagrams_hit,mailbox_requests,mailbox_responses,dc_reg_reads,dc_reg_writes}` |
+| `live`（仅实时模式） | `station_address` / `al_status` / `al_status_code` / `dc_time_ns` / `last_al_event` / `stats{frames_in,frames_out,frames_dropped,datagrams_hit,mailbox_requests,mailbox_responses,dc_reg_reads,dc_reg_writes,al_transitions,al_errors,al_error_acks,sm_watchdog_triggers,sii_read_commands,sii_write_commands}` |
+
+`live.stats` 的 AL 遥测（2026-11-14 起，C5 RCA 修复项，只增观测不改协议语义）：
+
+| 字段 | 说明 |
+| --- | --- |
+| `al_transitions` | AL 状态低 4 位变化次数（ESM 迁移） |
+| `al_errors` | AL Status error 位 0→1 次数 |
+| `al_error_acks` | AL Status error 位 1→0 次数（主站 Error ACK） |
+| `sm_watchdog_triggers` | SM watchdog 超时触发次数（AL Status Code `0x001B`） |
+| `sii_read_commands` / `sii_write_commands` | 主站经 SII 接口（0x0500 窗口）发起的读/写命令累计数 |
+| `last_al_event` | 最近一次 AL 变化或看门狗事件；无则 `null`。对象含 `from` / `to`（`0xNN` 状态字节）、`from_code` / `code`（`0xNNNN`）、`watchdog`（bool）、`at_ms`（帧驱动时钟毫秒） |
+
 
 ### 4.2 `ec-sim/dict-v1`
 
@@ -182,8 +194,25 @@ curl -si http://127.0.0.1:8091/nope   # 404 JSON
 | `ecsim_dc_time_ns` | gauge | 模拟 DC 系统时间（ns，帧驱动） |
 | `ecsim_al_status` | gauge | AL 状态（低 4 位） |
 | `ecsim_al_status_code` | gauge | AL Status Code |
+| `ecsim_al_transitions_total` | counter | AL 状态迁移次数 |
+| `ecsim_al_errors_total` | counter | AL error 位 0→1 次数 |
+| `ecsim_al_error_acks_total` | counter | AL error 位 1→0 次数 |
+| `ecsim_sm_watchdog_triggers_total` | counter | SM watchdog 触发次数 |
+| `ecsim_sii_read_commands_total` | counter | SII 读命令累计数 |
+| `ecsim_sii_write_commands_total` | counter | SII 写命令累计数 |
 
 所有指标带标签 `slave="<index>"`、`station_address="0x...."`。
+
+运行期事件日志（stderr，随 `--verbose` 无关、始终输出）：AL 状态迁移 / error 置位与清除 /
+SM watchdog 触发时打印一行
+
+```
+AL_EVENT slave=<N> from=0xNN to=0xNN from_code=0xNNNN code=0xNNNN watchdog=<true|false> at_ms=<N>
+```
+
+便于在长跑日志中直接定位“哪个从站、何时、因何”离开 OP；`--al-error` 注入事件也会出现在该日志中
+（`watchdog=false`）。
+
 
 ## 5. 写操作（默认关闭）
 

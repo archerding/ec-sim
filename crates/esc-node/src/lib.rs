@@ -118,6 +118,35 @@ pub struct Stats {
     pub dc_reg_reads: u64,
     /// 写入 DC 寄存器块（0x0900–0x09AF）的次数。
     pub dc_reg_writes: u64,
+    /// AL 状态迁移次数（状态字节低 4 位变化）。
+    pub al_transitions: u64,
+    /// AL Status error 位 0 → 1 的次数（含看门狗触发与显式注入）。
+    pub al_errors: u64,
+    /// AL Status error 位 1 → 0 的次数（主站 Error ACK 清错）。
+    pub al_error_acks: u64,
+    /// SM 过程数据看门狗触发次数。
+    pub sm_watchdog_triggers: u64,
+    /// SII 读命令数（镜像 EEPROM 窗口控制器计数，累计）。
+    pub sii_read_commands: u64,
+    /// SII 写命令数（镜像 EEPROM 窗口控制器计数，累计）。
+    pub sii_write_commands: u64,
+}
+
+/// 最近一次 AL 状态/错误码变化快照（供控制面与事件日志取证）。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AlEvent {
+    /// 变化前的 AL Status 字节（低 4 位状态 + bit4 error + bit5 ID）。
+    pub from: u8,
+    /// 变化后的 AL Status 字节。
+    pub to: u8,
+    /// 变化前的 AL Status Code。
+    pub from_code: u16,
+    /// 变化后的 AL Status Code。
+    pub code: u16,
+    /// 是否由 SM 过程数据看门狗触发。
+    pub watchdog: bool,
+    /// 发生时刻（毫秒，帧驱动时钟）。
+    pub at_ms: u64,
 }
 
 /// 进行中的分段 SDO 上传（值 > 4 字节时使用，CiA 301 segmented upload）。
@@ -226,6 +255,8 @@ pub struct Responder {
     /// 可选的 CiA 402 状态机行为（SM2 控制字 → SM3 状态字），见 [Responder::with_cia402_behavior]。
     cia402: Option<Cia402Behavior>,
     stats: Stats,
+    /// 最近一次 AL 状态/错误码变化（`poll_al_event` 取出后清空，避免重复记录）。
+    last_al_event: Option<AlEvent>,
 }
 
 impl Default for Responder {
@@ -258,6 +289,7 @@ impl Responder {
             download: None,
             cia402: None,
             stats: Stats::default(),
+            last_al_event: None,
         }
     }
 
@@ -516,6 +548,48 @@ impl Responder {
         self.regs.read_u16(reg::AL_STATUS_CODE).unwrap_or(0)
     }
 
+    /// 取出最近一次 AL 状态/错误码变化（取出后清空，避免控制面重复上报）。
+    #[must_use]
+    pub fn poll_al_event(&mut self) -> Option<AlEvent> {
+        self.last_al_event.take()
+    }
+
+    /// 查看最近一次 AL 状态/错误码变化（不消费；供 `/state` 只读展示）。
+    #[must_use]
+    pub fn last_al_event(&self) -> Option<AlEvent> {
+        self.last_al_event
+    }
+
+    /// 记录一次 AL 状态/错误码变化：更新计数并保存事件快照。
+    ///
+    /// `from_status`/`from_code` 为变化前的 AL Status 字节与错误码；`watchdog` 表示该变化
+    /// 是否由 SM 过程数据看门狗触发。仅当状态字节或错误码实际变化时才应调用。
+    fn record_al_event(&mut self, from_status: u8, from_code: u16, watchdog: bool) {
+        let to_status = self.al.status_byte();
+        let to_code = self.al.status_code;
+        if from_status & 0x0F != to_status & 0x0F {
+            self.stats.al_transitions = self.stats.al_transitions.saturating_add(1);
+        }
+        let from_error = from_status & 0x10 != 0;
+        let to_error = to_status & 0x10 != 0;
+        if !from_error && to_error {
+            self.stats.al_errors = self.stats.al_errors.saturating_add(1);
+        } else if from_error && !to_error {
+            self.stats.al_error_acks = self.stats.al_error_acks.saturating_add(1);
+        }
+        if watchdog {
+            self.stats.sm_watchdog_triggers = self.stats.sm_watchdog_triggers.saturating_add(1);
+        }
+        self.last_al_event = Some(AlEvent {
+            from: from_status,
+            to: to_status,
+            from_code,
+            code: to_code,
+            watchdog,
+            at_ms: self.now_ms,
+        });
+    }
+
     /// 验收/调试注入：强制置 AL Status error 位与 AL Status Code（写 `0x0130`/`0x0134`）。
     ///
     /// 语义（用于 AC-E-203 类"EC-Sim 侧注入 AL 错误 → 主站可观测"用例）：
@@ -529,12 +603,15 @@ impl Responder {
         if !esc_core::al_status::is_known(code) {
             return false;
         }
+        let from_status = self.al.status_byte();
+        let from_code = self.al.status_code;
         self.al.error = true;
         self.al.status_code = code;
         self.regs
             .set_internal(reg::AL_STATUS, &[self.al.status_byte()]);
         self.regs
             .set_internal(reg::AL_STATUS_CODE, &code.to_le_bytes());
+        self.record_al_event(from_status, from_code, false);
         true
     }
 
@@ -667,6 +744,8 @@ impl Responder {
 
     /// 看门狗触发：AL Status error 位 + code 0x001B，OP → SAFEOP（等待 Error ACK）。
     fn trigger_watchdog(&mut self, now_ms: u64) {
+        let from_status = self.al.status_byte();
+        let from_code = self.al.status_code;
         self.al.error = true;
         self.al.status_code = watchdog::AL_STATUS_SM_WATCHDOG;
         if self.al.state == esc_core::AlState::Op {
@@ -676,6 +755,7 @@ impl Responder {
             .set_internal(reg::AL_STATUS, &[self.al.status_byte()]);
         self.regs
             .set_internal(reg::AL_STATUS_CODE, &self.al.status_code.to_le_bytes());
+        self.record_al_event(from_status, from_code, true);
         // 避免每个 tick 重复触发；主站 ACK 后会重新开始计时。
         self.last_process_data_ms = Some(now_ms);
     }
@@ -900,6 +980,8 @@ impl Responder {
         }
         if EepromInterface::covers(address, data.len()) {
             self.eeprom.write(address, data);
+            self.stats.sii_read_commands = u64::from(self.eeprom.read_commands());
+            self.stats.sii_write_commands = u64::from(self.eeprom.write_commands());
             return;
         }
         if DlUserMemory::covers(address, data.len()) {
@@ -1330,6 +1412,8 @@ impl Responder {
             // AL Control 全 0：主站没有请求状态变化（部分主站初始化时会写 0），忽略。
             return;
         }
+        let from_status = self.al.status_byte();
+        let from_code = self.al.status_code;
         let parsed = AlControl::from_byte(control);
         if self.esm_preconditions {
             let preconditions = self.esm_preconditions();
@@ -1341,6 +1425,9 @@ impl Responder {
             .set_internal(reg::AL_STATUS, &[self.al.status_byte()]);
         self.regs
             .set_internal(reg::AL_STATUS_CODE, &self.al.status_code.to_le_bytes());
+        if self.al.status_byte() != from_status || self.al.status_code != from_code {
+            self.record_al_event(from_status, from_code, false);
+        }
     }
 
     /// 由当前 SII 声明与 SM 寄存器推导 ESM 前置条件（见 [`Responder::with_esm_preconditions`]）。
@@ -2298,6 +2385,25 @@ mod tests {
             "ACK 后应回到 INIT 且无 error 位"
         );
         assert_eq!(responder.al_status_code(), 0x0000);
+        // 遥测：显式注入计一次 error，ACK 计一次 error ack，不算看门狗触发。
+        let stats = responder.stats();
+        assert_eq!(stats.al_errors, 1);
+        assert_eq!(stats.al_error_acks, 1);
+        assert_eq!(stats.sm_watchdog_triggers, 0);
+    }
+
+    #[test]
+    fn sii_command_counters_are_mirrored_in_stats() {
+        let mut responder = Responder::default();
+        // IgH 读 SII word 0x0008：向 0x0502 写 4 字节命令（0x80=双字节地址，0x01=读）。
+        responder.write_registers(0x0502, &[0x80, 0x01, 0x08, 0x00]);
+        let reply = responder.read_registers(0x0502, 10);
+        assert_eq!(reply.len(), 10);
+        assert_eq!(responder.stats().sii_read_commands, 1);
+        assert_eq!(responder.stats().sii_write_commands, 0);
+        // 再发一次写命令（0x02 = write），写命令计数同步。
+        responder.write_registers(0x0502, &[0x80, 0x02, 0x08, 0x00, 0x34, 0x12]);
+        assert_eq!(responder.stats().sii_write_commands, 1);
     }
 
     #[test]
@@ -3737,11 +3843,29 @@ mod tests {
             al_status_code(&mut responder),
             watchdog::AL_STATUS_SM_WATCHDOG
         );
+        let watchdog_event = responder.poll_al_event().expect("watchdog event");
+        assert_eq!(watchdog_event.from & 0x0F, 0x08, "触发前为 OP");
+        assert_eq!(watchdog_event.to & 0x0F, 0x04, "触发后为 SAFEOP");
+        assert!(watchdog_event.watchdog);
+        assert_eq!(watchdog_event.code, watchdog::AL_STATUS_SM_WATCHDOG);
         // Error ACK 清错，状态保持 SAFEOP。
         write_regs(&mut responder, reg::AL_CONTROL, vec![0x12]); // SAFEOP|ACK
         let status = al_status_byte(&mut responder);
         assert_eq!(status & 0x10, 0x00);
         assert_eq!(status & 0x0F, 0x04, "ACK 后状态保持 SAFEOP");
+        // 遥测：ACK 事件仍可取出。
+        let ack_event = responder.poll_al_event().expect("error ack event");
+        assert_eq!(ack_event.from & 0x10, 0x10, "ACK 前 error 位置位");
+        assert_eq!(ack_event.to & 0x10, 0x00, "ACK 后 error 位清除");
+        assert!(!ack_event.watchdog);
+        let stats = responder.stats();
+        assert_eq!(stats.sm_watchdog_triggers, 1);
+        assert_eq!(stats.al_errors, 1);
+        assert_eq!(stats.al_error_acks, 1);
+        assert_eq!(
+            stats.al_transitions, 4,
+            "INIT→PREOP→SAFEOP→OP + 看门狗 OP→SAFEOP"
+        );
     }
 
     #[test]

@@ -64,6 +64,7 @@ mcp-stdio|any|mcp-stdio-probe.sh|no
 tap-live|root|tap-live-state-probe.sh|no
 tap-cia402|root|tap-cia402-multi-slave-probe.sh|no
 invalid-slave|any|invalid-slave-probe.sh|no
+al-telemetry|linux|al-telemetry-probe.sh|no
 "
 
 skip_reason() {

@@ -1,4 +1,4 @@
-# EC-Sim 当前状态快照（2026-11-13 团队班 13:00）
+# EC-Sim 当前状态快照（2026-11-14 团队班）
 
 > 本页是**项目状态索引**，不是规范或认证结论。所有"已验证"都指仓库内脚本/单测的
 > 可复现结果，**不构成**一致性测试或认证（见 `AGENTS.md` §3/§4）。
@@ -8,14 +8,14 @@
 核心 ESC（寄存器/SM/FMMU/AL/EEPROM-SII/邮箱/watchdog）+ CoE（SDO 加速/分段/SDO Info/
 Complete Access）+ CiA 402（常用模式全覆盖：PP/VL/PV/TQ/HM/IP/CSP/CSV/CST，Tier0 简化）
 + 声明式设备画像已实现；**未修改的 SOEM 2.0.0 与 IgH 1.6.13** 可发现从站并进入 OP
-（IgH 无应用时到 PREOP）。测试基线 **264 passed**（另 `wasm-runtime` feature 下 plugin-host **56 单测 + 5 集成** / esc-node **78 单测 + 1 集成**：WASM 宿主 + arena + worker 线程 + 行为桥 + 仓库内真实行为画像 + B51 重启/配额 + B54 多实例接线）。**M3 = PASS（Lead 会签 2026-11-13）**：验证机 **B-1 `23 PASS / 0 FAIL / 0 SKIP（23）`** + **B-2 `30 PASS / 0 FAIL / 7 SKIP（37；7 项 `igh-*`=NOT-JUDGED/PV-01/PV-14）`**、本机 **264 passed**、许可核对完成、ADR 0002 → Accepted、W6 真人浏览器验收已由 sim-ux 完成；见 [M3 退出清单](plan/M3-exit-checklist.md) 与 `docs/verification/2026-11-13-gate-b2-acceptance-probes.md`。**B54（2026-11-13 团队班）**：新增 `plugins/cnc-csp-servo/`（与 lcec `basic_cia402` 的 PP/CSP PDO 布局一致）+ 多实例行为插件接线 + TAP 多 CiA402 从站探针，作为 CNC 虚拟闭环 V1/V2 的 EC-Sim 侧对接包（见 [CNC-V1-integration](plan/CNC-V1-integration.md)）。**B55（同班）**：修复 ACC-27② P1——控制面 `?slave=` 统一校验（0-based；非法/越界 → 404 JSON，不再静默回退站 0），静态/UDS/TAP 三路径探针 `invalid-slave-probe.sh`。**B57（同班）**：`--al-error <code>` AL Status 错误注入（AC-E-203；只接受已知码、默认关闭、主站 ACK 可清）。
+（IgH 无应用时到 PREOP）。测试基线 **265 passed**（另 `wasm-runtime` feature 下 plugin-host **56 单测 + 5 集成** / esc-node **80 单测 + 1 集成**：WASM 宿主 + arena + worker 线程 + 行为桥 + 仓库内真实行为画像 + B51 重启/配额 + B54 多实例接线）。**M3 = PASS（Lead 会签 2026-11-13）**：验证机 **B-1 `23 PASS / 0 FAIL / 0 SKIP（23）`** + **B-2 `30 PASS / 0 FAIL / 7 SKIP（37；7 项 `igh-*`=NOT-JUDGED/PV-01/PV-14）`**、本机 **264 passed**、许可核对完成、ADR 0002 → Accepted、W6 真人浏览器验收已由 sim-ux 完成；见 [M3 退出清单](plan/M3-exit-checklist.md) 与 `docs/verification/2026-11-13-gate-b2-acceptance-probes.md`。**B54（2026-11-13 团队班）**：新增 `plugins/cnc-csp-servo/`（与 lcec `basic_cia402` 的 PP/CSP PDO 布局一致）+ 多实例行为插件接线 + TAP 多 CiA402 从站探针，作为 CNC 虚拟闭环 V1/V2 的 EC-Sim 侧对接包（见 [CNC-V1-integration](plan/CNC-V1-integration.md)）。**B55（同班）**：修复 ACC-27② P1——控制面 `?slave=` 统一校验（0-based；非法/越界 → 404 JSON，不再静默回退站 0），静态/UDS/TAP 三路径探针 `invalid-slave-probe.sh`。**B57（同班）**：`--al-error <code>` AL Status 错误注入（AC-E-203；只接受已知码、默认关闭、主站 ACK 可清）。**B62（2026-11-14，C5 RCA 修复项）**：运行期 AL 遥测——`/state.live.stats` 增 `al_transitions`/`al_errors`/`al_error_acks`/`sm_watchdog_triggers`/`sii_read_commands`/`sii_write_commands` 与 `last_al_event`，`/metrics` 增 6 个 `ecsim_*_total`，stderr 打印 `AL_EVENT` 行；新探针 `al-telemetry-probe.sh`（SII 并发读 + watchdog `0x001B` + Error ACK/恢复；仅 Linux/UDS）登记 B-1，注册表 **24 项**（本机 `cargo test --workspace` **265 passed**；验证机证据待补）。
 
 ## 代码与测试
 
 | crate | 职责 | 测试数 |
 | --- | --- | --- |
 | `esc-core` | 寄存器、SM/FMMU、AL 状态机、EEPROM-SII 生成、邮箱解析、watchdog | 87 |
-| `esc-node` | 从站应答器、PDI 内存、邮箱处理、CiA 402 行为、`ec-sim-esc` 二进制（含 B57 AL 错误注入）；WASM 行为桥（可选 feature）；链处理/1 kHz 基准示例（B46） | 74（另 `wasm-runtime` 下 78 单测 + 1 行为画像集成） |
+| `esc-node` | 从站应答器、PDI 内存、邮箱处理、CiA 402 行为、`ec-sim-esc` 二进制（含 B57 AL 错误注入）；WASM 行为桥（可选 feature）；链处理/1 kHz 基准示例（B46） | 76（另 `wasm-runtime` 下 80 单测 + 1 行为画像集成） |
 | `plugin-host` | plugin.yaml 解析/校验、SII/字典/ESI 生成；PDO arena 同步（W2）；WASM 宿主 + 行为运行时（可选 feature） | 33 + 5 集成（另 `wasm-runtime` 下 53 + 5 集成） |
 | `wire` | EtherCAT 帧/datagram 编解码 + WKC 语义 | 23 |
 | `control-plane` | 只读快照 API：state-v1 / dict-v1 JSON + 路由表（`/state`、`/dict`）+ 站号校验（`validate_slave_param`，0-based，非法/越界 404） | 22 |

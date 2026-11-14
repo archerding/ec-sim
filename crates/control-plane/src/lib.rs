@@ -400,6 +400,23 @@ pub fn handle_get(path: &str, state: &str, dict: Option<&str>) -> HttpResponse {
     }
 }
 
+/// 最近一次 AL 状态/错误码变化快照（`live`/事件日志取证用；与 esc-node 的 AlEvent 对应）。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AlEventState {
+    /// 变化前 AL Status 字节。
+    pub from: u8,
+    /// 变化后 AL Status 字节。
+    pub to: u8,
+    /// 变化前 AL Status Code。
+    pub from_code: u16,
+    /// 变化后 AL Status Code。
+    pub code: u16,
+    /// 是否由 SM 过程数据看门狗触发。
+    pub watchdog: bool,
+    /// 发生时刻（毫秒，帧驱动时钟）。
+    pub at_ms: u64,
+}
+
 /// 运行时实时状态（`--serve` 实时模式从 `Responder` 读取；只读快照，非实时承诺）。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct LiveState {
@@ -427,6 +444,20 @@ pub struct LiveState {
     pub dc_reg_reads: u64,
     /// DC 寄存器写次数。
     pub dc_reg_writes: u64,
+    /// AL 状态迁移次数。
+    pub al_transitions: u64,
+    /// AL Status error 0→1 次数。
+    pub al_errors: u64,
+    /// AL Status error 1→0 次数（主站 Error ACK）。
+    pub al_error_acks: u64,
+    /// SM 过程数据看门狗触发次数。
+    pub sm_watchdog_triggers: u64,
+    /// SII 读命令数。
+    pub sii_read_commands: u64,
+    /// SII 写命令数。
+    pub sii_write_commands: u64,
+    /// 最近一次 AL 状态/错误码变化；`None` 表示尚未发生。
+    pub last_al_event: Option<AlEventState>,
 }
 
 /// 生成带 `live` 字段的 state-v1 JSON（在 `state_json` 基础上插入运行时状态）。
@@ -439,8 +470,15 @@ pub fn live_state_json(
 ) -> String {
     let mut out = state_json(spec, dict_objects, profile);
     let insert_at = out.rfind('}').unwrap_or(out.len());
+    let last_al_event = match live.last_al_event {
+        Some(event) => format!(
+            "{{\"from\": \"0x{:02X}\", \"to\": \"0x{:02X}\", \"from_code\": \"0x{:04X}\", \"code\": \"0x{:04X}\", \"watchdog\": {}, \"at_ms\": {}}}",
+            event.from, event.to, event.from_code, event.code, event.watchdog, event.at_ms
+        ),
+        None => "null".to_string(),
+    };
     let live_json = format!(
-        ",\n  \"live\": {{\"station_address\": \"0x{:04X}\", \"al_status\": \"0x{:02X}\", \"al_status_code\": \"0x{:04X}\", \"dc_time_ns\": {}, \"stats\": {{\"frames_in\": {}, \"frames_out\": {}, \"frames_dropped\": {}, \"datagrams_hit\": {}, \"mailbox_requests\": {}, \"mailbox_responses\": {}, \"dc_reg_reads\": {}, \"dc_reg_writes\": {}}}}}\n",
+        ",\n  \"live\": {{\"station_address\": \"0x{:04X}\", \"al_status\": \"0x{:02X}\", \"al_status_code\": \"0x{:04X}\", \"dc_time_ns\": {}, \"stats\": {{\"frames_in\": {}, \"frames_out\": {}, \"frames_dropped\": {}, \"datagrams_hit\": {}, \"mailbox_requests\": {}, \"mailbox_responses\": {}, \"dc_reg_reads\": {}, \"dc_reg_writes\": {}, \"al_transitions\": {}, \"al_errors\": {}, \"al_error_acks\": {}, \"sm_watchdog_triggers\": {}, \"sii_read_commands\": {}, \"sii_write_commands\": {}}}, \"last_al_event\": {last_al_event}}}\n",
         live.station_address,
         live.al_status,
         live.al_status_code,
@@ -452,7 +490,13 @@ pub fn live_state_json(
         live.mailbox_requests,
         live.mailbox_responses,
         live.dc_reg_reads,
-        live.dc_reg_writes
+        live.dc_reg_writes,
+        live.al_transitions,
+        live.al_errors,
+        live.al_error_acks,
+        live.sm_watchdog_triggers,
+        live.sii_read_commands,
+        live.sii_write_commands
     );
     out.insert_str(insert_at, &live_json);
     out
@@ -733,6 +777,18 @@ pub struct MetricsSlave {
     pub dc_reg_reads: u64,
     /// DC 寄存器写次数。
     pub dc_reg_writes: u64,
+    /// AL 状态迁移次数。
+    pub al_transitions: u64,
+    /// AL Status error 0→1 次数。
+    pub al_errors: u64,
+    /// AL Status error 1→0 次数。
+    pub al_error_acks: u64,
+    /// SM 过程数据看门狗触发次数。
+    pub sm_watchdog_triggers: u64,
+    /// SII 读命令数。
+    pub sii_read_commands: u64,
+    /// SII 写命令数。
+    pub sii_write_commands: u64,
     /// 模拟 DC 时间（ns）。
     pub dc_time_ns: u64,
 }
@@ -753,7 +809,7 @@ pub fn metrics_text(slaves: &[MetricsSlave]) -> String {
         )
     };
     let mut out = String::new();
-    let counters: [MetricSpec; 9] = [
+    let counters: [MetricSpec; 15] = [
         (
             "ecsim_frames_in_total",
             "收到的 EtherCAT 帧总数",
@@ -796,6 +852,36 @@ pub fn metrics_text(slaves: &[MetricsSlave]) -> String {
             "ecsim_dc_time_ns",
             "模拟 DC 系统时间（ns，帧驱动）",
             |slave| slave.dc_time_ns,
+        ),
+        (
+            "ecsim_al_transitions_total",
+            "AL 状态迁移总次数",
+            |slave| slave.al_transitions,
+        ),
+        (
+            "ecsim_al_errors_total",
+            "AL Status error 置位总次数",
+            |slave| slave.al_errors,
+        ),
+        (
+            "ecsim_al_error_acks_total",
+            "AL Status error 清除（Error ACK）总次数",
+            |slave| slave.al_error_acks,
+        ),
+        (
+            "ecsim_sm_watchdog_triggers_total",
+            "SM 过程数据看门狗触发总次数",
+            |slave| slave.sm_watchdog_triggers,
+        ),
+        (
+            "ecsim_sii_read_commands_total",
+            "SII 读命令总数",
+            |slave| slave.sii_read_commands,
+        ),
+        (
+            "ecsim_sii_write_commands_total",
+            "SII 写命令总数",
+            |slave| slave.sii_write_commands,
         ),
     ];
     for (name, help, get) in counters {
@@ -957,6 +1043,20 @@ mod tests {
             mailbox_responses: 2,
             dc_reg_reads: 3,
             dc_reg_writes: 4,
+            al_transitions: 5,
+            al_errors: 1,
+            al_error_acks: 0,
+            sm_watchdog_triggers: 1,
+            sii_read_commands: 7,
+            sii_write_commands: 1,
+            last_al_event: Some(AlEventState {
+                from: 0x08,
+                to: 0x14,
+                from_code: 0x0000,
+                code: 0x001B,
+                watchdog: true,
+                at_ms: 9876,
+            }),
         };
         let json = live_state_json(&simulated_spec(), Some(15), Some(("p", "P")), &live);
         assert!(json.contains("\"schema\": \"ec-sim/state-v1\""));
@@ -966,6 +1066,10 @@ mod tests {
         assert!(json.contains("\"dc_time_ns\": 1234567"));
         assert!(json.contains("\"frames_in\": 42"));
         assert!(json.contains("\"dc_reg_writes\": 4"));
+        assert!(json.contains("\"al_transitions\": 5"));
+        assert!(json.contains("\"sm_watchdog_triggers\": 1"));
+        assert!(json.contains("\"sii_write_commands\": 1"));
+        assert!(json.contains("\"last_al_event\": {\"from\": \"0x08\", \"to\": \"0x14\", \"from_code\": \"0x0000\", \"code\": \"0x001B\", \"watchdog\": true, \"at_ms\": 9876}"));
         assert!(json.trim_end().ends_with('}'));
     }
     #[test]
@@ -1119,6 +1223,12 @@ mod tests {
             mailbox_responses: 2,
             dc_reg_reads: 3,
             dc_reg_writes: 4,
+            al_transitions: 0,
+            al_errors: 0,
+            al_error_acks: 0,
+            sm_watchdog_triggers: 0,
+            sii_read_commands: 5,
+            sii_write_commands: 1,
             dc_time_ns: 1234,
         };
         let text = metrics_text(&[slave(0, 1), slave(1, 2)]);
@@ -1128,6 +1238,11 @@ mod tests {
         assert!(text.contains("ecsim_frames_in_total{slave=\"1\",station_address=\"0x0002\"} 11"));
         assert!(text.contains("ecsim_al_status{slave=\"0\",station_address=\"0x0001\"} 8"));
         assert!(text.contains("ecsim_dc_time_ns{"));
+        assert!(text.contains(
+            "ecsim_sm_watchdog_triggers_total{slave=\"0\",station_address=\"0x0001\"} 0"
+        ));
+        assert!(text
+            .contains("ecsim_sii_read_commands_total{slave=\"0\",station_address=\"0x0001\"} 5"));
         assert_eq!(
             text.lines()
                 .filter(|line| line.starts_with("ecsim_frames_in_total{"))
@@ -1176,6 +1291,12 @@ mod tests {
                 mailbox_responses: 0,
                 dc_reg_reads: 0,
                 dc_reg_writes: 0,
+                al_transitions: 0,
+                al_errors: 0,
+                al_error_acks: 0,
+                sm_watchdog_triggers: 0,
+                sii_read_commands: 0,
+                sii_write_commands: 0,
                 dc_time_ns: 0,
             }],
             3,
