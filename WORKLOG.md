@@ -5600,3 +5600,13 @@
 
 - overlay 整句优先 + 移除拆词单字映射；`ageText()` 语言感知；证据 Markdown/DC kv/异常位表头 `tz()`；
   en 全角标点规则转 ASCII。产品路径 en headless CJK 仅 `中文`（白名单）；五脚本+serve 资产探针全 EXIT=0。
+
+### C5 24h 失败（14:40:45）EC-Sim 侧 RCA
+
+- 只读分析 CNC 验证机失败快照 + 内核/sshd 全量日志：C5 FAIL 成立（slave1 PREOP，`AL OP=2/3`）；
+  失败前 12 h+ 数据面/桥/GUI 正常，EC-Sim 进程存活、无运行期 AL/看门狗日志。
+- 已证实外部干扰：14:04–15:42 同机持续 G1 shell 构建/调试（约每 2–3 min 一次，`zig build-exe` RSS ≈876 MB）；
+  全 run 仅有的 5 次总线重扫全部落在该时段（14:06/14:09/14:37），14:40:20 构建开始后 22 s 采样到失败。
+- `ethercat slaves` flag 语义更正：`+`=no error、`E`=scan/config failed → slave1 PREOP(+)、slave2 OP(E)。
+- 精确 AL 码/EC-Sim 状态机缺陷：**NOT-JUDGED**（C5 未抓 `/state`、`/metrics`）；C5 必须修复隔离+补遥测后
+  完整重跑 24 h。证据与修复项见 [RCA](docs/verification/2026-11-14-c5-fail-rca.md)。
