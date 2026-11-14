@@ -123,3 +123,29 @@ python3 scripts/spikes/e2e_observability_collect.py \
 - `/state.wkc_errors` 与 `ecsim_wkc_errors_total` 是占位（恒 0）；WKC 由内核/IgH 侧派生。
 - 无 DC；`--al-error` 是启动期全站注入，运行期单站注入为 P1。
 - 不宣称 EtherCAT 一致性/CTT/LinuxCNC 认证。
+
+## 8. 故障矩阵（P0，EC-Sim 侧自证）
+
+本轮补的是 **触发 + 恢复 + 事件时间线**，不是 CNC 侧 HMI 行为验收；证据见
+[CNC E2E 故障矩阵记录](../verification/2026-11-15-cnc-e2e-fault-matrix.md)。
+
+| 故障 | 注入方式 | 期望 | 证据 |
+| --- | --- | --- | --- |
+| TAP down/up | `ip link set <tap> down/up`（OS 层） | down 期间各站 `frames_in` 停止、`/state` 仍 200、主站存活；up 后新主站重建至 3/3 OP | `assets/cnc-e2e/tap-fault/` |
+| slave-drop / 重连 | `POST /fault {"fault":"slave_drop","target":i,"duration_ms":…,"confirm":true}` | 目标站 `frames_dropped` 增长、其他站继续收帧（环网旁路）、到期 `fault_cleared` 后恢复 | `assets/cnc-e2e/fault-matrix/` |
+| SDO 拒绝 | `POST /fault {"fault":"sdo_reject","target":i,…}` | 正常 Upload `0x43` → 注入后 Abort `0x06010000` → 到期恢复 `0x43` | `assets/cnc-e2e/fault-matrix/` |
+| DC 丢失 | — | **P1/NOT-JUDGED**：无硬件 DC，本轮架构不做 DC 丢失注入（代价高） | — |
+| AL 单站错误 / 看门狗 | `POST /fault al_error/watchdog` | P1（仅 `--serve-write`+confirm+审计；不作为 P0 判据） | `e2e-control-probe.out` |
+
+命令：
+
+```bash
+# UDS：slave_drop + sdo_reject（3×cnc-csp-servo，端口 18134）
+EC_SIM_BIN=target/release/ec-sim-esc \
+  bash scripts/spikes/cnc-e2e-fault-matrix.sh --out .scratch/fault-matrix
+# root：TAP down/up（SOEM simple_ng；需要 Linux TAP 权限）
+bash scripts/spikes/cnc-e2e-tap-fault.sh --tap ecsimfault0
+```
+
+边界：上述结果来自 EC-Sim 验证机（UDS/TAP 自证），不代表 CNC VM 上 lcec/HMI 的
+STALE/LOST 行为；CNC 侧联调仍待 G1 判定后的窗口。

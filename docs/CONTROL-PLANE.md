@@ -301,10 +301,15 @@ token 模式下 `fetch` 不能自动带 `Authorization`，页面提示经反向�
 | POST | `/probe` | 验收探针 tripped 置位/清除（需 `--serve-write` + `confirm:true` + `tripped`） |
 | GET | `/probe` | 逐站 tripped 状态 |
 
-`fault` 取值：`link_loss`、`slave_drop`、`al_error`（P1）、`watchdog`（P1）、`pdo_loss`、
-`estop`（仅记录，modeled=false）、`hard_limit`（仅记录）。故障事件写入 `/events`：
-`fault_injected`、`fault_cleared`、`link`（down/up）、`pdo_loss`、`probe_state`、`watchdog`、
-`al_transition`、`state_change`。
+`fault` 取值：`link_loss`、`slave_drop`、`sdo_reject`、`pdo_loss`（以上 P0）；
+`al_error`、`watchdog`（P1）；`estop`（仅记录，modeled=false）、`hard_limit`（仅记录）。
+`sdo_reject` 对目标站所有 SDO Upload/Download 回 Abort `0x06010000`
+（Unsupported Access），到期恢复；`link_loss` 由帧循环整帧丢弃；`slave_drop` 为
+“静默从站 + 环网旁路”——该站本帧不应答/不置 WKC，但帧继续传给下游，`frames_in`
+仍计、`frames_dropped` 增长（断言看 `frames_dropped`，不是 `frames_in` 停滞）。
+TAP 层 down/up 不是 `/fault` 类型，由验证脚本 `ip link set <tap> down|up` 完成。
+故障事件写入 `/events`：`fault_injected`、`fault_cleared`、`link`（down/up）、
+`pdo_loss`、`probe_state`、`watchdog`、`al_transition`、`state_change`。
 
 ### 10.2 口径（勿误读）
 
@@ -321,3 +326,10 @@ token 模式下 `fetch` 不能自动带 `Authorization`，页面提示经反向�
   `duration_ms` 到期恢复、`al_error` 恢复、`/probe`、`/events?since`。
 - `scripts/spikes/cnc-e2e-fixed-scene.sh`（Linux/UDS）：3×`cnc-csp-servo` 连续 3 轮
   3/3 OP、7B/11B 布局；证据格式见 [verification/2026-11-15-cnc-e2e-control-plane.md](verification/2026-11-15-cnc-e2e-control-plane.md)。
+- `scripts/spikes/cnc-e2e-fault-matrix.sh`（Linux/UDS）：`slave_drop`（目标站
+  `frames_dropped` 增长、其他站继续收帧、到期恢复）与 `sdo_reject`（正常
+  `0x43` → 注入 Abort `0x06010000` → 到期恢复 `0x43`）；每类写 timeline JSON。
+- `scripts/spikes/cnc-e2e-tap-fault.sh`（root，SOEM `simple_ng`）：TAP down 期间
+  `frames_in` 停止、控制面 `/state` 仍 200、主站存活；TAP up 后第二个主站重新
+  `all slaves are now operational`、3/3 OP、帧恢复。证据
+  [verification/2026-11-15-cnc-e2e-fault-matrix.md](verification/2026-11-15-cnc-e2e-fault-matrix.md)。

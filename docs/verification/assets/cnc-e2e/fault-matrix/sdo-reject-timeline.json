@@ -1,0 +1,77 @@
+{
+  "events": [
+    {
+      "seq": 19,
+      "ts": 1794698627221,
+      "run_id": "fault-matrix-20261115072346",
+      "type": "fault_injected",
+      "slave": 1,
+      "details": {
+        "fault": "slave_drop",
+        "target": 1,
+        "duration_ms": 1500,
+        "modeled": true,
+        "before": {
+          "al_status": "0x08",
+          "al_status_code": "0x0000"
+        },
+        "after": {
+          "al_status": "0x08",
+          "al_status_code": "0x0000"
+        },
+        "confirm": true,
+        "who": "http",
+        "run_id": "fault-matrix-20261115072346"
+      }
+    },
+    {
+      "seq": 20,
+      "ts": 1794698628731,
+      "run_id": "fault-matrix-20261115072346",
+      "type": "fault_cleared",
+      "slave": 1,
+      "details": {
+        "fault": "slave_drop",
+        "duration_ms": 1500,
+        "applied_count": 1
+      }
+    },
+    {
+      "seq": 21,
+      "ts": 1794698629086,
+      "run_id": "fault-matrix-20261115072346",
+      "type": "fault_injected",
+      "slave": 0,
+      "details": {
+        "fault": "sdo_reject",
+        "target": 0,
+        "duration_ms": 1500,
+        "modeled": true,
+        "before": {
+          "al_status": "0x08",
+          "al_status_code": "0x0000"
+        },
+        "after": {
+          "al_status": "0x08",
+          "al_status_code": "0x0000"
+        },
+        "confirm": true,
+        "who": "http",
+        "run_id": "fault-matrix-20261115072346"
+      }
+    },
+    {
+      "seq": 22,
+      "ts": 1794698630602,
+      "run_id": "fault-matrix-20261115072346",
+      "type": "fault_cleared",
+      "slave": 0,
+      "details": {
+        "fault": "sdo_reject",
+        "duration_ms": 1500,
+        "applied_count": 1
+      }
+    }
+  ],
+  "abort_code": 100728832
+}

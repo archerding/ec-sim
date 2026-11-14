@@ -106,10 +106,11 @@ python3 scripts/spikes/e2e_observability_collect.py \
 | PDO 布局/方向 | `master.pdo.tx/rx`；`/pdo`（逐站原始字节，P1） | `7/11`；lcec HAL 侧另验 |
 | 程序/循环/暂停 | 无直接信号（HMI/桥/LinuxCNC 侧） | SIM 仅给 run_id 关联 |
 | AL 单站故障（P1） | `fault_injected` + `slaves[i].al_code` + `op=false` | 注入码、恢复后 `0x0000` |
-| link_loss | `fault_injected`/`link` down/up、`/state` 帧计数停滞 | 事件成对、恢复 |
+| link_loss / TAP down/up | `fault_injected`/`link` down/up、`/state` 帧计数停滞；TAP 层由 `ip link` 验证 | 事件成对、恢复；down 期间 `/state` 仍 200 |
+| slave_drop / 重连 | `fault_injected`、目标站 `frames_dropped` 增长、其他站继续收帧、到期 `fault_cleared` | 帧计数与事件同时成立 |
+| sdo_reject | 目标站 SDO Upload/Download 返回 Abort `0x06010000`，到期恢复；`sdo-audit` 可关联 | 正常 `0x43` → abort → 恢复 `0x43` |
 | pdo_loss | `pdo_loss` 事件、`frames_dropped` 增长 | 冻结/恢复 |
 | watchdog | `sm_watchdog_triggers_total`、`watchdog` 事件、`al_code=0x001B` | 触发/ACK |
-| SDO 拒绝/超时 | 无直接故障注入（P1）；`sdo-audit` 可关联 | 桥/HMI 证据 |
 | STALE/LOST | 无直接信号（桥/GUI 侧）；`/metrics` 帧率可辅助 | HMI 证据 |
 | 探针 tripped | `/probe`、`probe_state` 事件 | 置位/清除成对 |
 
@@ -123,6 +124,9 @@ C5 的硬判据仍是 `ethercat slaves` 全 OP + 采样；SIM 的 `/state`、`/m
 - `--al-error` 是**启动期全站**注入；运行期单站注入是 P1（需 `--serve-write`+`confirm`+审计）。
 - `/topology` 的 `sm2_hex`/`sm3_hex` 是 SM2/SM3 原始字节，不是 WKC。
 - `wkc_errors` 与 `ecsim_wkc_errors_total` 恒 0；WKC 由内核/IgH 侧派生，SIM 不声称提供。
+- `slave_drop` 是“静默 + 环网旁路”：帧继续下传，目标站 `frames_in` 仍增长、
+  `frames_dropped` 增长；判定看 `frames_dropped`，不要期望 `frames_in` 停滞。
+- DC 丢失为 P1/NOT-JUDGED（无硬件 DC，本轮不做 DC 丢失注入）。
 - `ack_latency_ms` 当前 `null`；`fps` 依赖主站帧，合成主站空闲时可能为 0。
 - 8 IO 混合拓扑 P1/NOT-JUDGED（`--slaves` 复制同一 manifest）。
 - 不宣称 EtherCAT 一致性/CTT/LinuxCNC 认证。

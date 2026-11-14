@@ -5651,3 +5651,25 @@
   [CNC E2E 控制面](docs/verification/2026-11-15-cnc-e2e-control-plane.md)。
 - 边界：8 IO 混合拓扑与 `REF.json` PENDING（等 cnc-impl demo-state）；`--al-error` 为启动期全站；
   WKC 由内核/IgH 派生、SIM 的 `wkc_errors` 恒 0 占位；不宣称一致性/认证。
+
+### CNC E2E 故障矩阵（task-102）：TAP down/up、slave-drop/reconnect、SDO reject
+
+- `Responder` 新增 `sdo_reject`：注入后目标站 SDO Upload/Download 一律回
+  Abort `0x06010000`（单测 `sdo_reject_injection_aborts_requests_until_cleared`）；
+  `/fault` 增加 `sdo_reject` kind（P0）。单测覆盖静默从站旁路：muted 站不应答/不置
+  WKC，但帧继续下传（`frames_dropped` 计数），修复首轮“muted 吞掉整链帧”的缺陷。
+- 新探针 `scripts/spikes/fault_matrix_probe.py`（`slave_drop` target=1 1.5 s、
+  `sdo_reject` target=0 1.5 s；keepalive 20 ms；timeline JSON + 事件成对断言）、
+  `cnc-e2e-fault-matrix.sh`（UDS, 3×`cnc-csp-servo`）、
+  `cnc-e2e-tap-fault.sh`（root+SOEM：TAP down 期间 frames 停止、`/state` 仍 200、
+  master 存活；up 后第二个 simple_ng 重建到 3/3 OP、frames 恢复）。
+- EC-Sim 验证机结果（未碰 CNC VM）：fault-matrix `RESULT: PASS`（SDO 前 `0x43`
+  → 注入 `0x06010000` → 恢复 `0x43`；slave_drop 目标站 `frames_dropped` 增长、
+  其他站收帧、到期 `fault_cleared`）；tap-fault `RESULT: PASS`（frames 487→down
+  491 停→up 后 1003→1094）；B-1 整轮 **28 PASS / 0 FAIL / 0 SKIP（共 28）**。
+  二进制 sha256 `912564b4…665852`（1,153,736 B）、manifest `5f96adc1…45e9`。
+- 本机 `cargo test --workspace` **270 passed**（269 单测 + 1 doc-test）、
+  fmt/clippy 0。证据：`docs/verification/assets/cnc-e2e/{fault-matrix,tap-fault,b1-28.log}`、
+  [故障矩阵记录](docs/verification/2026-11-15-cnc-e2e-fault-matrix.md)。
+- 边界：DC 丢失 P1/NOT-JUDGED（无硬件 DC）；8 IO P1；AL 运行期注入 P1；上述为
+  EC-Sim 侧 UDS/TAP 自证，CNC VM lcec/HMI 联调仍待 G1 判定后的窗口；不宣称认证。

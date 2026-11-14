@@ -1,0 +1,8 @@
+[23:22:04] 启动 ec-sim-esc --uds（3×cnc-csp-servo，run_id=fault-matrix-20261115072204）
+[23:22:04] 控制面就绪；开始故障矩阵
+[23:23:31] 启动 ec-sim-esc --uds（3×cnc-csp-servo，run_id=fault-matrix-20261115072331）
+[23:23:31] 控制面就绪；开始故障矩阵
+[23:23:46] 启动 ec-sim-esc --uds（3×cnc-csp-servo，run_id=fault-matrix-20261115072346）
+[23:23:46] 控制面就绪；开始故障矩阵
+[23:23:50] slave_drop 时间线：/root/fault-evidence/fault-matrix/slave-drop-timeline.json
+[23:23:50] sdo_reject 时间线：/root/fault-evidence/fault-matrix/sdo-reject-timeline.json

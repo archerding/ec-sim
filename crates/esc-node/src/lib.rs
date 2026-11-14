@@ -267,6 +267,8 @@ pub struct Responder {
     pdo_frozen: bool,
     /// 运行期探针输入状态（E2E probe tripped；当前不映射到 PDO，仅控制面/事件）。
     probe_tripped: bool,
+    /// 运行期故障注入：对 CoE SDO 请求一律回 Abort（模拟设备拒绝/服务失败）。
+    sdo_reject: bool,
 }
 
 impl Default for Responder {
@@ -304,6 +306,7 @@ impl Responder {
             muted: false,
             pdo_frozen: false,
             probe_tripped: false,
+            sdo_reject: false,
         }
     }
 
@@ -672,6 +675,17 @@ impl Responder {
         self.probe_tripped
     }
 
+    /// 设置/清除 SDO 拒绝注入（所有 CoE SDO 请求回 Abort，用于 E2E 故障矩阵）。
+    pub fn set_sdo_reject(&mut self, reject: bool) {
+        self.sdo_reject = reject;
+    }
+
+    /// 当前是否处于 SDO 拒绝注入状态。
+    #[must_use]
+    pub fn sdo_reject(&self) -> bool {
+        self.sdo_reject
+    }
+
     /// E2E 故障恢复：清除 AL Status error 位与错误码（主站未 ACK 时的直接恢复路径）。
     pub fn clear_al_error(&mut self) {
         if !self.al.error && self.al.status_code == 0 {
@@ -843,8 +857,10 @@ impl Responder {
         self.stats.frames_in = self.stats.frames_in.saturating_add(1);
         // 运行期故障注入：静默期间不回应主站（帧仍计入 frames_in，另计 dropped）。
         if self.muted {
+            // 模拟从站掉线（环网旁路）：本帧不处理、不置 WKC，但帧继续沿链传给
+            // 下游从站——因此返回未经修改的帧，而不是让整帧（含其他从站）丢失。
             self.stats.frames_dropped = self.stats.frames_dropped.saturating_add(1);
-            return None;
+            return Some(frame.to_vec());
         }
         if Frame::parse_ethernet(frame).is_err() && !Self::is_padded_ethercat_frame(frame) {
             self.stats.frames_dropped = self.stats.frames_dropped.saturating_add(1);
@@ -1104,7 +1120,22 @@ impl Responder {
         let service_len = usize::from(header.length).min(available);
         let service =
             &message[mailbox::MAILBOX_HEADER_LEN..mailbox::MAILBOX_HEADER_LEN + service_len];
-        let response_service = if self.download.is_some() {
+        let response_service = if self.sdo_reject {
+            // E2E 故障注入：设备拒绝 CoE SDO 服务（回 Abort 0x06010000），恢复后正常应答。
+            match mailbox::parse_sdo_request(service) {
+                Some(SdoRequest::Upload { index, subindex })
+                | Some(SdoRequest::Download {
+                    index, subindex, ..
+                }) => mailbox::sdo_abort_payload(
+                    index,
+                    subindex,
+                    mailbox::SDO_ABORT_UNSUPPORTED_ACCESS,
+                ),
+                _ => {
+                    mailbox::sdo_abort_payload(0x0000, 0x00, mailbox::SDO_ABORT_UNSUPPORTED_ACCESS)
+                }
+            }
+        } else if self.download.is_some() {
             // 进行中的分段下载：本帧的 SDO 请求按 download segment request 解析。
             match mailbox::parse_segment_download(service) {
                 Some(segment) => self.handle_download_segment(segment),
@@ -1753,6 +1784,37 @@ mod tests {
         assert_eq!(data[0] & 0x0F, 0x01, "slave starts in INIT");
         assert_eq!(responder.stats().frames_in, 1);
         assert_eq!(responder.stats().frames_out, 1);
+    }
+
+    #[test]
+    fn muted_slave_passes_frame_through_without_answering() {
+        let mut responder = Responder::default();
+        responder.set_muted(true);
+        let frame = request(&[DatagramData::auto_increment(
+            Command::Brd,
+            1,
+            0,
+            0x0130,
+            vec![0u8; 2],
+        )]);
+        let reply = responder
+            .handle_frame(&frame, DEFAULT_SIM_MAC)
+            .expect("muted slave forwards the frame (ring bypass)");
+        let (wkc, _) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 2);
+        assert_eq!(wkc, 0, "掉线从站不应贡献 WKC");
+        assert_eq!(
+            reply[ETHERNET_HEADER_LEN + 2],
+            frame[ETHERNET_HEADER_LEN + 2]
+        );
+        assert_eq!(responder.stats().frames_in, 1);
+        assert_eq!(responder.stats().frames_dropped, 1);
+
+        responder.set_muted(false);
+        let reply = responder
+            .handle_frame(&frame, DEFAULT_SIM_MAC)
+            .expect("recovered slave answers");
+        let (wkc, _) = reply_datagram(&reply, ETHERNET_HEADER_LEN + ECAT_HEADER_LEN + 10, 2);
+        assert_eq!(wkc, 1);
     }
 
     #[test]
@@ -3829,6 +3891,44 @@ mod tests {
             u32::from_le_bytes([response[12], response[13], response[14], response[15]]),
             mailbox::SDO_ABORT_OBJECT_NOT_EXIST
         );
+    }
+
+    #[test]
+    fn sdo_reject_injection_aborts_requests_until_cleared() {
+        let mut responder = Responder::default();
+        responder.set_sdo_reject(true);
+        write_mailbox(
+            &mut responder,
+            mailbox_request_payload(
+                mailbox::MAILBOX_TYPE_COE,
+                mailbox::COE_COMMAND_SDO_REQUEST,
+                0x40,
+                0x1018,
+                0x01,
+            ),
+        );
+        let response = read_tx_mailbox(&mut responder);
+        assert_eq!(response[8], mailbox::SDO_COMMAND_ABORT);
+        assert_eq!(
+            u32::from_le_bytes([response[12], response[13], response[14], response[15]]),
+            mailbox::SDO_ABORT_UNSUPPORTED_ACCESS
+        );
+
+        // 恢复后同一请求正常应答。
+        responder.set_sdo_reject(false);
+        write_mailbox(
+            &mut responder,
+            mailbox_request_payload(
+                mailbox::MAILBOX_TYPE_COE,
+                mailbox::COE_COMMAND_SDO_REQUEST,
+                0x40,
+                0x1018,
+                0x01,
+            ),
+        );
+        let response = read_tx_mailbox(&mut responder);
+        assert_eq!(response[8], 0x43, "4 字节 expedited upload");
+        assert_eq!(response[9..11], 0x1018u16.to_le_bytes());
     }
 
     /// 通过 APWR 写寄存器块（测试辅助）。

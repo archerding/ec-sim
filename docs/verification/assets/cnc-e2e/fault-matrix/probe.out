@@ -1,0 +1,17 @@
+OK   初始 3/3 OP
+RUN_ID fault-matrix-20261115072346
+OK   slave_drop 注入 200
+OK   slave_drop 期间目标站帧计为丢弃
+OK   slave_drop 期间其他站仍收帧
+OK   fault_injected 事件
+OK   slave_drop 到期清理
+OK   slave_drop 恢复后帧增长
+OK   fault_cleared 事件
+OK   SDO 注入前正常应答
+OK   sdo_reject 注入 200
+OK   注入后 SDO 返回 Abort 0x06010000
+OK   sdo_reject 到期清理
+OK   恢复后 SDO 正常应答
+OK   sdo_reject 事件成对
+OK   矩阵结束 3/3 OP
+RESULT: PASS（0 个失败）

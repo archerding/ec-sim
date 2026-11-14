@@ -877,6 +877,15 @@ fn apply_fault_effects(
                 .ok_or_else(|| format!("target {index} 不存在"))?;
             responder.set_pdo_frozen(true);
         }
+        "sdo_reject" => {
+            let index = spec
+                .target
+                .ok_or_else(|| "sdo_reject 需要 target".to_string())?;
+            let responder = responders
+                .get_mut(index)
+                .ok_or_else(|| format!("target {index} 不存在"))?;
+            responder.set_sdo_reject(true);
+        }
         // P1：安全链不在 EC-Sim 建模范围，仅记录事件（不伪造 PDO 行为）。
         "estop" | "hard_limit" => {}
         other => return Err(format!("未知 fault：{other}")),
@@ -915,6 +924,7 @@ fn release_fault_effects(fault: &ActiveFault, responders: &mut [esc_node::Respon
     match fault.kind.as_str() {
         "slave_drop" => responder.set_muted(false),
         "pdo_loss" => responder.set_pdo_frozen(false),
+        "sdo_reject" => responder.set_sdo_reject(false),
         "al_error" | "watchdog" => responder.clear_al_error(),
         _ => {}
     }
@@ -1047,12 +1057,13 @@ fn handle_e2e_control(
             if !spec.confirm {
                 return bad_request_json("故障注入需要 per-request 二次确认（confirm:true）");
             }
-            const KINDS: [&str; 7] = [
+            const KINDS: [&str; 8] = [
                 "link_loss",
                 "slave_drop",
                 "al_error",
                 "watchdog",
                 "pdo_loss",
+                "sdo_reject",
                 "estop",
                 "hard_limit",
             ];
@@ -1075,7 +1086,7 @@ fn handle_e2e_control(
             }
             let needs_target = matches!(
                 spec.kind.as_str(),
-                "slave_drop" | "al_error" | "watchdog" | "pdo_loss"
+                "slave_drop" | "al_error" | "watchdog" | "pdo_loss" | "sdo_reject"
             );
             if needs_target && spec.target.is_none() {
                 return bad_request_json(&format!("{} 需要 target（0-based 从站号）", spec.kind));
