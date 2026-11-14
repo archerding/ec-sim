@@ -1,0 +1,1 @@
+{"ok": true, "run_id": "audit-gate2", "fault": "slave_drop", "target": 0, "duration_ms": 800, "expires_at_ms": 1794699099459, "applied_count": 1}

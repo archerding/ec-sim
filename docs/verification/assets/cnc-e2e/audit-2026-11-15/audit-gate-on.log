@@ -1,0 +1,6 @@
+RUN_ID audit-gate2
+MANIFEST id=com.ecsim.profile.cnc-csp-servo name=CNC virtual-loop CSP servo (SIMULATED) vendor=0x00000EC5 product=0x0000E5E3
+READY uds=/tmp/audit-gate.sock
+BEHAVIOR cia402 sm2_out=0x1100/7B sm3_in=0x1110/11B
+BEHAVIOR cia402 tx_layout=LcecCsp tx_indices=[24641, 24676, 24684, 24673]
+SERVE (live) http://127.0.0.1:18137 routes=/state,/dict

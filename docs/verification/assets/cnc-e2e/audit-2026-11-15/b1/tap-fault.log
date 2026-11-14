@@ -1,0 +1,17 @@
+[23:33:27] 启动 ec-sim-esc --tap ecsimfault0（3×cnc-csp-servo，run_id=tap-fault-20261115073327）
+[23:33:27] TAP ecsimfault0 up：90: ecsimfault0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UNKNOWN mode DEFAULT group default qlen 1000
+[23:33:27] 主站 #1（simple_ng）建链
+OK: 断开前 3/3 OP
+[23:33:27] 断开前 frames_in=0:488 1:487 2:487
+[23:33:27] ip link set ecsimfault0 down（模拟链路中断）
+[23:33:28] down 期间 frames_in：0:492 1:491 2:491 -> 0:492 1:491 2:491
+OK: TAP down 后全部从站 frames_in 停止增长（0:492 1:491 2:491）
+[23:33:30] 主站 #1 在链路断开 2s 后仍存活（开始链路恢复）
+[23:33:30] 主站 #1 故障相关行数：163
+[23:33:30] ip link set ecsimfault0 up（链路恢复）
+[23:33:31] 主站 #2（simple_ng）重新建链
+OK: 主站 #2 重新完成 ESM 配置（all slaves are now operational）
+OK: 恢复后 3/3 OP
+[23:33:32] 恢复后 frames_in：0:1000 1:996 2:996 -> 0:1093 1:1087 2:1087
+OK: 链路恢复后 frames_in 恢复增长
+RESULT: PASS

@@ -1,0 +1,4 @@
+[23:31:19] 启动 ec-sim-esc --uds（3×cnc-csp-servo，run_id=audit-fm-20261115073119）
+[23:31:19] 控制面就绪；开始故障矩阵
+[23:31:23] slave_drop 时间线：/tmp/audit-fm/slave-drop-timeline.json
+[23:31:23] sdo_reject 时间线：/tmp/audit-fm/sdo-reject-timeline.json

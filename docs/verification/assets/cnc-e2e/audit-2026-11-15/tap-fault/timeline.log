@@ -1,0 +1,11 @@
+[23:32:04] 启动 ec-sim-esc --tap ecsimfault0（3×cnc-csp-servo，run_id=audit-tap-20261115073204）
+[23:32:04] TAP ecsimfault0 up：86: ecsimfault0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UNKNOWN mode DEFAULT group default qlen 1000
+[23:32:04] 主站 #1（simple_ng）建链
+[23:32:04] 断开前 frames_in=0:487 1:486 2:486
+[23:32:04] ip link set ecsimfault0 down（模拟链路中断）
+[23:32:05] down 期间 frames_in：0:492 1:491 2:491 -> 0:492 1:491 2:491
+[23:32:07] 主站 #1 在链路断开 2s 后仍存活（开始链路恢复）
+[23:32:07] 主站 #1 故障相关行数：163
+[23:32:07] ip link set ecsimfault0 up（链路恢复）
+[23:32:09] 主站 #2（simple_ng）重新建链
+[23:32:09] 恢复后 frames_in：0:1003 1:996 2:996 -> 0:1094 1:1087 2:1087

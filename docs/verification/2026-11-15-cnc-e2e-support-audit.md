@@ -1,6 +1,6 @@
 # CNC 端到端闭环测试 · EC-Sim 支撑验收判据与审计
 
-> 版本：**v0.2（判据冻结 + Lead 裁决落地，审计 PENDING）** ｜ 日期：**2026-11-15** ｜ 作者：行业专家（sim-expert）
+> 版本：**v0.3（判据冻结 + Lead 裁决落地；task-102 故障矩阵已独立复核）** ｜ 日期：**2026-11-15** ｜ 作者：行业专家（sim-expert）
 > 任务：**task-101 / task-102 / task-103**（CNC E2E 支撑）｜ 性质：**支撑性验收判据 + 独立审计记录**
 > 用户指令（2026-11-15）：EC-Sim 暂停其他任务，转去支撑 CNC 端到端闭环测试。
 > 边界：本文件**不替代** Gate U DoD / CNC-ACCEPTANCE / EC-Sim 产品验收；EC-Sim 侧为仿真从站，**不构成**实时性/一致性/安全/认证保证；不得以本文件写 v1.1/认证/PASS。
@@ -12,7 +12,7 @@
 | 项 | 状态 | 依据/说明 |
 |---|---|---|
 | task-101 固定场景（3×CiA402 CSP + IO、一键起停/重置） | **PENDING（sim-impl 实现中）** | owner=sim-impl（已 claim/in_progress）；计划 `docs/CNC-E2E-PROFILE.md`+启动/复位脚本+lcec XML；当前尚无产物；C5 `c5-stack-up.sh` 可作基线参考 |
-| task-102 故障注入（AL/链路/DC/SDO/掉线 + 恢复） | **PENDING（sim-impl 实现中）** | owner=sim-impl；计划 `POST /fault`、`/fault/status`+审计；v1.0 必做仅 F-LINK/F-PROC/F-SDO；运行期 AL 注入降 P1/可选（见 §11 裁决） |
+| task-102 故障注入（AL/链路/DC/SDO/掉线 + 恢复） | **部分 PASS（SIM 侧独立复核）** | `30ce3e9` 故障矩阵已独立复跑：B1/B5/B6 PASS；B2 中 F-LINK/F-SDO PASS、**F-PROC 未交付**、CNC HMI 联动 PENDING；运行期 AL 注入降 P1/可选（见 §11 裁决）；证据 `assets/cnc-e2e/audit-2026-11-15/` |
 | task-103 可观测性与证据矩阵 | **PENDING（sim-impl 实现中）** | owner=sim-impl；计划 `/state` run_id/master/slaves、`/events?since=` JSONL、metrics 扩展；当前 `run_id`/WKC/jitter 未落地 |
 | C4 浏览器 4h / DOD-07 | **PAUSED（用户指令）** | 保留历史 NOT-JUDGED 记录，不重判 FAIL、不写 PASS；**已回写 task-78 rev6**（标题前缀 [PAUSED]），恢复后按 task-78 重试 |
 | DOD-12 | **PASS（保留）** | 既有判定 `7487186` 不变 |
@@ -67,14 +67,25 @@
 
 | ID | 判据 | 阈值/方法 | 状态 |
 |---|---|---|---|
-| B1 | 故障接口默认关闭、显式开启、二次确认、**审计**（who/时间/类型/目标/持续时间/前值→后值/run_id）；不启用时 404/405 | 审计记录可读；未开启时接口拒绝 | PENDING |
-| B2 | **v1.0 必做故障类**（外部可实现）：F-LINK（TAP down/up）、F-PROC（EC-Sim 进程 kill/重启）、F-SDO（未开 `--serve-write` 405 / 非 writable 403）；每类触发后 HMI 显示 STALE/LOST/ALARM 且运动命令禁用，恢复后 3/3 OP 且可继续 | 每类 ≥1 次完整触发→恢复；证据 `/state`、`/events`、CNC 日志、审计 | PENDING |
-| B3 | **单从站 AL error 运行期注入（0x11/0x24）** | **与 BL-20 暂停冲突**：task-42 已冻结、v1.x 候选；不得擅自实现。可用 startup `--al-error` 做“重启后单站错误”场景；运行期注入待 Lead 裁决 → PENDING/待裁决 | PENDING（冲突） |
-| B4 | DC 丢失 / 主站重启 | 控制面无运行期 DC 故障 API；标记可选 v1.x；不阻塞 B2 | PENDING（可选） |
-| B5 | 恢复路径：故障清除后自动/一键回 OP、无手动 reboot、≤60s；审计含恢复时间 | 计时 + 状态快照；失败可复现 | PENDING |
-| B6 | 测试模式隔离：故障仅在测试档；不干扰 C5/生产；清理彻底 | 检查命令；C5 期间禁止执行 | PENDING |
+| B1 | 故障接口默认关闭、显式开启、二次确认、**审计**（who/时间/类型/目标/持续时间/前值→后值/run_id）；不启用时 404/405 | 审计记录可读；未开启时接口拒绝 | ✅ **PASS**（独立复跑：405/400/200；`fault_injected` 含 confirm/who/run_id/before/after） |
+| B2 | **v1.0 必做故障类**（外部可实现）：F-LINK（TAP down/up）、F-PROC（EC-Sim 进程 kill/重启）、F-SDO（未开 `--serve-write` 405 / 非 writable 403）；每类触发后 HMI 显示 STALE/LOST/ALARM 且运动命令禁用，恢复后 3/3 OP 且可继续 | 每类 ≥1 次完整触发→恢复；证据 `/state`、`/events`、CNC 日志、审计 | 🟡 **部分**：F-LINK ✅（TAP down/up）、F-SDO ✅（Abort `0x06010000`）；**F-PROC 未交付**；CNC HMI 联动 PENDING（§4.1） |
+| B3 | **单从站 AL error 运行期注入（0x11/0x24）** | **与 BL-20 暂停冲突**：task-42 已冻结、v1.x 候选；不得擅自实现。可用 startup `--al-error` 做“重启后单站错误”场景；运行期注入待 Lead 裁决 → PENDING/待裁决 | PENDING（P1，不阻塞；Lead 已裁决） |
+| B4 | DC 丢失 / 主站重启 | 控制面无运行期 DC 故障 API；标记可选 v1.x；不阻塞 B2 | PENDING（P1/可选） |
+| B5 | 恢复路径：故障清除后自动/一键回 OP、无手动 reboot、≤60s；审计含恢复时间 | 计时 + 状态快照；失败可复现 | ✅ **PASS（SIM 侧）**：矩阵到期清理/恢复 <5s、TAP 重建 ~2s、无 reboot；HMI 侧恢复待 CNC 联调 |
+| B6 | 测试模式隔离：故障仅在测试档；不干扰 C5/生产；清理彻底 | 检查命令；C5 期间禁止执行 | ✅ **PASS（SIM 侧）**：复跑后无残留进程/端口/TAP；C5 在 CNC VM 未受影响 |
 
 > **裁决（Lead，2026-11-15）**：AL 运行期注入 **v1.0 E2E 不作为必验（降 P1/可选）**；P0 只保 **F-LINK / F-PROC / F-SDO** 三类。AL 显示测试优先用启动参数 `--al-error` 或故障模板；若运行期注入与 BL-20（task-42 暂停）冲突则记 P1 待做，**不阻塞 E2E**。sim-impl 若实现须 enabled 门禁+二次确认+审计，但不得据此写 v1.0 PASS。
+
+### 4.1 独立复跑记录（2026-11-15，EC-Sim 验证机）
+
+- **被测**：EC-Sim `30ce3e9`；二进制 sha256 `912564b4…`（1,153,736 B）、manifest `5f96adc1…`；脚本与本地 commit 逐字节一致；现场 `/root/ecsim-faults`。
+- **fault-matrix**：`EXIT=0 / RESULT: PASS（0 失败）`，15 项 OK（3/3 OP、slave_drop 看 `frames_dropped`、SDO Abort `0x06010000`、事件成对、结束 3/3 OP）；run_id `audit-fm-20261115073119`。
+- **tap-fault**：`EXIT=0 / RESULT: PASS`，down 后 `frames_in` 停止（492/491/491）、控制面仍 200；恢复后 `1003/996/996 → 1094/1087/1087`、主站 #2 `all slaves operational`、3/3 OP；run_id `audit-tap-20261115073204`。
+- **B-1 整轮**：`28 PASS / 0 FAIL / 0 SKIP`（含 `fault-matrix`/`tap-fault`/`cnc-e2e-fixed-scene`/`e2e-control`）。
+- **门禁/审计**：无 `--serve-write` → 405；缺 confirm → 400；`confirm:true` → 200；`/events` 含 confirm/who/run_id/before/after；`/fault/status` 可读。
+- **证据**：`docs/verification/assets/cnc-e2e/audit-2026-11-15/`（README、gating.md、fault-matrix/、tap-fault/、b1/，含 sha256 清单）。
+- **未过项（不写 PASS）**：F-PROC（进程 kill/重启）无用例/证据；CNC 侧 STALE/LOST/ALARM 显示与运动禁用需联调窗口；8 IO/DC/运行期 AL 注入为 P1/NOT-JUDGED。
+- **口径**：只证明 EC-Sim 侧故障触发/恢复语义；不称 EtherCAT 一致性/CTT/LinuxCNC 认证。
 
 ---
 

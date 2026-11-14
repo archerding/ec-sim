@@ -1,0 +1,66 @@
+== 启动 ec-sim-esc（--serve-write --run-id e2e-probe-run）==
+OK: /health 就绪（18133）
+OK: /state 返回 200 JSON
+OK: /state.run_id == e2e-probe-run
+OK: master.slave_count 正确
+OK: master.al_state 存在
+OK: master.watchdog.trips 存在
+OK: master.pdo.tx 存在
+OK: master.pdo.rx 存在
+OK: master.pdo.miss 存在
+OK: master.pdo.wkc_errors 存在
+OK: slaves 数量正确
+OK: slave[0].index 存在
+OK: slave[0].station_address 存在
+OK: slave[0].al_code 存在
+OK: slave[0].state 存在
+OK: slave[0].op 存在
+OK: slave[0].frames_in 存在
+OK: slave[0].frames_out 存在
+OK: slave[0].frames_dropped 存在
+OK: slave[0].datagrams_hit 存在
+OK: slave[0].wkc_errors 存在
+OK: 缺 confirm → 400（实际 400）
+OK: run_id 不匹配 → 409（实际 409）
+OK: 未知 fault → 400（实际 400）
+OK: target 越界 → 400（实际 400）
+OK: link_loss 注入 200
+OK: /fault/status 显示 1 个 active fault
+OK: active fault == link_loss
+OK: remaining_ms > 0
+OK: /fault/status.run_id 一致
+OK: 重复 link_loss 幂等（idempotent=true）
+OK: /events?since=0 返回 200（实际 200）
+OK: 事件含 fault_injected
+OK: 事件含 link（down）
+OK: 事件 seq 严格单调递增
+OK: fault_injected.run_id == --run-id
+OK: fault_injected 审计含 who=http
+OK: fault_injected 审计含 before/after
+OK: /events?since=0 返回 200（实际 200）
+OK: 到期后事件含 fault_cleared
+OK: 到期后事件含 link（up）
+OK: 到期后 /fault/status 无 active
+OK: al_error 注入 200
+OK: 注入后 slave[1].al_code == 0x0011（实际 0x0011）
+OK: 注入后 slave[1].op == false
+OK: 注入后 state error 位有效
+OK: 恢复后 slave[1].al_code == 0x0000（实际 0x0000）
+OK: probe 缺 confirm → 400（实际 400）
+OK: probe run_id 不匹配 → 409（实际 409）
+OK: probe 置位 200
+OK: /probe 显示 target=2 tripped=true
+OK: /probe.run_id 一致
+OK: probe 清除 200
+OK: /events?since=0 返回 200（实际 200）
+OK: probe_state 事件记录置位+清除
+OK: probe_state 事件 run_id 一致
+OK: 已产生 seq
+OK: /events?since 只返回更大 seq
+KEEPALIVE frames=48
+RESULT: PASS
+== 无写门禁实例（应 405）==
+OK: 无 --serve-write 时 POST /fault == 405
+== 服务日志（AL_EVENT 行）==
+2
+RESULT: PASS
