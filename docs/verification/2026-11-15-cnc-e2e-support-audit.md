@@ -1,6 +1,6 @@
-﻿# CNC 端到端闭环测试 · EC-Sim 支撑验收判据与审计
+# CNC 端到端闭环测试 · EC-Sim 支撑验收判据与审计
 
-> 版本：**v0.1（判据冻结，审计 PENDING）** ｜ 日期：**2026-11-15** ｜ 作者：行业专家（sim-expert）
+> 版本：**v0.2（判据冻结 + Lead 裁决落地，审计 PENDING）** ｜ 日期：**2026-11-15** ｜ 作者：行业专家（sim-expert）
 > 任务：**task-101 / task-102 / task-103**（CNC E2E 支撑）｜ 性质：**支撑性验收判据 + 独立审计记录**
 > 用户指令（2026-11-15）：EC-Sim 暂停其他任务，转去支撑 CNC 端到端闭环测试。
 > 边界：本文件**不替代** Gate U DoD / CNC-ACCEPTANCE / EC-Sim 产品验收；EC-Sim 侧为仿真从站，**不构成**实时性/一致性/安全/认证保证；不得以本文件写 v1.1/认证/PASS。
@@ -11,10 +11,10 @@
 
 | 项 | 状态 | 依据/说明 |
 |---|---|---|
-| task-101 固定场景（3×CiA402 CSP + IO、一键起停/重置） | **PENDING** | EC-Sim 仓无 `docs/CNC-E2E-PROFILE.md`、无固定 profile 启动脚本、无样例 lcec XML；C5 `c5-stack-up.sh` 可作基线参考 |
-| task-102 故障注入（AL/链路/DC/SDO/掉线 + 恢复） | **PENDING** | 控制面无 `/fault` 路由；运行期 AL 注入 = BL-20（task-42 已暂停，v1.x 候选）；链路/进程类故障可用外部脚本做，未交付 |
-| task-103 可观测性与证据矩阵 | **PENDING** | 无 `docs/CNC-E2E-OBSERVABILITY.md`；`/metrics` 有 AL/帧/邮箱/DC/watchdog/SII 计数，**无 WKC/jitter**；无 `run_id` 字段 |
-| C4 浏览器 4h / DOD-07 | **PAUSED（用户指令）** | 2026-11-15 用户要求暂停 EC-Sim 其他任务；**保留历史 NOT-JUDGED 记录，不重判 FAIL、不改写为 PASS**；恢复后按 task-78 重试 |
+| task-101 固定场景（3×CiA402 CSP + IO、一键起停/重置） | **PENDING（sim-impl 实现中）** | owner=sim-impl（已 claim/in_progress）；计划 `docs/CNC-E2E-PROFILE.md`+启动/复位脚本+lcec XML；当前尚无产物；C5 `c5-stack-up.sh` 可作基线参考 |
+| task-102 故障注入（AL/链路/DC/SDO/掉线 + 恢复） | **PENDING（sim-impl 实现中）** | owner=sim-impl；计划 `POST /fault`、`/fault/status`+审计；v1.0 必做仅 F-LINK/F-PROC/F-SDO；运行期 AL 注入降 P1/可选（见 §11 裁决） |
+| task-103 可观测性与证据矩阵 | **PENDING（sim-impl 实现中）** | owner=sim-impl；计划 `/state` run_id/master/slaves、`/events?since=` JSONL、metrics 扩展；当前 `run_id`/WKC/jitter 未落地 |
+| C4 浏览器 4h / DOD-07 | **PAUSED（用户指令）** | 保留历史 NOT-JUDGED 记录，不重判 FAIL、不写 PASS；**已回写 task-78 rev6**（标题前缀 [PAUSED]），恢复后按 task-78 重试 |
 | DOD-12 | **PASS（保留）** | 既有判定 `7487186` 不变 |
 | 资源 P0 | **PAUSED** | 用户指令暂停 |
 | EC-Sim HMI 设计线 | **HOLD** | task-89；G2 `9dd0194`、G5 判据 `f313f61` 保留不删 |
@@ -74,7 +74,7 @@
 | B5 | 恢复路径：故障清除后自动/一键回 OP、无手动 reboot、≤60s；审计含恢复时间 | 计时 + 状态快照；失败可复现 | PENDING |
 | B6 | 测试模式隔离：故障仅在测试档；不干扰 C5/生产；清理彻底 | 检查命令；C5 期间禁止执行 | PENDING |
 
-> **待 Lead 裁决**：若 task-102 验收要求必须覆盖运行期 AL 注入，则需解冻 BL-20（task-42）或正式降级该验收项；本文件不自行扩大范围。
+> **裁决（Lead，2026-11-15）**：AL 运行期注入 **v1.0 E2E 不作为必验（降 P1/可选）**；P0 只保 **F-LINK / F-PROC / F-SDO** 三类。AL 显示测试优先用启动参数 `--al-error` 或故障模板；若运行期注入与 BL-20（task-42 暂停）冲突则记 P1 待做，**不阻塞 E2E**。sim-impl 若实现须 enabled 门禁+二次确认+审计，但不得据此写 v1.0 PASS。
 
 ---
 
@@ -84,7 +84,7 @@
 |---|---|---|---|
 | C1 | 遥测完整：逐从站 AL 码/迁移、`al_errors`/watchdog、`frames_in/out/dropped`、邮箱、SII、PDO；**WKC 与周期抖动**须有来源（新增指标或 IgH 侧派生并文档化） | `/metrics` 解析；字段清单逐项核对；缺项=PENDING | PENDING |
 | C2 | `/events` SSE：interval 可配、时间戳单调、含 `AL_EVENT`；10min 采样无断档 | 采样行数/间隔/单调性检查 | PENDING |
-| C3 | **run_id 关联**：CNC 测试脚本、SIM 事件/指标、证据 manifest 使用同一 `run_id`；当前控制面无 run_id 字段 | `runs/<run_id>/` 三处一致；缺机制=PENDING（实现范围见 §8 Q2） | PENDING |
+| C3 | **run_id 关联**：CNC 测试脚本、SIM 事件/指标、证据 manifest 使用同一 `run_id` | **先做 harness 侧关联**（测试脚本/证据 manifest 带 run_id，SIM `/events` 按时间戳对齐）；控制面加字段列 **P1**、不改现有协议；`runs/<run_id>/` 三处一致 | PENDING |
 | C4 | 用例×SIM 期望矩阵：jog/MDI/程序/回零/override/tool/offset/probe/报警/断链 10 类，各列 SIM 可观察量（AL/PDO/events/metrics）与采集方法 | 10/10 覆盖；矩阵可执行 | PENDING |
 | C5 | 不伪造 PASS：原始证据+hash；失败可复现；结论逐项 PASS/PENDING/FAIL | 抽查证据；无源数据不得 PASS | PENDING |
 
@@ -129,3 +129,24 @@
 - 不声称 EtherCAT 一致性、CTT、LinuxCNC 或安全认证；
 - 不把仿真通过当作真实设备/物理安全验证；
 - 不在 C5 运行期抢 VM、不 reboot、不改产品代码（本阶段仅判据/审计）。
+
+---
+
+## 10. 对齐记录（sim-impl，2026-11-15）
+
+- sim-impl 持有 task-101/102/103（claim/in_progress），正在 EC-Sim 仓实现；计划产物：`docs/CNC-E2E-PROFILE.md`+启动/复位脚本+lcec XML（101）；`POST /fault`、`/fault/status`+运行期故障应用与审计（102）；`docs/CNC-E2E-OBSERVABILITY.md`+`/state` run_id/master/slaves、`/events?since=`、metrics 扩展（103）。
+- 现状确认：`/metrics` 无 WKC/jitter（WKC 仅 `/topology` sm2/sm3 hex 与内核侧；EC-Sim 无 master WKC 计数）；无 `/fault`；无 `run_id`；`ack_latency_ms` SIM 侧无真实值（计划 null，由桥侧测）。
+- 可复用资产：`plugins/cnc-csp-servo/plugin.yaml`（manifest sha256 `5f96adc1…`）、`scripts/spikes/tap-cia402-multi-slave-probe.sh`、`scripts/spikes/tap-live-state-probe.sh`、CNC 仓 `scripts/vm-verify/c5-stack-up.sh`（3×CiA402 `--slaves 3`）、`docs/verification/2026-11-14-b62-al-telemetry.md`。
+- 约束：C5 结束（11-15 18:25）前不碰 CNC VM、不 reboot；EC-Sim VM 做 3×CSP 连续 3 次 3/3 OP；C4 浏览器/DOD-07 记 PAUSED；DOD-12 PASS 保留。
+- 审计规则：所有产物先按 **PENDING**，我独立复跑/取证后才可改 PASS/FAIL。
+
+## 11. Lead 裁决落地（2026-11-15，m01525）
+
+1. **AL 运行期注入**：v1.0 E2E **不作为必验**（降 P1/可选）；P0 只保 F-LINK/F-PROC/F-SDO；AL 显示测试优先 `--al-error` 启动参数或故障模板；与 BL-20 冲突则记 P1 待做、不阻塞 E2E。
+2. **run_id**：先做 **harness 侧关联**（脚本/manifest 带 run_id，SIM `/events` 按时间戳对齐）；控制面加字段列 **P1**、不改现有协议。
+3. **owner**：task-101/102/103 = **sim-impl**；我负责审计与判据维护；sim-pm 写 `CNC-E2E-SUPPORT.md`。
+4. **VM 窗口**：C5 18:25 结束 → 18:25–18:45 收尾归档；18:45–19:30 Lead 独占 CNC VM 做 G1 组件像素/10 页重截；19:30–24:00 CNC E2E 功能验证（SIM 固定场景+故障注入）；SIM 任务在 EC-Sim VM 随时进行、不占 CNC VM。
+5. **C4/DOD-07 PAUSED** 已回写 task-78 rev6（标题前缀 [PAUSED]，证据保留、不重判）。
+6. **REF 对齐**：task-101 的 REF 状态需与 cnc-impl 的 demo-state 对齐后写入 `REF.json`（D1/D3）。
+
+> 裁决不改变本文件判定规则：PENDING 不得写成 PASS；FAIL 须可复现；PAUSED 不计 FAIL。
