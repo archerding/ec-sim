@@ -34,14 +34,14 @@ CNC 侧 D1–D3 证据仍 PENDING。
 
 ## 2. C1：抖动来源与量化
 
-脚本：`scripts/spikes/c1_jitter_probe.py` + `cnc-e2e-jitter-probe.sh`（300 周期，目标 20ms）。
+脚本：`scripts/spikes/c1_jitter_probe.py` + `cnc-e2e-jitter-probe.sh`（200 样本，目标 20ms）。
 
 | 指标 | mean | std | p95 | p99 | max |
 | --- | --- | --- | --- | --- | --- |
-| 主站发送间隔（ms） | 20.424 | 0.149 | 20.636 | 20.714 | 21.052 |
-| `GET /state` 往返（ms） | 0.546 | 0.082 | 0.696 | 0.709 | 0.803 |
+| 主站发送间隔（ms） | 20.4192 | 0.1453 | 20.6501 | 20.7006 | 20.8309 |
+| `GET /state` 往返（ms） | 0.54 | 0.0646 | 0.6423 | 0.7219 | 0.7219 |
 
-- 帧率：900 帧 / 6.13 s = 146.88 fps（3 站合计）= 48.96 fps/站；WKC 恒 3。
+- 帧率：600 帧 / 4.084 s = 146.91 fps（3 站合计）= 48.97 fps/站；WKC 恒 3。
 - 来源分层：①合成主站 Python sleep + 主机调度 + socket 唤醒；②serve 线程调度 +
   JSON 序列化；③`/state.master.fps` 是粗估（两次 serve 调用间帧差，可能瞬时 0/跳变），
   不作为抖动依据。
@@ -94,6 +94,10 @@ result/command/commit/binary/manifest/files+sha256；目录型 artifact 保留�
 - 证据：`assets/cnc-e2e/reset-idempotency/`、`runs/reset-idem-*-r{1,2,3}/`。
 
 ## 6. 边界
+
+- 部署口径：验证机源码应以某个 commit 的 `git archive` 为准并记录 commit；本轮现场先用了
+  `2bb8fa1` 树，归档工具其后在 `f016506`/`33bf2fb` 修正（保留子目录、字节稳定），
+  仓内 runs 证据已用修正版工具重新生成并校验；后续复跑按 commit 部署，避免脚本/证据漂移。
 
 - 上述均为 EC-Sim 验证机自证（UDS 合成主站/TAP），不代表 CNC VM 上 lcec/HMI 行为；
   CNC VM 未触碰（G1 截图占用中），联调窗口待 G1 判定。
