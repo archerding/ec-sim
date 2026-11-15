@@ -1,0 +1,15 @@
+RUN_ID reset-idem-20261115082347-r1
+MANIFEST id=com.ecsim.profile.cnc-csp-servo name=CNC virtual-loop CSP servo (SIMULATED) vendor=0x00000EC5 product=0x0000E5E3
+READY uds=/tmp/ecsim-reset.sock
+BEHAVIOR cia402 sm2_out=0x1100/7B sm3_in=0x1110/11B
+BEHAVIOR cia402 tx_layout=LcecCsp tx_indices=[24641, 24676, 24684, 24673]
+SERVE (live) http://127.0.0.1:18137 routes=/state,/dict
+AL_EVENT slave=0 from=0x01 to=0x02 from_code=0x0000 code=0x0000 watchdog=false at_ms=1794702227070
+AL_EVENT slave=1 from=0x01 to=0x02 from_code=0x0000 code=0x0000 watchdog=false at_ms=1794702227070
+AL_EVENT slave=2 from=0x01 to=0x02 from_code=0x0000 code=0x0000 watchdog=false at_ms=1794702227070
+AL_EVENT slave=0 from=0x02 to=0x04 from_code=0x0000 code=0x0000 watchdog=false at_ms=1794702227070
+AL_EVENT slave=1 from=0x02 to=0x04 from_code=0x0000 code=0x0000 watchdog=false at_ms=1794702227070
+AL_EVENT slave=2 from=0x02 to=0x04 from_code=0x0000 code=0x0000 watchdog=false at_ms=1794702227070
+AL_EVENT slave=0 from=0x04 to=0x08 from_code=0x0000 code=0x0000 watchdog=false at_ms=1794702227071
+AL_EVENT slave=1 from=0x04 to=0x08 from_code=0x0000 code=0x0000 watchdog=false at_ms=1794702227071
+AL_EVENT slave=2 from=0x04 to=0x08 from_code=0x0000 code=0x0000 watchdog=false at_ms=1794702227071

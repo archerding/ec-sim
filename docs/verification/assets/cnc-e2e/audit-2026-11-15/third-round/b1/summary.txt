@@ -1,0 +1,14 @@
+stage=process-fault
+date=2026-11-15T08:25:19+08:00
+binary=target/release/ec-sim-esc
+binary_sha256=66587fa0094a94190eb82fb7ec42bd7377a3a0ab61369fc191c1ce7ba2f30c1f
+manifest=plugins/cnc-csp-servo/plugin.yaml
+manifest_sha256=5f96adc131c19f1448b29f8cd30577e20a12e72ed7fd8ae4ffd2d80f3dcd45e9
+slaves=3 behavior=cia402 hold_seconds=8 port=18135
+note=EC-Sim process killed and restarted; run_id across restarts recorded
+run_a=proc-fault-a-1794702319
+run_b=proc-fault-b-1794702319
+state_a_op_slaves=3
+state_b_op_slaves=3
+control_plane_unreachable_after_kill=yes
+RESULT: PASS（进程 kill → 控制面不可达 → 重启 3/3 OP，run_id proc-fault-a-1794702319 → proc-fault-b-1794702319；binary_sha256=66587fa0094a94190eb82fb7ec42bd7377a3a0ab61369fc191c1ce7ba2f30c1f manifest_sha256=5f96adc131c19f1448b29f8cd30577e20a12e72ed7fd8ae4ffd2d80f3dcd45e9）

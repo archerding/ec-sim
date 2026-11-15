@@ -1,0 +1,4 @@
+{
+  "equivalence": "POST /probe tripped=true→false（探针触发信号等价）",
+  "target": 0
+}

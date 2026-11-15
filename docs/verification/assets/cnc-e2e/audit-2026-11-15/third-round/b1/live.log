@@ -1,0 +1,4 @@
+RUN_ID ecsim-1794702245-122796
+MANIFEST id=com.ecsim.profile.cia402-servo name=Generic CiA 402 position/velocity servo (SIMULATED) vendor=0x00000EC5 product=0x0000E5E0
+READY uds=/tmp/ecsim-invalid-slave.sock
+SERVE (live) http://127.0.0.1:18111 routes=/state,/dict

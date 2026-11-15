@@ -1,0 +1,9 @@
+RUN_ID ecsim-1794702246-122830
+READY uds=/tmp/ecsim-al-telemetry.sock
+SERVE (live) http://127.0.0.1:18133 routes=/state,/dict
+AL_EVENT slave=0 from=0x01 to=0x02 from_code=0x0000 code=0x0000 watchdog=false at_ms=1794702246509
+AL_EVENT slave=0 from=0x02 to=0x04 from_code=0x0000 code=0x0000 watchdog=false at_ms=1794702246510
+AL_EVENT slave=0 from=0x04 to=0x08 from_code=0x0000 code=0x0000 watchdog=false at_ms=1794702246510
+AL_EVENT slave=0 from=0x08 to=0x14 from_code=0x0000 code=0x001B watchdog=true at_ms=1794702246558
+AL_EVENT slave=0 from=0x14 to=0x04 from_code=0x001B code=0x0000 watchdog=false at_ms=1794702246559
+AL_EVENT slave=0 from=0x04 to=0x08 from_code=0x0000 code=0x0000 watchdog=false at_ms=1794702246559

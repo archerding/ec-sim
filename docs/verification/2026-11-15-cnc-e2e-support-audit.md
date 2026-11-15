@@ -1,6 +1,6 @@
 # CNC 端到端闭环测试 · EC-Sim 支撑验收判据与审计
 
-> 版本：**v0.4（task-102 独立复核 PASS；task-101/103 同批判定，剩余项如实标 PENDING/FAIL）** ｜ 日期：**2026-11-15** ｜ 作者：行业专家（sim-expert）
+> 版本：**v0.5（第三轮缺口复核 `33bf2fb`：task-103 C1/C3/C4、task-101 A4/A7 PASS；A3 REF.json 仍 PENDING；task-102 维持 PASS）** ｜ 日期：**2026-11-15** ｜ 作者：行业专家（sim-expert）
 > 任务：**task-101 / task-102 / task-103**（CNC E2E 支撑）｜ 性质：**支撑性验收判据 + 独立审计记录**
 > 用户指令（2026-11-15）：EC-Sim 暂停其他任务，转去支撑 CNC 端到端闭环测试。
 > 边界：本文件**不替代** Gate U DoD / CNC-ACCEPTANCE / EC-Sim 产品验收；EC-Sim 侧为仿真从站，**不构成**实时性/一致性/安全/认证保证；不得以本文件写 v1.1/认证/PASS。
@@ -11,14 +11,14 @@
 
 | 项 | 状态 | 依据/说明 |
 |---|---|---|
-| task-101 固定场景（3×CiA402 CSP + IO、一键起停/重置） | **🟡 部分 PASS（SIM 侧）** | `7a919cf` 独立复跑：A2 3/3 轮 3/3 OP、A6 PASS；A1/A4/A7 部分；A3 `REF.json` PENDING（CNC 侧 demo-state 未对齐）、A5 见 §12；证据 `assets/cnc-e2e/audit-2026-11-15/fixed-scene-v2/` |
-| task-102 故障注入（AL/链路/DC/SDO/掉线 + 恢复） | **✅ PASS（SIM 侧，Lead 口径）** | `7a919cf` 独立复跑：fault-matrix 24 项 PASS（含 `pdo_corrupt`）、process-fault PASS、B-1 `29 PASS/0 FAIL/0 SKIP`；B1/B2/B5/B6 达成；CNC HMI 联动 PENDING（D2，CNC 侧）；AL 运行期注入 P1/可选；证据 `audit-2026-11-15/{fault-matrix-v2,process-fault-v2,b1-29-v2}` |
-| task-103 可观测性与证据矩阵 | **🟡 部分（C1/C3 PENDING、C4 FAIL；C2/C5 PASS）** | `/state` run_id、`/events?since`、metrics 扩展已落地；C1 抖动来源缺、C2 10min 事件连续性未取、C3 `runs/<run_id>/` 未落地、**C4 矩阵仅覆盖 4/10 类 → FAIL**；C5 PASS |
+| task-101 固定场景（3×CiA402 CSP + IO、一键起停/重置） | **🟡 部分 PASS（SIM 侧）** | `33bf2fb` 独立复核：A2（3 轮×20s 3/3 OP）、**A4 PASS**（reset 44/43/42ms、≤30s、REF 6 字段一致、无残留）、A5（10min soak）、A6、**A7 PASS**（`runs/<run_id>` 归档+sha256 校验）；A1 部分（8 IO 混合拓扑 P1）；**A3 `REF.json` 仍 PENDING**（`REF.schema.json`/`REF.example.json` 已交付，`cnc.status=PENDING`，等 cnc-impl 实测值）。证据 `assets/cnc-e2e/audit-2026-11-15/`、`assets/cnc-e2e/reset-idempotency/`、`runs/reset-idem-*` |
+| task-102 故障注入（AL/链路/DC/SDO/掉线 + 恢复） | **✅ PASS（SIM 侧，Lead 口径；文档已收口）** | `7a919cf` 独立复跑：fault-matrix 24 项 PASS（含 `pdo_corrupt`）、process-fault PASS、B-1 `29→32 PASS/0 FAIL/0 SKIP`；B1/B2/B5/B6 达成；CNC HMI 联动 PENDING（D2，CNC 侧）；AL 运行期注入 P1/可选；`33bf2fb` 补 `docs/verification/2026-11-15-cnc-e2e-gap-closure.md` 与 B-1 32 日志 | 
+| task-103 可观测性与证据矩阵 | **✅ PASS（SIM 侧，含边界）** | `33bf2fb` 独立复核：**C1 PASS**（抖动来源分层+量化：200 样本主站间隔 p95 20.681ms/std 0.170、`/state` p95 0.658ms、48.94 fps/站、WKC 3；边界见 §13）；C2 10min 事件/seq 单调；**C3 PASS**（`runs/<run_id>/` 归档 5/5 verify PASS）；**C4 PASS（10/10 类，SIM 可观测等价路径）**；C5 PASS；CNC 侧 D1–D3 仍 PENDING |
 | C4 浏览器 4h / DOD-07 | **PAUSED（用户指令）** | 保留历史 NOT-JUDGED 记录，不重判 FAIL、不写 PASS；**已回写 task-78 rev6**（标题前缀 [PAUSED]），恢复后按 task-78 重试 |
 | DOD-12 | **PASS（保留）** | 既有判定 `7487186` 不变 |
 | 资源 P0 | **PAUSED** | 用户指令暂停 |
 | EC-Sim HMI 设计线 | **HOLD** | task-89；G2 `9dd0194`、G5 判据 `f313f61` 保留不删 |
-| C5 24h 长稳 | **运行中** | ETA 2026-11-15 18:25；E2E 执行与取证**必须避开 C5**、不抢 VM、不 reboot |
+| C5 24h 长稳 | **已提前结束（EARLY-STOP/INCOMPLETE）** | 2026-11-15 07:03 用户授权提前结束：约 12h37m、151 采样、3/3 OP、无 fail；**不构成 24h PASS**；重跑见 task-104（另排单占机）。E2E 执行与取证须避开其归档窗口 |
 
 > 本文件所有未实施项一律 **PENDING**，不写 PASS；已实施但不符合判据才写 FAIL；PAUSED 不计入 FAIL。
 
@@ -174,3 +174,42 @@
 - **清理**：复跑后无 `ec-sim-esc`/`simple_ng` 残留、无 1813x 监听、无 ecsim/tapcnc TAP；未触碰 CNC VM。
 - **证据哈希**：`docs/verification/assets/cnc-e2e/audit-2026-11-15/sha256-v2.txt`（78 文件）。
 - **判定**：task-102 ✅ PASS（SIM 侧，Lead 口径）；task-101 🟡 部分（A2/A5/A6 PASS；A1 部分；A3/A4/A7 PENDING）；task-103 🟡 部分（C2/C5 PASS；C1/C3 PENDING；C4 FAIL：矩阵仅 4/10 类）。
+
+## 13. 第三轮缺口复核（2026-11-15，`33bf2fb`）
+
+- **被测**：EC-Sim `origin/main` `33bf2fb`（`c47a747` C4/C1/A4 实现、`f016506` 归档保留子目录、`8050f1a`/`33bf2fb` 归档字节稳定）；binary sha256 `66587fa0094a94190eb82fb7ec42bd7377a3a0ab61369fc191c1ce7ba2f30c1f`（1,157,928 B）/manifest `5f96adc1…45e9`。gap 脚本从该 commit 取出部署到 EC-Sim 验证机 `/root/ecsim-gap`，逐字节核对：`cnc-e2e-c4-matrix.sh` `359e03ef…`、`c4_matrix_probe.py` `4119bbb4…`、`cnc-e2e-jitter-probe.sh` `450d0441…`、`c1_jitter_probe.py` `d40c4380…`、`cnc-e2e-reset-idempotency.sh` `c4d6d9df…`、`e2e_run_archive.py` `8b714d76…`、`run-all-probes.sh` `fabf2732…`。
+- **部署备注（非产品缺陷）**：VM 初始 `/root/ecsim-gap/scripts/spikes/e2e_run_archive.py` 为旧版 `1e833592…`（08:10 部署），与 `33bf2fb` 的 `8b714d76…` 不同；审计以 commit 版本覆盖后复跑。建议 sim-impl 后续部署同步提交版本，避免“脚本与证据版本”漂移。
+
+### 13.1 独立复跑（EC-Sim VM，未触碰 CNC VM）
+
+| 项 | 命令 | 结果 |
+|---|---|---|
+| C4 10 类 | `OUT_DIR=/tmp/audit3/c4 RUNS_ROOT=/tmp/audit3 EC_SIM_BIN=target/release/ec-sim-esc bash scripts/spikes/cnc-e2e-c4-matrix.sh` | EXIT=0 / **RESULT: PASS（10 类，0 失败）**；归档 66 文件 verify PASS；run_id `audit3-c4-20261115082335` |
+| C1 抖动 | `... cnc-e2e-jitter-probe.sh` | EXIT=0 / PASS；**200 样本**：间隔 mean 20.432ms、std 0.170ms、p95 20.681ms、p99 20.991ms；`/state` p95 0.658ms；146.82 fps（48.94/站）；WKC=3 |
+| A4 reset | `... cnc-e2e-reset-idempotency.sh` | EXIT=0 / PASS；3 轮 **44/43/42ms**（≤30s）、`REF_EQUAL runs=3 fields=6`、停止后无进程/socket/端口 |
+| A7/C3 归档 | `python3 scripts/spikes/e2e_run_archive.py verify --dir .../runs/<run_id>` | 仓内 5 个 run 全部 PASS：c4（66 文件）、jitter（6）、reset r1/r2/r3（各 4）；`run.json` 含 commit/binary/manifest/command/files+sha256 |
+| B-1 整轮 | `LOG_DIR=/tmp/audit3/b1 bash scripts/spikes/run-all-probes.sh` | **32 PASS / 0 FAIL / 0 SKIP**（含 `c4-matrix`/`reset-idempotency`/`jitter`） |
+| A3 REF | 读 `docs/cnc-e2e/{REF.schema.json,REF.example.json,cnc-e2e-3csp.xml}` | schema/example 可解析、required 9 字段齐全、`ref_state` 7 组、`cnc.status=PENDING`；**`REF.json` 未交付** |
+
+- C4 各类断言为实测派生（program 逐点跟随+bit10、jog 增量 100、MDI 到位、home 位置 0+bit12+mode 6、override 比率 0.5、tool SDO 0x60FF 写读一致+审计、offset PDO 平移、probe 事件成对、alarm 0x0011→0x0000、link-loss frames 停更→恢复增长）；类目录 `assets/cnc-e2e/c4-matrix/{program,jog,mdi,home,override,tool,offset,probe,alarm,link-loss}/` 各有 `result.json`/`events.jsonl`。
+- C1 `jitter.json` 明确来源分层：master interval=合成 UDS 主站 `sleep`+主机调度+socket 唤醒；`/state` 往返=serve 线程+JSON 序列化；`/state.master.fps` 为粗估不作抖动依据；WKC 仅 SIM 帧回复值，**内核/IgH WKC 不由本探针提供**。
+
+### 13.2 判定
+
+| 判据 | 判定 | 说明 |
+|---|---|---|
+| task-102 | **✅ PASS（维持）** | 7a919cf 三项独立复跑通过；`33bf2fb` 补 gap-closure 文档与 B-1 32 日志，文档收口完成（CNC HMI 联动 D2 仍 PENDING） |
+| task-101 A4 | **✅ PASS（SIM 侧）** | reset 44/43/42ms、REF 6 字段级一致、无残留；CNC 侧 stack-down（IgH/lcec/LinuxCNC）不在脚本内，D1–D3 PENDING |
+| task-101 A7 | **✅ PASS** | `runs/<run_id>/{run.json,README.md,sha256sums.txt}` + verify 5/5；目录型 artifact 保留子目录（`c4-matrix/program/...`） |
+| task-101 A3 | **🟡 PENDING** | schema+example 与字段映射已交付，但 **`REF.json` 仍 PENDING**（`cnc.status=PENDING`，等 cnc-impl 实测值）；未达“REF.json 与 CNC 侧实测一致”→不得写 PASS |
+| task-103 C1 | **✅ PASS（SIM 侧，含边界）** | 来源与分位数可复跑；见 13.1；不代表 CNC VM/IgH 周期抖动 |
+| task-103 C3 | **✅ PASS** | 按 run 归档与 sha256 校验；5/5 PASS；`run.json` commit 记产品代码 `7a919cf`（gap 脚本不改二进制，已文档化） |
+| task-103 C4 | **✅ PASS（SIM 可观测等价路径）** | 10/10 类；**不是 CNC HMI/桥/LinuxCNC 操作证据**，CNC 侧 D1–D3 仍 PENDING |
+| task-103 总 | **✅ PASS（SIM 侧）** | C1/C2/C3/C4/C5 全 PASS；CNC 侧证据另判，不并入本 PASS |
+
+### 13.3 文档修正与残留
+
+- `2026-11-15-cnc-e2e-gap-closure.md` §2 写“300 周期”，但仓内 `jitter.json` 为 **200 samples**（count 199）；表内 p95 写 20.636ms，仓内实测 **20.6501ms**（本轮独立复跑 20.681ms）。判定不受影响，建议下一版把“300 周期”改为 200/SAMPLES 可配。
+- C4 的 tool/offset/home 是 SIM 等价路径（tool=SDO 0x60FF 写读、offset=PDO 平移、home=Tier0 HM），不得表述为 CNC M6/WCS/寻零开关验证；gap 文档已标注，保持。
+- 边界不变：8 路 IO 混合拓扑 P1、DC 丢失 NOT-JUDGED、`ack_latency_ms` 占位、到期清理依赖数据面帧；不宣称认证/实时性 SLA；未触碰 CNC VM。
+- 复现命令与证据路径：见 `docs/verification/2026-11-15-cnc-e2e-gap-closure.md` §1–§5 与 `assets/cnc-e2e/{c4-matrix,jitter,reset-idempotency,runs,b1-32.log}`；**本轮独立复跑原始产物已归档在 `assets/cnc-e2e/audit-2026-11-15/third-round/`（226 文件 + `sha256sums.txt` + README，含 `/tmp/audit3` 的 c4/jitter/reset/b1/runs 与四份日志）。**

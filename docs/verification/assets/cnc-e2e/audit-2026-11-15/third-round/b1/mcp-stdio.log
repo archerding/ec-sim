@@ -1,0 +1,32 @@
+ok   initialize 回显 protocolVersion
+ok   initialize serverInfo.name
+ok   通知不产生响应（下一条响应 id=2）
+ok   tools/list 恰好 9 个工具
+ok   tools/list 工具集合与目录一致
+ok   工具名均为 ecsim_*
+ok   不含任何写工具
+ok   ecsim_health 返回非空文本
+ok   ecsim_state 返回 state-v1
+ok   ecsim_dict 返回 dict-v1
+ok   ecsim_sdo_read 返回 sdo-v1
+ok   未知工具 → TOOL_NOT_FOUND
+ok   缺必填参数 → BAD_ARGUMENT
+ok   静态模式下 live-only 工具 → 工具错误
+ok   未知方法 → JSON-RPC -32601
+ok   坏 JSON → JSON-RPC -32700
+ok   token 模式：缺 token → AUTH_REQUIRED
+ok   token 模式：错 token → FORBIDDEN
+ok   token 模式：正确 token → state-v1
+ok   审计：至少 3 条 tools/call JSON Lines
+ok   审计：每行含 ts_ms/duration_ms/ok
+ok   审计：失败调用 ok=false + error_code=TOOL_NOT_FOUND
+ok   实时模式：ecsim_state 含 live 字段
+ok   实时模式：ecsim_topology 返回 topology-v1
+ok   实时模式：ecsim_pdo 返回 pdo-v1
+ok   实时模式：ecsim_pdo_history 返回 pdo-history-v1
+ok   实时模式：ecsim_metrics 返回 Prometheus 文本
+ok   实时模式：受控写 0x6040 成功（产生审计）
+ok   实时模式：ecsim_sdo_audit 含写入事件
+ok   --serve-write 下 tools/list 不变（无写工具）
+ok   --serve-write 下读工具仍可用
+PASS: mcp-stdio 探针（9 只读工具、读写边界、--serve-write 下表不变、token 200/401/403、审计 JSONL、live-only 工具覆盖）

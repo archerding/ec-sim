@@ -1,0 +1,2 @@
+OK: /pdo 实时反映 SM2=beef、SM3=1234（只读快照）
+OK: --serve 实时 PDO 快照预回归通过

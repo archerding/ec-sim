@@ -1,0 +1,15 @@
+{
+  "class": "offset",
+  "run_id": "audit3-c4-20261115082335",
+  "ok": true,
+  "assertions": [
+    {
+      "name": "目标位置平移后实际位置一致",
+      "ok": true,
+      "detail": "[1000, 3500, 3000]"
+    }
+  ],
+  "notes": [
+    "CNC 侧 OFFSETS 写/生效证据 PENDING；SIM 侧只观察 PDO 平移"
+  ]
+}

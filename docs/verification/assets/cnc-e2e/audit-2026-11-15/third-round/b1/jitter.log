@@ -1,0 +1,9 @@
+[00:25:37] 启动 ec-sim-esc --uds（3×cnc-csp-servo，run_id=jitter-20261115082537）
+[00:25:37] 控制面就绪；测量 200 个周期
+JITTER_OK samples=200 frame_rate=146.67fps (48.89/slave) interval_mean=20.451ms std=0.149ms p95=20.671ms p99=20.718ms state_p95=0.610ms wkc=[3]
+[00:25:41] 归档 runs/jitter-20261115082537（binary=66587fa0094a94190eb82fb7ec42bd7377a3a0ab61369fc191c1ce7ba2f30c1f manifest=5f96adc131c19f1448b29f8cd30577e20a12e72ed7fd8ae4ffd2d80f3dcd45e9）
+ARCHIVED /root/ecsim-gap/docs/verification/assets/cnc-e2e/runs/jitter-20261115082537 files=6 result=PASS
+RESULT: PASS（6 个文件校验通过）
+[00:25:41] 抖动量化完成；证据：/root/ecsim-gap/docs/verification/assets/cnc-e2e/jitter 与 /root/ecsim-gap/docs/verification/assets/cnc-e2e/runs/jitter-20261115082537
+OK: jitter-20261115082537 jitter 量化（SIM 侧来源与分位数见 jitter.json）
+RESULT: PASS

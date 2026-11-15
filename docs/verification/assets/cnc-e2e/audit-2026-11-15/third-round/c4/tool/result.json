@@ -1,0 +1,25 @@
+{
+  "class": "tool",
+  "run_id": "audit3-c4-20261115082335",
+  "ok": true,
+  "assertions": [
+    {
+      "name": "SDO 下载 0x60FF 成功",
+      "ok": true,
+      "detail": "003060ff6000"
+    },
+    {
+      "name": "SDO 上传读回 750",
+      "ok": true,
+      "detail": "cmd=0x43 value=750"
+    },
+    {
+      "name": "/sdo-audit 可用",
+      "ok": true,
+      "detail": "status=200"
+    }
+  ],
+  "notes": [
+    "CNC 侧刀具表 T/M6/TOUCH PLATE 证据 PENDING；SIM 侧仅证明参数面 SDO 可写可读"
+  ]
+}

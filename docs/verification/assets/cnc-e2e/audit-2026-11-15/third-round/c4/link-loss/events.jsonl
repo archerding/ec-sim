@@ -1,0 +1,4 @@
+{"seq": 25, "ts": 1794702220700, "run_id": "audit3-c4-20261115082335", "type": "fault_injected", "slave": null, "details": {"fault": "link_loss", "target": null, "duration_ms": 600, "modeled": true, "before": {"al_status": "0x00", "al_status_code": "0x0000"}, "after": {"al_status": "0x00", "al_status_code": "0x0000"}, "confirm": true, "who": "http", "run_id": "audit3-c4-20261115082335"}}
+{"seq": 26, "ts": 1794702220700, "run_id": "audit3-c4-20261115082335", "type": "link", "slave": null, "details": {"state": "down", "duration_ms": 600}}
+{"seq": 27, "ts": 1794702222724, "run_id": "audit3-c4-20261115082335", "type": "fault_cleared", "slave": null, "details": {"fault": "link_loss", "duration_ms": 600, "applied_count": 1}}
+{"seq": 28, "ts": 1794702222724, "run_id": "audit3-c4-20261115082335", "type": "link", "slave": null, "details": {"state": "up"}}

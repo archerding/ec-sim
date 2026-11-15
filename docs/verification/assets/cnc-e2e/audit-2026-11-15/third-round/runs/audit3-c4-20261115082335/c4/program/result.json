@@ -1,0 +1,20 @@
+{
+  "class": "program",
+  "run_id": "audit3-c4-20261115082335",
+  "ok": true,
+  "assertions": [
+    {
+      "name": "程序轨迹点逐点跟随",
+      "ok": true,
+      "detail": "[(100, 100), (200, 200), (300, 300), (400, 400), (500, 500)]"
+    },
+    {
+      "name": "每个点 Target reached",
+      "ok": true,
+      "detail": "['0x637', '0x637', '0x637', '0x637', '0x637']"
+    }
+  ],
+  "notes": [
+    "CNC 侧程序装载/循环启动证据 PENDING（D1/D3）"
+  ]
+}

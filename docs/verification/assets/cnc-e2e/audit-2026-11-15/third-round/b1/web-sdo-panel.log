@@ -1,0 +1,2 @@
+OK: node --check web/app.js 语法通过
+OK: Web SDO 面板静态检查通过（SDO 10 控件 + H1 11 控件；SDO 13 逻辑标记 + H1 23 标记；无 DOM 自动化）

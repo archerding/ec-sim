@@ -1,0 +1,2 @@
+OK: PDO 具名解码 6 项（0x6040=15、0x6060=8、0x6071=300、0x6041=0x237、0x6061=8、0x6077=-100；名称=Controlword/Torque actual value）
+OK: /pdo 具名解码预回归通过

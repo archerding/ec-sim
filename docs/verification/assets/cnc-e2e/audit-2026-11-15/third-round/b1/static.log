@@ -1,0 +1,2 @@
+RUN_ID ecsim-1794702245-122791
+SERVE http://127.0.0.1:18110 routes=/state,/dict

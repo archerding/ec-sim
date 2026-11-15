@@ -1,0 +1,25 @@
+{
+  "class": "alarm",
+  "run_id": "audit3-c4-20261115082335",
+  "ok": true,
+  "assertions": [
+    {
+      "name": "注入 200 且 al_code=0x0011/state error bit",
+      "ok": true,
+      "detail": "{'index': 0, 'station_address': '0x0000', 'al_code': '0x0011', 'state': '0x18', 'op': True, 'frames_in': 255, 'frames_out': 255, 'frames_dropped': 0, 'datagrams_hit': 255, 'wkc_errors': 0}"
+    },
+    {
+      "name": "到期恢复 0x0000/op=true",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "al_error 事件",
+      "ok": true,
+      "detail": "events=2"
+    }
+  ],
+  "notes": [
+    "CNC 侧报警/ack_alarm 证据 PENDING；AL 运行期注入为 P1，不作 task-102 P0 判据"
+  ]
+}

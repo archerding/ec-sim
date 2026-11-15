@@ -1,0 +1,6 @@
+=== SOEM slaveinfo（TAP，2 个 CiA402 从站）===
+OK: slaveinfo 2 个从站（workcounter 6、Rx 56bits / Tx 88bits）
+=== simple_ng + 控制面（2 从站，OP / PDO 具名值）===
+OK: /topology 2/2 站 OP；/pdo?slave=0 decoded 含 0x6040,0x6041,0x6060,0x6061,0x6064,0x606C,0x607A
+OK: simple_ng 映射 14O+22I bytes、全部从站 operational（该构建不打印 WKC；WKC 由 slaveinfo 的 Calculated workcounter 6 断言）
+OK: TAP + 2 个 CiA402 从站（cnc-csp-servo）预回归通过

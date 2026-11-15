@@ -1,0 +1,42 @@
+[
+  {
+    "statusword": 1591,
+    "position": 0,
+    "velocity": 0,
+    "mode": 8,
+    "tx_hex": "3706000000000000000008",
+    "t_ms": 1794702217115
+  },
+  {
+    "statusword": 1591,
+    "position": 0,
+    "velocity": 0,
+    "mode": 8,
+    "tx_hex": "3706000000000000000008",
+    "t_ms": 1794702217216
+  },
+  {
+    "statusword": 1591,
+    "position": 2000,
+    "velocity": 0,
+    "mode": 8,
+    "tx_hex": "3706d00700000000000008",
+    "t_ms": 1794702218220
+  },
+  {
+    "statusword": 1591,
+    "position": 2000,
+    "velocity": 0,
+    "mode": 8,
+    "tx_hex": "3706d00700000000000008",
+    "t_ms": 1794702218220
+  },
+  {
+    "statusword": 1591,
+    "position": 3000,
+    "velocity": 0,
+    "mode": 8,
+    "tx_hex": "3706b80b00000000000008",
+    "t_ms": 1794702219225
+  }
+]

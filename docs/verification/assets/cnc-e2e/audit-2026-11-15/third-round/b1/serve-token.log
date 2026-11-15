@@ -1,0 +1,12 @@
+OK: 未配置 token 时 /state → 200（现状不变）
+OK: token 变量为空/未设置时 /state → 200（现状不变）
+OK: token 变量为空/未设置时 /state → 200（现状不变）
+OK: 缺 Authorization → 401 + WWW-Authenticate: Bearer
+OK: 带 query 的受保护路由同样 401
+OK: Bearer token 错误 → 403
+OK: 非 Bearer scheme → 401
+OK: 正确 token → /state、/dict、/sdo 均 200
+OK: 静态资源 / 与 /app.js、/health 不鉴权（浏览器可先加载外壳）
+OK: 实时模式 token 保护 POST /sdo、/sdo-audit、/metrics、/events，鉴权后写生效
+OK: --serve-token-env 缺少 --serve → 退出码 2
+OK: serve-token 预回归通过（静态 + 实时）

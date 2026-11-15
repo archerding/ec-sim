@@ -1,0 +1,36 @@
+[00:25:27] 启动 ec-sim-esc --uds（3×cnc-csp-servo，run_id=c4-matrix-20261115082527）
+[00:25:27] 控制面就绪；开始 C4 10 类矩阵
+RUN_ID c4-matrix-20261115082527
+ENABLED {'statusword': 1591, 'position': 0, 'velocity': 0, 'mode': 8, 'tx_hex': '3706000000000000000008', 't_ms': 1794702328102}
+OK   [program] 程序轨迹点逐点跟随 [(100, 100), (200, 200), (300, 300), (400, 400), (500, 500)]
+OK   [program] 每个点 Target reached ['0x637', '0x637', '0x637', '0x637', '0x637']
+OK   [jog] jog 每次 +100 跟随 [600, 700, 800, 900, 1000]
+OK   [mdi] MDI 单目标到位 {'statusword': 1591, 'position': 5000, 'velocity': 0, 'mode': 8, 'tx_hex': '3706881300000000000008', 't_ms': 1794702329036}
+OK   [home] 回零：位置 0 + Homing attained(bit12) {'statusword': 4663, 'position': 0, 'velocity': 0, 'mode': 6, 'tx_hex': '3712000000000000000006', 't_ms': 1794702329238}
+OK   [override] 100% 速率增量 2000 2000
+OK   [override] 50% 速率增量 1000 1000
+OK   [override] 速率比 ≈0.5 0.500
+OK   [tool] SDO 下载 0x60FF 成功 003060ff6000
+OK   [tool] SDO 上传读回 750 cmd=0x43 value=750
+OK   [tool] /sdo-audit 可用 status=200
+OK   [offset] 目标位置平移后实际位置一致 [1000, 3500, 3000]
+OK   [probe] probe 置位 200 200
+OK   [probe] /probe 读回 tripped=true True
+OK   [probe] probe 清除 200 200
+OK   [probe] probe_state 事件成对 events=2
+OK   [alarm] 注入 200 且 al_code=0x0011/state error bit {'index': 0, 'station_address': '0x0000', 'al_code': '0x0011', 'state': '0x18', 'op': True, 'frames_in': 255, 'frames_out': 255, 'frames_dropped': 0, 'datagrams_hit': 255, 'wkc_errors': 0}
+OK   [alarm] 到期恢复 0x0000/op=true 
+OK   [alarm] al_error 事件 events=2
+OK   [link-loss] 注入 200 200
+OK   [link-loss] 期间 frames 停更 {0: 290, 1: 290, 2: 290} -> {0: 290, 1: 290, 2: 290}
+OK   [link-loss] 到期清理 
+OK   [link-loss] 恢复后 frames 增长 {0: 290, 1: 290, 2: 290} -> {0: 307, 1: 307, 2: 307}
+OK   [link-loss] link down/up 事件 events=2
+RESULT: PASS（10 类，0 个失败）
+[00:25:35] 归档 runs/c4-matrix-20261115082527（binary=66587fa0094a94190eb82fb7ec42bd7377a3a0ab61369fc191c1ce7ba2f30c1f manifest=5f96adc131c19f1448b29f8cd30577e20a12e72ed7fd8ae4ffd2d80f3dcd45e9）
+ARCHIVED /root/ecsim-gap/docs/verification/assets/cnc-e2e/runs/c4-matrix-20261115082527 files=66 result=PASS
+[00:25:35] 归档完成；校验 sha256
+RESULT: PASS（66 个文件校验通过）
+[00:25:35] C4 10 类覆盖通过；证据：/root/ecsim-gap/docs/verification/assets/cnc-e2e/c4-matrix 与 /root/ecsim-gap/docs/verification/assets/cnc-e2e/runs/c4-matrix-20261115082527
+OK: c4-matrix-20261115082527 C4 10/10 类（SIM 可观测等价路径）
+RESULT: PASS

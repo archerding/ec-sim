@@ -1,0 +1,2 @@
+OK: 实时 /state 反映 AL=0x02（PREOP）、frames_in=1
+OK: --serve 实时状态预回归通过（UDS + HTTP 同进程）

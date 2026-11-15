@@ -1,0 +1,17 @@
+[00:25:35] round 1/3：启动 reset-idem-20261115082535-r1
+RESET_OK elapsed_ms=43 run_id=reset-idem-20261115082535-r1 op_slaves=3 al_state=0x08
+[00:25:36] round 1：reset 到 REF 用时 43ms（上限 30000ms）
+[00:25:36] round 1：停止后无残留（进程/socket/端口）
+[00:25:36] round 2/3：启动 reset-idem-20261115082535-r2
+RESET_OK elapsed_ms=41 run_id=reset-idem-20261115082535-r2 op_slaves=3 al_state=0x08
+[00:25:36] round 2：reset 到 REF 用时 41ms（上限 30000ms）
+[00:25:36] round 2：停止后无残留（进程/socket/端口）
+[00:25:36] round 3/3：启动 reset-idem-20261115082535-r3
+RESET_OK elapsed_ms=44 run_id=reset-idem-20261115082535-r3 op_slaves=3 al_state=0x08
+[00:25:37] round 3：reset 到 REF 用时 44ms（上限 30000ms）
+[00:25:37] round 3：停止后无残留（进程/socket/端口）
+REF_EQUAL runs=3 fields=6
+[00:25:37] 3 次运行 REF 字段级一致
+[00:25:37] reset 幂等通过：3 轮均 ≤30000ms、回 REF、无残留
+OK: /root/ecsim-gap/docs/verification/assets/cnc-e2e/runs/reset-idem-20261115082535-r*（reset≤30000ms，REF 一致）
+RESULT: PASS

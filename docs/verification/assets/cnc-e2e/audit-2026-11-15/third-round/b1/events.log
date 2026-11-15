@@ -1,0 +1,2 @@
+OK: /events SSE 推送 state-v1（frames_in 0 -> 2），断开后 /state 仍 200
+OK: SSE /events 预回归通过

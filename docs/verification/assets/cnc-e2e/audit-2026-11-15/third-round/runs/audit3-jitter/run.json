@@ -1,0 +1,45 @@
+{
+  "schema": "ec-sim/e2e-run-v1",
+  "run_id": "audit3-jitter",
+  "created_at": "2026-11-15T08:23:56+08:00",
+  "result": "PASS",
+  "command": "cnc-e2e-jitter-probe.sh (3x cnc-csp-servo, UDS, port 18138)",
+  "commit": "unknown",
+  "binary_sha256": "66587fa0094a94190eb82fb7ec42bd7377a3a0ab61369fc191c1ce7ba2f30c1f",
+  "manifest_sha256": "5f96adc131c19f1448b29f8cd30577e20a12e72ed7fd8ae4ffd2d80f3dcd45e9",
+  "meta": {
+    "samples": "200"
+  },
+  "files": [
+    {
+      "file": "jitter/jitter.json",
+      "bytes": 1434,
+      "sha256": "af193fd09d936e66a722bf3408742cfc22f232adfa47dc9d333e5f74a2401cb8"
+    },
+    {
+      "file": "jitter/probe.out",
+      "bytes": 144,
+      "sha256": "edd90c59404455534e16b277a261a00f8a7739fef2e9a05f81db9ad7d67b7367"
+    },
+    {
+      "file": "jitter/server.log",
+      "bytes": 1252,
+      "sha256": "49e9832cbfe3e9aa8d2bfd3adf6f3e441ad8a9b23e82f030f2d6bbda5ecde9d3"
+    },
+    {
+      "file": "jitter/timeline.log",
+      "bytes": 318,
+      "sha256": "b74e01a91bf1986a61e28a02db50b595224aeea407f1f018657a4620d2eb0802"
+    },
+    {
+      "file": "c1_jitter_probe.py",
+      "bytes": 8832,
+      "sha256": "d40c438015641195ceb23a4bbed1952c8861750b74ed7d4ad3221d74debfe327"
+    },
+    {
+      "file": "uds_master_probe.py",
+      "bytes": 44133,
+      "sha256": "3aaa05636e8406496c8fe9ebed14b46b8936bacfdd035848455b87f7b302998c"
+    }
+  ]
+}

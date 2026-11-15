@@ -1,0 +1,96 @@
+ok   docs/skills/ 存在
+ok   MCP 工具目录存在
+ok   工具目录恰好 9 个只读工具（实际 9）
+ok   docs/skills/README.md 存在
+ok   README 声明只读边界
+ok   README 声明不构成认证/保证
+ok   README 索引列出 ecsim-diagnose
+ok   至少 1 个技能目录
+ok   ecsim-diagnose name 为 kebab-case：ecsim-diagnose
+ok   ecsim-diagnose name 与目录名一致
+ok   ecsim-diagnose description ≥20 字符
+ok   ecsim-diagnose 有 version
+ok   ecsim-diagnose mode=read-only
+ok   ecsim-diagnose tools ≥5（实际 9）
+ok   ecsim-diagnose 工具在目录内：ecsim_health
+ok   ecsim-diagnose 工具非写：ecsim_health
+ok   ecsim-diagnose 工具在目录内：ecsim_state
+ok   ecsim-diagnose 工具非写：ecsim_state
+ok   ecsim-diagnose 工具在目录内：ecsim_dict
+ok   ecsim-diagnose 工具非写：ecsim_dict
+ok   ecsim-diagnose 工具在目录内：ecsim_topology
+ok   ecsim-diagnose 工具非写：ecsim_topology
+ok   ecsim-diagnose 工具在目录内：ecsim_pdo
+ok   ecsim-diagnose 工具非写：ecsim_pdo
+ok   ecsim-diagnose 工具在目录内：ecsim_pdo_history
+ok   ecsim-diagnose 工具非写：ecsim_pdo_history
+ok   ecsim-diagnose 工具在目录内：ecsim_metrics
+ok   ecsim-diagnose 工具非写：ecsim_metrics
+ok   ecsim-diagnose 工具在目录内：ecsim_sdo_read
+ok   ecsim-diagnose 工具非写：ecsim_sdo_read
+ok   ecsim-diagnose 工具在目录内：ecsim_sdo_audit
+ok   ecsim-diagnose 工具非写：ecsim_sdo_audit
+ok   ecsim-diagnose 正文声明只读边界
+ok   ecsim-diagnose 正文声明快照/认证边界
+ok   ecsim-diagnose 含错误码 AUTH_REQUIRED
+ok   ecsim-diagnose 含错误码 MODE_UNAVAILABLE
+ok   ecsim-diagnose 至少 1 个示例 .jsonl
+ok   docs/skills/ecsim-diagnose/examples/live-session.jsonl 至少 2 行
+ok   live-session.jsonl:1 jsonrpc=2.0
+ok   live-session.jsonl:1 方法在白名单：initialize
+ok   live-session.jsonl:1 示例不含 token/凭据
+ok   live-session.jsonl:2 jsonrpc=2.0
+ok   live-session.jsonl:2 方法在白名单：notifications/initialized
+ok   live-session.jsonl:2 示例不含 token/凭据
+ok   live-session.jsonl:3 jsonrpc=2.0
+ok   live-session.jsonl:3 方法在白名单：tools/call
+ok   live-session.jsonl:3 工具在目录内：ecsim_state
+ok   live-session.jsonl:3 示例不含 token/凭据
+ok   live-session.jsonl:4 jsonrpc=2.0
+ok   live-session.jsonl:4 方法在白名单：tools/call
+ok   live-session.jsonl:4 工具在目录内：ecsim_topology
+ok   live-session.jsonl:4 示例不含 token/凭据
+ok   live-session.jsonl:5 jsonrpc=2.0
+ok   live-session.jsonl:5 方法在白名单：tools/call
+ok   live-session.jsonl:5 工具在目录内：ecsim_pdo
+ok   live-session.jsonl:5 示例不含 token/凭据
+ok   live-session.jsonl:6 jsonrpc=2.0
+ok   live-session.jsonl:6 方法在白名单：tools/call
+ok   live-session.jsonl:6 工具在目录内：ecsim_pdo_history
+ok   live-session.jsonl:6 示例不含 token/凭据
+ok   live-session.jsonl:7 jsonrpc=2.0
+ok   live-session.jsonl:7 方法在白名单：tools/call
+ok   live-session.jsonl:7 工具在目录内：ecsim_metrics
+ok   live-session.jsonl:7 示例不含 token/凭据
+ok   live-session.jsonl:8 jsonrpc=2.0
+ok   live-session.jsonl:8 方法在白名单：tools/call
+ok   live-session.jsonl:8 工具在目录内：ecsim_sdo_audit
+ok   live-session.jsonl:8 示例不含 token/凭据
+ok   docs/skills/ecsim-diagnose/examples/static-session.jsonl 至少 2 行
+ok   static-session.jsonl:1 jsonrpc=2.0
+ok   static-session.jsonl:1 方法在白名单：initialize
+ok   static-session.jsonl:1 示例不含 token/凭据
+ok   static-session.jsonl:2 jsonrpc=2.0
+ok   static-session.jsonl:2 方法在白名单：notifications/initialized
+ok   static-session.jsonl:2 示例不含 token/凭据
+ok   static-session.jsonl:3 jsonrpc=2.0
+ok   static-session.jsonl:3 方法在白名单：tools/list
+ok   static-session.jsonl:3 示例不含 token/凭据
+ok   static-session.jsonl:4 jsonrpc=2.0
+ok   static-session.jsonl:4 方法在白名单：tools/call
+ok   static-session.jsonl:4 工具在目录内：ecsim_health
+ok   static-session.jsonl:4 示例不含 token/凭据
+ok   static-session.jsonl:5 jsonrpc=2.0
+ok   static-session.jsonl:5 方法在白名单：tools/call
+ok   static-session.jsonl:5 工具在目录内：ecsim_state
+ok   static-session.jsonl:5 示例不含 token/凭据
+ok   static-session.jsonl:6 jsonrpc=2.0
+ok   static-session.jsonl:6 方法在白名单：tools/call
+ok   static-session.jsonl:6 工具在目录内：ecsim_dict
+ok   static-session.jsonl:6 示例不含 token/凭据
+ok   static-session.jsonl:7 jsonrpc=2.0
+ok   static-session.jsonl:7 方法在白名单：tools/call
+ok   static-session.jsonl:7 工具在目录内：ecsim_sdo_read
+ok   static-session.jsonl:7 示例不含 token/凭据
+ok   示例总行数 ≥6（实际 15）
+OK: agent-skills（1 个技能、9 个工具引用、15 行示例）

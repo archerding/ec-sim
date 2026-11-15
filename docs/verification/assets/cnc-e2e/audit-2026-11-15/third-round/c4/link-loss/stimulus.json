@@ -1,0 +1,4 @@
+{
+  "equivalence": "POST /fault link_loss 600ms（帧停更）；控制面仍 200",
+  "target": null
+}

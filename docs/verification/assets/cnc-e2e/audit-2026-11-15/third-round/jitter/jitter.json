@@ -1,0 +1,53 @@
+{
+  "fps_samples": {
+    "count": 40,
+    "max": 49.505,
+    "mean": 47.7119,
+    "min": 0.0
+  },
+  "frame_rate": {
+    "fps": 146.8233,
+    "frames": 600,
+    "per_slave": 3,
+    "per_slave_fps": 48.9411,
+    "seconds": 4.086544
+  },
+  "master_interval": {
+    "count": 199,
+    "max_ms": 21.1065,
+    "mean_ms": 20.4319,
+    "min_ms": 20.1506,
+    "p50_ms": 20.42,
+    "p95_ms": 20.6808,
+    "p99_ms": 20.9907,
+    "std_ms": 0.17
+  },
+  "note": "SIM 侧抖动量化；不代表 CNC VM/IgH 周期抖动，CNC 侧来源仍以 IgH/lcec 观测为准。",
+  "run_id": "audit3-jitter",
+  "samples": 200,
+  "schema": "ec-sim/e2e-jitter-v1",
+  "sources": {
+    "fps": "/state.master.fps 为粗估（serve 线程两次调用间帧差），不等于瞬时周期；本探针另给 frame_rate（窗口内 frames_in 增量/墙钟）",
+    "master_interval": "合成 UDS 主站 transact 起始间隔：Python sleep 粒度 + 主机调度 + socket 唤醒",
+    "state_latency": "GET /state HTTP 往返：serve 线程调度 + JSON 序列化",
+    "wkc": "EC-Sim 帧回复中的 WKC（SIM 帧处理结果）；内核/IgH WKC 不由本探针提供"
+  },
+  "state_latency": {
+    "count": 40,
+    "max_ms": 0.78,
+    "mean_ms": 0.465,
+    "min_ms": 0.3401,
+    "p50_ms": 0.4424,
+    "p95_ms": 0.6577,
+    "p99_ms": 0.78,
+    "std_ms": 0.1057
+  },
+  "target_interval_ms": 20.0,
+  "wkc": {
+    "max": 3,
+    "min": 3,
+    "values": [
+      3
+    ]
+  }
+}

@@ -1,0 +1,2 @@
+OK: 逐站查看（N=1 站地址 0x0002/SM2=beef；N=0 SM2=0000；越界/非法 slave → 404）
+OK: /state?slave=N 与 /pdo?slave=N 预回归通过

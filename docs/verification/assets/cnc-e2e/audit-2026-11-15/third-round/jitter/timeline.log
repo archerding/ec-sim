@@ -1,0 +1,5 @@
+[00:23:52] 启动 ec-sim-esc --uds（3×cnc-csp-servo，run_id=audit3-jitter）
+[00:23:52] 控制面就绪；测量 200 个周期
+[00:23:56] 归档 runs/audit3-jitter（binary=66587fa0094a94190eb82fb7ec42bd7377a3a0ab61369fc191c1ce7ba2f30c1f manifest=5f96adc131c19f1448b29f8cd30577e20a12e72ed7fd8ae4ffd2d80f3dcd45e9）
+RESULT: PASS（6 个文件校验通过）
+[00:23:56] 抖动量化完成；证据：/tmp/audit3/jitter 与 /tmp/audit3/runs/audit3-jitter

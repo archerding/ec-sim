@@ -1,0 +1,2 @@
+OK: /metrics Prometheus 文本两站计数单调（frames_in {0: 0, 1: 0} -> {0: 3, 1: 3}）
+OK: /metrics 预回归通过

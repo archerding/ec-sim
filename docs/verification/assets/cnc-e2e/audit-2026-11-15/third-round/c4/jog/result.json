@@ -1,0 +1,15 @@
+{
+  "class": "jog",
+  "run_id": "audit3-c4-20261115082335",
+  "ok": true,
+  "assertions": [
+    {
+      "name": "jog 每次 +100 跟随",
+      "ok": true,
+      "detail": "[600, 700, 800, 900, 1000]"
+    }
+  ],
+  "notes": [
+    "CNC 侧 jog 键/HAL 证据 PENDING；SIM 观察值为 RxPDO 0x607A → TxPDO 0x6064"
+  ]
+}

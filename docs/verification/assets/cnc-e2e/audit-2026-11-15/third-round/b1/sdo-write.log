@@ -1,0 +1,4 @@
+OK: 静态模式 POST /sdo → 405
+OK: 未开 --serve-write 时 POST /sdo → 405，值未变
+OK: --serve-write 写入生效（值/审计/指标/403/404/400）
+OK: SDO 受控写预回归通过

@@ -1,0 +1,15 @@
+{
+  "class": "mdi",
+  "run_id": "audit3-c4-20261115082335",
+  "ok": true,
+  "assertions": [
+    {
+      "name": "MDI 单目标到位",
+      "ok": true,
+      "detail": "{'statusword': 1591, 'position': 5000, 'velocity': 0, 'mode': 8, 'tx_hex': '3706881300000000000008', 't_ms': 1794702216709}"
+    }
+  ],
+  "notes": [
+    "CNC 侧 MDI 通道证据 PENDING；SIM 侧只验证 PDO 目标/实际一致"
+  ]
+}

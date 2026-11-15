@@ -1,0 +1,6 @@
+[00:23:35] 启动 ec-sim-esc --uds（3×cnc-csp-servo，run_id=audit3-c4-20261115082335）
+[00:23:35] 控制面就绪；开始 C4 10 类矩阵
+[00:23:43] 归档 runs/audit3-c4-20261115082335（binary=66587fa0094a94190eb82fb7ec42bd7377a3a0ab61369fc191c1ce7ba2f30c1f manifest=5f96adc131c19f1448b29f8cd30577e20a12e72ed7fd8ae4ffd2d80f3dcd45e9）
+[00:23:43] 归档完成；校验 sha256
+RESULT: PASS（66 个文件校验通过）
+[00:23:43] C4 10 类覆盖通过；证据：/tmp/audit3/c4 与 /tmp/audit3/runs/audit3-c4-20261115082335
