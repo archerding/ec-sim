@@ -1,0 +1,58 @@
+{
+ "ts_unix": 1794700543.257,
+ "run_id": "audit2-soak-1794700242",
+ "master": {
+  "al_state": "0x08",
+  "op_slaves": 3,
+  "slave_count": 3,
+  "fps": 48.902,
+  "ack_latency_ms": null,
+  "watchdog": {
+   "trips": 0
+  },
+  "pdo": {
+   "tx": 7,
+   "rx": 11,
+   "miss": 0,
+   "wkc_errors": 0
+  }
+ },
+ "slaves": [
+  {
+   "index": 0,
+   "station_address": "0x0000",
+   "al_code": "0x0000",
+   "state": "0x08",
+   "op": true,
+   "frames_in": 14550,
+   "frames_out": 14550,
+   "frames_dropped": 0,
+   "datagrams_hit": 14550,
+   "wkc_errors": 0
+  },
+  {
+   "index": 1,
+   "station_address": "0x0000",
+   "al_code": "0x0000",
+   "state": "0x08",
+   "op": true,
+   "frames_in": 14550,
+   "frames_out": 14550,
+   "frames_dropped": 0,
+   "datagrams_hit": 14550,
+   "wkc_errors": 0
+  },
+  {
+   "index": 2,
+   "station_address": "0x0000",
+   "al_code": "0x0000",
+   "state": "0x08",
+   "op": true,
+   "frames_in": 14550,
+   "frames_out": 14550,
+   "frames_dropped": 0,
+   "datagrams_hit": 14550,
+   "wkc_errors": 0
+  }
+ ]
+}

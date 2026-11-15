@@ -1,0 +1,10 @@
+2026-11-15T07:46:55+08:00 start server-a run_id=proc-fault-a-1794700015
+2026-11-15T07:46:55+08:00 server-a pid=116017 healthy
+2026-11-15T07:46:55+08:00 stage A 3/3 OP run_id=proc-fault-a-1794700015
+2026-11-15T07:46:55+08:00 kill -9 server-a pid=116017
+2026-11-15T07:46:55+08:00 stage B 控制面不可达（连接失败）
+2026-11-15T07:46:55+08:00 start server-b run_id=proc-fault-b-1794700015
+2026-11-15T07:46:55+08:00 server-b pid=116055 healthy
+2026-11-15T07:46:56+08:00 stage C 3/3 OP run_id=proc-fault-b-1794700015
+2026-11-15T07:47:03+08:00 stage C hold-b HOLD_OK
+RESULT: PASS（进程 kill → 控制面不可达 → 重启 3/3 OP，run_id proc-fault-a-1794700015 → proc-fault-b-1794700015；binary_sha256=66587fa0094a94190eb82fb7ec42bd7377a3a0ab61369fc191c1ce7ba2f30c1f manifest_sha256=5f96adc131c19f1448b29f8cd30577e20a12e72ed7fd8ae4ffd2d80f3dcd45e9）

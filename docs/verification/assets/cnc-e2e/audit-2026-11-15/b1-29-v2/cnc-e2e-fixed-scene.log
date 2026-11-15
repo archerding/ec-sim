@@ -1,0 +1,7 @@
+== 轮次 1/3（run_id=fixed-scene-1794700035-r1）==
+round-1 PASS (HOLD_OK samples=972 slaves=3 run_id=fixed-scene-1794700035-r1 al_state=0x08)
+== 轮次 2/3（run_id=fixed-scene-1794700055-r2）==
+round-2 PASS (HOLD_OK samples=971 slaves=3 run_id=fixed-scene-1794700055-r2 al_state=0x08)
+== 轮次 3/3（run_id=fixed-scene-1794700075-r3）==
+round-3 PASS (HOLD_OK samples=971 slaves=3 run_id=fixed-scene-1794700075-r3 al_state=0x08)
+RESULT: PASS（3/3 轮 3/3 OP，binary_sha256=66587fa0094a94190eb82fb7ec42bd7377a3a0ab61369fc191c1ce7ba2f30c1f manifest_sha256=5f96adc131c19f1448b29f8cd30577e20a12e72ed7fd8ae4ffd2d80f3dcd45e9）

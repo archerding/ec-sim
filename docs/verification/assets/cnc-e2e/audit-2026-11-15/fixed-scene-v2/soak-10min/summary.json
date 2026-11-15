@@ -1,0 +1,17 @@
+{
+  "run_id": "audit2-soak-1794700242",
+  "window_seconds": 600.14,
+  "state_samples": 599,
+  "event_count": 18,
+  "op_slaves_values": [
+    3
+  ],
+  "al_codes_seen": [
+    "0x0000"
+  ],
+  "watchdog_trips_delta": 0,
+  "frames_in_delta": 87288,
+  "last_seq": 18,
+  "timestamp_monotonic_gaps_max_s": 1.003,
+  "gaps_gt_2s": 0
+}

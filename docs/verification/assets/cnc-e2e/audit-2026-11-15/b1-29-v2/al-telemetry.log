@@ -1,0 +1,4 @@
+OK: SII 并发读 40 轮 + 看门狗 0x001B + Error ACK/恢复 OP 通过
+OK: AL_EVENT 运行期事件 6 条（含 watchdog 触发与恢复）
+OK: /state 与 /metrics 遥测字段完整（SII 计数、AL 迁移、看门狗、last_al_event）
+OK: SII 并发读 + 看门狗 0x001B + Error ACK/恢复通过

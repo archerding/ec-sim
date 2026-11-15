@@ -1,6 +1,6 @@
 # CNC 端到端闭环测试 · EC-Sim 支撑验收判据与审计
 
-> 版本：**v0.3（判据冻结 + Lead 裁决落地；task-102 故障矩阵已独立复核）** ｜ 日期：**2026-11-15** ｜ 作者：行业专家（sim-expert）
+> 版本：**v0.4（task-102 独立复核 PASS；task-101/103 同批判定，剩余项如实标 PENDING/FAIL）** ｜ 日期：**2026-11-15** ｜ 作者：行业专家（sim-expert）
 > 任务：**task-101 / task-102 / task-103**（CNC E2E 支撑）｜ 性质：**支撑性验收判据 + 独立审计记录**
 > 用户指令（2026-11-15）：EC-Sim 暂停其他任务，转去支撑 CNC 端到端闭环测试。
 > 边界：本文件**不替代** Gate U DoD / CNC-ACCEPTANCE / EC-Sim 产品验收；EC-Sim 侧为仿真从站，**不构成**实时性/一致性/安全/认证保证；不得以本文件写 v1.1/认证/PASS。
@@ -11,9 +11,9 @@
 
 | 项 | 状态 | 依据/说明 |
 |---|---|---|
-| task-101 固定场景（3×CiA402 CSP + IO、一键起停/重置） | **PENDING（sim-impl 实现中）** | owner=sim-impl（已 claim/in_progress）；计划 `docs/CNC-E2E-PROFILE.md`+启动/复位脚本+lcec XML；当前尚无产物；C5 `c5-stack-up.sh` 可作基线参考 |
-| task-102 故障注入（AL/链路/DC/SDO/掉线 + 恢复） | **部分 PASS（SIM 侧独立复核）** | `30ce3e9` 故障矩阵已独立复跑：B1/B5/B6 PASS；B2 中 F-LINK/F-SDO PASS、**F-PROC 未交付**、CNC HMI 联动 PENDING；运行期 AL 注入降 P1/可选（见 §11 裁决）；证据 `assets/cnc-e2e/audit-2026-11-15/` |
-| task-103 可观测性与证据矩阵 | **PENDING（sim-impl 实现中）** | owner=sim-impl；计划 `/state` run_id/master/slaves、`/events?since=` JSONL、metrics 扩展；当前 `run_id`/WKC/jitter 未落地 |
+| task-101 固定场景（3×CiA402 CSP + IO、一键起停/重置） | **🟡 部分 PASS（SIM 侧）** | `7a919cf` 独立复跑：A2 3/3 轮 3/3 OP、A6 PASS；A1/A4/A7 部分；A3 `REF.json` PENDING（CNC 侧 demo-state 未对齐）、A5 见 §12；证据 `assets/cnc-e2e/audit-2026-11-15/fixed-scene-v2/` |
+| task-102 故障注入（AL/链路/DC/SDO/掉线 + 恢复） | **✅ PASS（SIM 侧，Lead 口径）** | `7a919cf` 独立复跑：fault-matrix 24 项 PASS（含 `pdo_corrupt`）、process-fault PASS、B-1 `29 PASS/0 FAIL/0 SKIP`；B1/B2/B5/B6 达成；CNC HMI 联动 PENDING（D2，CNC 侧）；AL 运行期注入 P1/可选；证据 `audit-2026-11-15/{fault-matrix-v2,process-fault-v2,b1-29-v2}` |
+| task-103 可观测性与证据矩阵 | **🟡 部分（C1/C3 PENDING、C4 FAIL；C2/C5 PASS）** | `/state` run_id、`/events?since`、metrics 扩展已落地；C1 抖动来源缺、C2 10min 事件连续性未取、C3 `runs/<run_id>/` 未落地、**C4 矩阵仅覆盖 4/10 类 → FAIL**；C5 PASS |
 | C4 浏览器 4h / DOD-07 | **PAUSED（用户指令）** | 保留历史 NOT-JUDGED 记录，不重判 FAIL、不写 PASS；**已回写 task-78 rev6**（标题前缀 [PAUSED]），恢复后按 task-78 重试 |
 | DOD-12 | **PASS（保留）** | 既有判定 `7487186` 不变 |
 | 资源 P0 | **PAUSED** | 用户指令暂停 |
@@ -53,13 +53,13 @@
 
 | ID | 判据 | 阈值/方法 | 状态 |
 |---|---|---|---|
-| A1 | profile 固定且文档化：3×CiA402 CSP + 8 路 IO（或裁剪），站地址/VID/PID/PDO/SM/WKC 期望、manifest sha256 写入 `docs/CNC-E2E-PROFILE.md` | 文档 + `manifest sha256` + `/topology`、`/state` 实测一致 | PENDING |
-| A2 | 连续 3 次一键 stack-up，每次 **3/3 从站 OP**；同一组站地址；无 AL error | 3/3 次；OP 时间 ≤120s/次；每次留存 `state.json`/日志 | PENDING |
-| A3 | **REF 一致性**：run1/2/3 的 `REF.json` 在定义字段上完全相等（SIM+CNC 两侧，OP 后 5s 内采集） | 字段级 diff = 0；任一差异 FAIL | PENDING |
-| A4 | 重置/stack-down 幂等：reset 回到 REF ≤30s；结束后无残留 `ec-sim-esc`、TAP 已删、无 lock/shm | 3/3 次；进程/TAP/lock 检查命令输出 | PENDING |
-| A5 | 10 分钟 OP 保持：`frames_in` 单调增、`al_transitions` 仅启动期、`watchdog_triggers=0`、结束仍 3/3 OP | 0/5/10min 抓 `/metrics`；3 次中至少 1 次完整 10min | PENDING |
-| A6 | 可复制 runbook：TAP/MAC/promisc/IgH modprobe/lcec XML 片段、端口/socket、日志位置；无真实地址/账号；离线可用 | 文档可照做；0 外部网络依赖 | PENDING |
-| A7 | 证据包：`runs/<run_id>/` 含 run.json、manifest sha256、state/metrics/topology、stack 日志、清理证据 | 目录完整+hash；缺项=PENDING | PENDING |
+| A1 | profile 固定且文档化：3×CiA402 CSP + 8 路 IO（或裁剪），站地址/VID/PID/PDO/SM/WKC 期望、manifest sha256 写入 `docs/CNC-E2E-PROFILE.md` | 文档 + `manifest sha256` + `/topology`、`/state` 实测一致 | 🟡 **部分**（3×CSP 已文档化、manifest sha256 一致；8 IO 按 A1 允许裁剪并标 P1；`/topology` 未在本轮证据采集） |
+| A2 | 连续 3 次一键 stack-up，每次 **3/3 从站 OP**；同一组站地址；无 AL error | 3/3 次；OP 时间 ≤120s/次；每次留存 `state.json`/日志 | ✅ **PASS**（`7a919cf` 3 轮×20s：3/3 OP，`HOLD_OK samples≈973`、`al_state=0x08`；每轮独立进程/清理无残留；`fixed-scene-v2/`） |
+| A3 | **REF 一致性**：run1/2/3 的 `REF.json` 在定义字段上完全相等（SIM+CNC 两侧，OP 后 5s 内采集） | 字段级 diff = 0；任一差异 FAIL | 🟡 **PENDING**（`REF.json` 未定稿，CNC 侧 demo-state 未对齐；SIM 侧 run_id/AL/PDO 断言已在 fixed-scene 采集） |
+| A4 | 重置/stack-down 幂等：reset 回到 REF ≤30s；结束后无残留 `ec-sim-esc`、TAP 已删、无 lock/shm | 3/3 次；进程/TAP/lock 检查命令输出 | 🟡 **PENDING**（每轮独立进程、复跑后无残留进程/端口/TAP 已核；"reset 回 REF ≤30s" 依赖 A3 REF，未测） |
+| A5 | 10 分钟 OP 保持：`frames_in` 单调增、`al_transitions` 仅启动期、`watchdog_triggers=0`、结束仍 3/3 OP | 0/5/10min 抓 `/metrics`；3 次中至少 1 次完整 10min | ✅ **PASS**（`audit2-soak-1794700242`：599 次 1s 采样/600.14s、最大间隔 1.003s、`frames_in` 6→29102 单调、`al_transitions=3` 仅启动期、`watchdog=0`、结束 3/3 OP；`fixed-scene-v2/soak-10min/`） |
+| A6 | 可复制 runbook：TAP/MAC/promisc/IgH modprobe/lcec XML 片段、端口/socket、日志位置；无真实地址/账号；离线可用 | 文档可照做；0 外部网络依赖 | ✅ **PASS**（`CNC-E2E-PROFILE.md` §3/§5：UDS/TAP 命令、manifest、端口、采集步骤齐全，无真实地址） |
+| A7 | 证据包：`runs/<run_id>/` 含 run.json、manifest sha256、state/metrics/topology、stack 日志、清理证据 | 目录完整+hash；缺项=PENDING | 🟡 **PENDING**（`fixed-scene-v2/` 有 summary/state/server.log；非 `runs/<run_id>/` 结构且无 run.json） |
 
 ---
 
@@ -68,7 +68,7 @@
 | ID | 判据 | 阈值/方法 | 状态 |
 |---|---|---|---|
 | B1 | 故障接口默认关闭、显式开启、二次确认、**审计**（who/时间/类型/目标/持续时间/前值→后值/run_id）；不启用时 404/405 | 审计记录可读；未开启时接口拒绝 | ✅ **PASS**（独立复跑：405/400/200；`fault_injected` 含 confirm/who/run_id/before/after） |
-| B2 | **v1.0 必做故障类**（外部可实现）：F-LINK（TAP down/up）、F-PROC（EC-Sim 进程 kill/重启）、F-SDO（未开 `--serve-write` 405 / 非 writable 403）；每类触发后 HMI 显示 STALE/LOST/ALARM 且运动命令禁用，恢复后 3/3 OP 且可继续 | 每类 ≥1 次完整触发→恢复；证据 `/state`、`/events`、CNC 日志、审计 | 🟡 **部分**：F-LINK ✅（TAP down/up）、F-SDO ✅（Abort `0x06010000`）；**F-PROC 未交付**；CNC HMI 联动 PENDING（§4.1） |
+| B2 | **v1.0 必做故障类**（外部可实现）：F-LINK（TAP down/up）、F-PROC（EC-Sim 进程 kill/重启）、F-SDO（未开 `--serve-write` 405 / 非 writable 403）；每类触发后 HMI 显示 STALE/LOST/ALARM 且运动命令禁用，恢复后 3/3 OP 且可继续 | 每类 ≥1 次完整触发→恢复；证据 `/state`、`/events`、CNC 日志、审计 | ✅ **PASS（SIM 侧，Lead 口径）**：F-LINK ✅、F-SDO ✅、**F-PROC ✅（`pdo_corrupt` + 进程 kill/重启）**；CNC HMI STALE/LOST/ALARM 联动 PENDING（D2，CNC 侧，不阻塞本项） |
 | B3 | **单从站 AL error 运行期注入（0x11/0x24）** | **与 BL-20 暂停冲突**：task-42 已冻结、v1.x 候选；不得擅自实现。可用 startup `--al-error` 做“重启后单站错误”场景；运行期注入待 Lead 裁决 → PENDING/待裁决 | PENDING（P1，不阻塞；Lead 已裁决） |
 | B4 | DC 丢失 / 主站重启 | 控制面无运行期 DC 故障 API；标记可选 v1.x；不阻塞 B2 | PENDING（P1/可选） |
 | B5 | 恢复路径：故障清除后自动/一键回 OP、无手动 reboot、≤60s；审计含恢复时间 | 计时 + 状态快照；失败可复现 | ✅ **PASS（SIM 侧）**：矩阵到期清理/恢复 <5s、TAP 重建 ~2s、无 reboot；HMI 侧恢复待 CNC 联调 |
@@ -93,11 +93,11 @@
 
 | ID | 判据 | 阈值/方法 | 状态 |
 |---|---|---|---|
-| C1 | 遥测完整：逐从站 AL 码/迁移、`al_errors`/watchdog、`frames_in/out/dropped`、邮箱、SII、PDO；**WKC 与周期抖动**须有来源（新增指标或 IgH 侧派生并文档化） | `/metrics` 解析；字段清单逐项核对；缺项=PENDING | PENDING |
-| C2 | `/events` SSE：interval 可配、时间戳单调、含 `AL_EVENT`；10min 采样无断档 | 采样行数/间隔/单调性检查 | PENDING |
-| C3 | **run_id 关联**：CNC 测试脚本、SIM 事件/指标、证据 manifest 使用同一 `run_id` | **先做 harness 侧关联**（测试脚本/证据 manifest 带 run_id，SIM `/events` 按时间戳对齐）；控制面加字段列 **P1**、不改现有协议；`runs/<run_id>/` 三处一致 | PENDING |
-| C4 | 用例×SIM 期望矩阵：jog/MDI/程序/回零/override/tool/offset/probe/报警/断链 10 类，各列 SIM 可观察量（AL/PDO/events/metrics）与采集方法 | 10/10 覆盖；矩阵可执行 | PENDING |
-| C5 | 不伪造 PASS：原始证据+hash；失败可复现；结论逐项 PASS/PENDING/FAIL | 抽查证据；无源数据不得 PASS | PENDING |
+| C1 | 遥测完整：逐从站 AL 码/迁移、`al_errors`/watchdog、`frames_in/out/dropped`、邮箱、SII、PDO；**WKC 与周期抖动**须有来源（新增指标或 IgH 侧派生并文档化） | `/metrics` 解析；字段清单逐项核对；缺项=PENDING | 🟡 **PENDING**（AL/frames/mailbox/SII/PDO 字段有；WKC 占位已文档化；**周期抖动无来源**） |
+| C2 | `/events` SSE：interval 可配、时间戳单调、含 `AL_EVENT`；10min 采样无断档 | 采样行数/间隔/单调性检查 | ✅ **PASS**（`?interval_ms=200` 实测约 200ms/条；`AL_EVENT` 存在（B62）；10min 采样 599 行、最大间隔 1.003s、0 个 >2s 断档；18 条事件 seq 单调；稳态无故障事件） |
+| C3 | **run_id 关联**：CNC 测试脚本、SIM 事件/指标、证据 manifest 使用同一 `run_id` | **先做 harness 侧关联**（测试脚本/证据 manifest 带 run_id，SIM `/events` 按时间戳对齐）；控制面加字段列 **P1**、不改现有协议；`runs/<run_id>/` 三处一致 | 🟡 **PENDING**（harness 侧 `--run-id` 已定义/回显；`/state`、`/events`、`/fault` 审计同值已核；`runs/<run_id>/` 目录结构未落地、`/probe` 响应未复跑） |
+| C4 | 用例×SIM 期望矩阵：jog/MDI/程序/回零/override/tool/offset/probe/报警/断链 10 类，各列 SIM 可观察量（AL/PDO/events/metrics）与采集方法 | 10/10 覆盖；矩阵可执行 | ❌ **FAIL**（矩阵 13 行仅覆盖 程序/probe/报警/断链 **4/10** 类；缺 jog/MDI/回零/override/tool/offset 显式行与采集方法） |
+| C5 | 不伪造 PASS：原始证据+hash；失败可复现；结论逐项 PASS/PENDING/FAIL | 抽查证据；无源数据不得 PASS | ✅ **PASS**（`sha256-v2.txt` 覆盖新证据；脚本哈希与 VM 现场逐字节一致；失败项可复现） |
 
 ---
 
@@ -161,3 +161,16 @@
 6. **REF 对齐**：task-101 的 REF 状态需与 cnc-impl 的 demo-state 对齐后写入 `REF.json`（D1/D3）。
 
 > 裁决不改变本文件判定规则：PENDING 不得写成 PASS；FAIL 须可复现；PAUSED 不计 FAIL。
+
+
+## 12. 第二轮独立复核（2026-11-15，`7a919cf`）
+
+- **被测**：EC-Sim `7a919cf`（父 `05ec637`）；binary sha256 `66587fa0094a94190eb82fb7ec42bd7377a3a0ab61369fc191c1ce7ba2f30c1f`（1,157,928 B）；manifest `5f96adc1…45e9`；现场 `/root/ecsim-procfault`。脚本与本地 commit 逐字节一致：`cnc-e2e-fault-matrix.sh` `0053b482…`、`cnc-e2e-process-fault.sh` `6dcfdeeb…`、`fault_matrix_probe.py` `a0eb143f…`、`run-all-probes.sh` `14437b55…`。
+- **fault-matrix**：`EXIT=0 / RESULT: PASS`，**24 项 OK**（原 15 + `pdo_corrupt`：注入前 11B 可读、注入 200、审计 `pdo.before_hex`/`xor`、期间逐字节 XOR `0xA5`、结果确定不累积、到期清理、恢复还原、事件成对、结束 3/3 OP）；run_id `audit2-fm-20261115074650`；证据 `fault-matrix-v2/`。
+- **process-fault**：`EXIT=0 / RESULT: PASS`；stage A 3/3 OP（`proc-fault-a-1794700015`）→ `kill -9` → 控制面不可达 → stage B 重启 3/3 OP（`proc-fault-b-1794700015`）→ `HOLD_OK`；证据 `process-fault-v2/`。
+- **B-1 整轮**：`29 PASS / 0 FAIL / 0 SKIP`（含 `proc-fault`/`fault-matrix`/`cnc-e2e-fixed-scene`）；证据 `b1-29-v2/`。
+- **fixed-scene（当前 binary）**：3 轮 ×20 s 全 PASS；run_id `fixed-scene-1794700166-r1/r2/r3`；`samples=973/972/973`、`al_state=0x08`；证据 `fixed-scene-v2/`。
+- **10 分钟 soak**：run_id `audit2-soak-1794700242`；599 次 1s 采样 / 600.14s（最大间隔 1.003s、0 个 >2s 断档）；`frames_in` 6→29102 单调、`al_transitions` 仅启动期 3 次、`watchdog=0`、结束 3/3 OP；18 条事件（启动期 `state_change`/`al_transition`，seq 单调）；`/events?interval_ms=200` 实测约 200ms/条；证据 `fixed-scene-v2/soak-10min/`（summary/0-5-10min 快照/events/raw sha256）。
+- **清理**：复跑后无 `ec-sim-esc`/`simple_ng` 残留、无 1813x 监听、无 ecsim/tapcnc TAP；未触碰 CNC VM。
+- **证据哈希**：`docs/verification/assets/cnc-e2e/audit-2026-11-15/sha256-v2.txt`（78 文件）。
+- **判定**：task-102 ✅ PASS（SIM 侧，Lead 口径）；task-101 🟡 部分（A2/A5/A6 PASS；A1 部分；A3/A4/A7 PENDING）；task-103 🟡 部分（C2/C5 PASS；C1/C3 PENDING；C4 FAIL：矩阵仅 4/10 类）。

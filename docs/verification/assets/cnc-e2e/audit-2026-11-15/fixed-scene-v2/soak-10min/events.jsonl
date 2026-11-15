@@ -1,0 +1,18 @@
+{"seq": 1, "ts": 1794700243678, "run_id": "audit2-soak-1794700242", "type": "al_transition", "slave": 0, "details": {"from": "0x01", "to": "0x02", "from_code": "0x0000", "code": "0x0000", "watchdog": false, "at_ms": 1794700243678}}
+{"seq": 2, "ts": 1794700243678, "run_id": "audit2-soak-1794700242", "type": "state_change", "slave": 0, "details": {"from": "0x01", "to": "0x02"}}
+{"seq": 3, "ts": 1794700243678, "run_id": "audit2-soak-1794700242", "type": "al_transition", "slave": 1, "details": {"from": "0x01", "to": "0x02", "from_code": "0x0000", "code": "0x0000", "watchdog": false, "at_ms": 1794700243678}}
+{"seq": 4, "ts": 1794700243678, "run_id": "audit2-soak-1794700242", "type": "state_change", "slave": 1, "details": {"from": "0x01", "to": "0x02"}}
+{"seq": 5, "ts": 1794700243678, "run_id": "audit2-soak-1794700242", "type": "al_transition", "slave": 2, "details": {"from": "0x01", "to": "0x02", "from_code": "0x0000", "code": "0x0000", "watchdog": false, "at_ms": 1794700243678}}
+{"seq": 6, "ts": 1794700243678, "run_id": "audit2-soak-1794700242", "type": "state_change", "slave": 2, "details": {"from": "0x01", "to": "0x02"}}
+{"seq": 7, "ts": 1794700243680, "run_id": "audit2-soak-1794700242", "type": "al_transition", "slave": 0, "details": {"from": "0x02", "to": "0x04", "from_code": "0x0000", "code": "0x0000", "watchdog": false, "at_ms": 1794700243680}}
+{"seq": 8, "ts": 1794700243680, "run_id": "audit2-soak-1794700242", "type": "state_change", "slave": 0, "details": {"from": "0x02", "to": "0x04"}}
+{"seq": 9, "ts": 1794700243680, "run_id": "audit2-soak-1794700242", "type": "al_transition", "slave": 1, "details": {"from": "0x02", "to": "0x04", "from_code": "0x0000", "code": "0x0000", "watchdog": false, "at_ms": 1794700243680}}
+{"seq": 10, "ts": 1794700243680, "run_id": "audit2-soak-1794700242", "type": "state_change", "slave": 1, "details": {"from": "0x02", "to": "0x04"}}
+{"seq": 11, "ts": 1794700243680, "run_id": "audit2-soak-1794700242", "type": "al_transition", "slave": 2, "details": {"from": "0x02", "to": "0x04", "from_code": "0x0000", "code": "0x0000", "watchdog": false, "at_ms": 1794700243680}}
+{"seq": 12, "ts": 1794700243680, "run_id": "audit2-soak-1794700242", "type": "state_change", "slave": 2, "details": {"from": "0x02", "to": "0x04"}}
+{"seq": 13, "ts": 1794700243680, "run_id": "audit2-soak-1794700242", "type": "al_transition", "slave": 0, "details": {"from": "0x04", "to": "0x08", "from_code": "0x0000", "code": "0x0000", "watchdog": false, "at_ms": 1794700243680}}
+{"seq": 14, "ts": 1794700243680, "run_id": "audit2-soak-1794700242", "type": "state_change", "slave": 0, "details": {"from": "0x04", "to": "0x08"}}
+{"seq": 15, "ts": 1794700243680, "run_id": "audit2-soak-1794700242", "type": "al_transition", "slave": 1, "details": {"from": "0x04", "to": "0x08", "from_code": "0x0000", "code": "0x0000", "watchdog": false, "at_ms": 1794700243680}}
+{"seq": 16, "ts": 1794700243680, "run_id": "audit2-soak-1794700242", "type": "state_change", "slave": 1, "details": {"from": "0x04", "to": "0x08"}}
+{"seq": 17, "ts": 1794700243680, "run_id": "audit2-soak-1794700242", "type": "al_transition", "slave": 2, "details": {"from": "0x04", "to": "0x08", "from_code": "0x0000", "code": "0x0000", "watchdog": false, "at_ms": 1794700243680}}
+{"seq": 18, "ts": 1794700243680, "run_id": "audit2-soak-1794700242", "type": "state_change", "slave": 2, "details": {"from": "0x04", "to": "0x08"}}

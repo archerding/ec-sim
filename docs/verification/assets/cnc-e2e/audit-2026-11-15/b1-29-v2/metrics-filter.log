@@ -1,0 +1,2 @@
+OK: /metrics?slave=1 仅导出 1 站；全量 3 站；越界/非法 slave → 404
+OK: /metrics 按从站筛选预回归通过

@@ -1,0 +1,9 @@
+2026-11-15T07:46:55+08:00 start server-a run_id=proc-fault-a-1794700015
+2026-11-15T07:46:55+08:00 server-a pid=116017 healthy
+2026-11-15T07:46:55+08:00 stage A 3/3 OP run_id=proc-fault-a-1794700015
+2026-11-15T07:46:55+08:00 kill -9 server-a pid=116017
+2026-11-15T07:46:55+08:00 stage B 控制面不可达（连接失败）
+2026-11-15T07:46:55+08:00 start server-b run_id=proc-fault-b-1794700015
+2026-11-15T07:46:55+08:00 server-b pid=116055 healthy
+2026-11-15T07:46:56+08:00 stage C 3/3 OP run_id=proc-fault-b-1794700015
+2026-11-15T07:47:03+08:00 stage C hold-b HOLD_OK

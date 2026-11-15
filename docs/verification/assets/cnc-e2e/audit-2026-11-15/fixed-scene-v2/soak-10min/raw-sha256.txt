@@ -1,0 +1,4 @@
+387ed7bc0467d81464aa26a77a3434d2a914da1642a01fa91f240a4601e8530b  /tmp/audit2-soak/obs/state.jsonl
+c5745b41c957352a8b66cb13d52be01189ef06024ca97600f7e1a67d011727f9  /tmp/audit2-soak/obs/metrics.jsonl
+c09b7e331ace92827ac37b4dc1f7f0cb03aeb433fa63f218e7a656c9f1d714a4  /tmp/audit2-soak/obs/events.jsonl
+73c8d5bcfdb239a8d38430b9520487f01ee3895e8ade2dac04b78d8e9d35b50d  /tmp/audit2-soak/obs/summary.json

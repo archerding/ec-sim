@@ -71,7 +71,23 @@ BIN=target/release/ec-sim-esc PY=python3 LOG_DIR=/tmp/audit-b1 \
 
 ## 边界（不构成 PASS 的部分）
 
-- **F-PROC（进程 kill/重启）**：sim-impl 交付物未包含该 P0 类用例/证据；本次未替代判定。
+- **F-PROC（进程 kill/重启）**：第二轮已补（`7a919cf`），见 §6（`process-fault-v2/`、`fault-matrix-v2/` 的 `pdo_corrupt`）。
 - **CNC 侧 HMI 联动**（STALE/LOST/ALARM 显示、运动命令禁用）：需 CNC VM 联调窗口，PENDING。
 - 8 IO 混合拓扑、DC 丢失、AL 运行期单站注入：P1/NOT-JUDGED（不作为本轮 PASS）。
 - 本证据只证明 EC-Sim 侧故障触发/恢复语义；不称 EtherCAT 一致性/CTT/LinuxCNC 认证。
+
+
+## 6. 第二轮独立复核（`7a919cf`，2026-11-15 07:46–）
+
+被测：EC-Sim `7a919cf`；binary sha256 `66587fa0094a94190eb82fb7ec42bd7377a3a0ab61369fc191c1ce7ba2f30c1f`（1,157,928 B）；manifest `5f96adc1…45e9`；现场 `/root/ecsim-procfault`（脚本与本地逐字节一致）。
+
+| 证据目录 | 结果 | 说明 |
+|---|---|---|
+| `fault-matrix-v2/` | EXIT=0 / 24 项 OK | 含 `pdo_corrupt`（`audit.pdo.before_hex`/`xor`、逐字节 XOR `0xA5`、不累积、到期恢复、事件成对）；run_id `audit2-fm-20261115074650` |
+| `process-fault-v2/` | EXIT=0 / PASS | run A `proc-fault-a-1794700015` → kill -9 → 控制面不可达 → run B `proc-fault-b-1794700015` 3/3 OP + HOLD_OK |
+| `b1-29-v2/` | 29 PASS / 0 FAIL / 0 SKIP | 含 `proc-fault`/`fault-matrix`/`cnc-e2e-fixed-scene` |
+| `fixed-scene-v2/` | 3/3 轮 PASS | 每轮 20s，`samples=973/972/973`、`al_state=0x08`；run_id `fixed-scene-1794700166-r1/r2/r3` |
+| `fixed-scene-v2/soak-10min/` | 10min PASS | 599 样本/600.14s、最大间隔 1.003s、frames 6→29102 单调、`al_transitions=3` 仅启动期、watchdog 0、结束 3/3 OP；原始 jsonl sha256 见 `raw-sha256.txt` |
+
+清理：复跑后无 `ec-sim-esc`/`simple_ng`、无 1813x 监听、无 `ecsim*` TAP；未触碰 CNC VM。哈希清单：`sha256-v2.txt`（78 文件）。
+仍非 PASS：CNC HMI STALE/LOST/ALARM 联动（D2）；task-101 的 `REF.json`/reset 结构、10min soak；task-103 C1 抖动来源/C2 10min 事件窗口/C3 `runs/<run_id>/`/C4 矩阵覆盖。

@@ -1,0 +1,4 @@
+RUN_ID ecsim-1794700033-116530
+MANIFEST id=com.ecsim.profile.cia402-servo name=Generic CiA 402 position/velocity servo (SIMULATED) vendor=0x00000EC5 product=0x0000E5E0
+READY tap=escsim9 mac=02:ec:51:4d:00:09
+SERVE (live) http://127.0.0.1:18112 routes=/state,/dict

@@ -1,0 +1,4 @@
+OK: 静态模式 GET / 与 /app.js 返回 web 文件，/state 仍为 JSON，未知路径 404
+OK: 实时模式托管 / 且 /state 仍含 live
+OK: web-root 不存在时 GET / 回退为 API 自述 JSON，/state 仍 200
+OK: --serve --web-root 同源托管预回归通过

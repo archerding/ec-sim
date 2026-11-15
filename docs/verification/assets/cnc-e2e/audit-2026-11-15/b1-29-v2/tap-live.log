@@ -1,0 +1,2 @@
+OK: TAP 实时 /state AL=0x08（OP）、frames_in=186；/pdo HTTP 200 schema=ec-sim/pdo-v1
+OK: TAP 实时 --serve 预回归通过

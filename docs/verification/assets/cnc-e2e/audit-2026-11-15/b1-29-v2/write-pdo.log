@@ -1,0 +1,3 @@
+OK: 默认（无 --serve-write）POST /pdo → 405，PDO 未改变
+OK: --serve-write 下 POST /pdo 写入生效（slave 0=beef、slave 1=1234），POST /state 404
+OK: POST /pdo 写操作预回归通过

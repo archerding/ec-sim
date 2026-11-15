@@ -1,0 +1,7 @@
+=== 路径 1/3：静态模式（--serve，无 live）===
+OK: 静态模式 — 合法 0/缺省 200；非数字/负数/空串/越界 404 JSON（/state /dict /sdo）
+=== 路径 2/3：实时 UDS 模式（--slaves 3，含 POST 写路由）===
+OK: 实时 UDS — 8 条按站路由 × {非数字/负数/空串/越界} 全 404；0 与 N-1 全 200；POST /sdo /pdo 同校验且写入按站隔离
+=== 路径 3/3：实时 TAP 模式（--slaves 2）===
+OK: 实时 TAP — 非法/越界 404 JSON；0 与 1 均 200
+OK: invalid-slave 探针三路径全通过（静态 / UDS / TAP；0-based 契约）

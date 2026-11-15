@@ -1,0 +1,31 @@
+{
+  "schema": "ec-sim/state-v1",
+  "tool": "ec-sim-esc 0.0.1",
+  "identity": {"vendor_id": "0x00000EC5", "product_code": "0x0000E5E3", "revision": "0x00010000", "serial": "0x00000000"},
+  "names": ["CNC virtual-loop CSP servo (SIMULATED)", "EC-Sim"],
+  "mailbox_declared": true,
+  "coe_details": 47,
+  "general_flags": 0,
+  "ebus_current_ma": 0,
+  "sync_managers": [
+    {"start": "0x1000", "length": 128, "control": "0x26", "status": 0, "enable": 1},
+    {"start": "0x1080", "length": 128, "control": "0x22", "status": 0, "enable": 1},
+    {"start": "0x1100", "length": 7, "control": "0x04", "status": 0, "enable": 1},
+    {"start": "0x1110", "length": 11, "control": "0x00", "status": 0, "enable": 1}
+  ],
+  "pdo_tx": [
+    {"index": "0x1A00", "sync_manager": 3, "entries": [{"index": "0x6041", "sub": 0, "bits": 16}, {"index": "0x6064", "sub": 0, "bits": 32}, {"index": "0x606C", "sub": 0, "bits": 32}, {"index": "0x6061", "sub": 0, "bits": 8}]}
+  ],
+  "pdo_rx": [
+    {"index": "0x1600", "sync_manager": 2, "entries": [{"index": "0x6040", "sub": 0, "bits": 16}, {"index": "0x6060", "sub": 0, "bits": 8}, {"index": "0x607A", "sub": 0, "bits": 32}]}
+  ],
+  "dc": null,
+  "profile": {"id": "com.ecsim.profile.cnc-csp-servo", "name": "CNC virtual-loop CSP servo (SIMULATED)"},
+  "dict_objects": 18
+,
+  "live": {"station_address": "0x0000", "al_status": "0x08", "al_status_code": "0x0000", "dc_time_ns": 976000, "stats": {"frames_in": 976, "frames_out": 976, "frames_dropped": 0, "datagrams_hit": 976, "mailbox_requests": 0, "mailbox_responses": 0, "dc_reg_reads": 0, "dc_reg_writes": 0, "al_transitions": 3, "al_errors": 0, "al_error_acks": 0, "sm_watchdog_triggers": 0, "sii_read_commands": 0, "sii_write_commands": 0}, "last_al_event": {"from": "0x04", "to": "0x08", "from_code": "0x0000", "code": "0x0000", "watchdog": false, "at_ms": 1794700055894}}
+,
+  "run_id": "fixed-scene-1794700055-r2",
+  "master": {"al_state": "0x08", "op_slaves": 3, "slave_count": 3, "fps": 0.000, "ack_latency_ms": null, "watchdog": {"trips": 0}, "pdo": {"tx": 7, "rx": 11, "miss": 0, "wkc_errors": 0}},
+  "slaves": [{"index": 0, "station_address": "0x0000", "al_code": "0x0000", "state": "0x08", "op": true, "frames_in": 976, "frames_out": 976, "frames_dropped": 0, "datagrams_hit": 976, "wkc_errors": 0},{"index": 1, "station_address": "0x0000", "al_code": "0x0000", "state": "0x08", "op": true, "frames_in": 976, "frames_out": 976, "frames_dropped": 0, "datagrams_hit": 976, "wkc_errors": 0},{"index": 2, "station_address": "0x0000", "al_code": "0x0000", "state": "0x08", "op": true, "frames_in": 976, "frames_out": 976, "frames_dropped": 0, "datagrams_hit": 976, "wkc_errors": 0}]
+}
