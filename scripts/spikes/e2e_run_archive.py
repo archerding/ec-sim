@@ -37,20 +37,23 @@ def collect_files(artifacts):
     files = []
     for artifact in artifacts:
         if os.path.isdir(artifact):
+            base = os.path.basename(os.path.normpath(artifact))
             for root, _dirs, names in os.walk(artifact):
                 for name in sorted(names):
-                    files.append(os.path.join(root, name))
+                    source = os.path.join(root, name)
+                    relative = os.path.join(base, os.path.relpath(source, artifact))
+                    files.append((source, relative))
         elif os.path.isfile(artifact):
-            files.append(artifact)
+            files.append((artifact, os.path.basename(artifact)))
         else:
             raise SystemExit(f"FAIL: artifact 不存在：{artifact}")
     unique = []
     seen = set()
-    for path in files:
-        absolute = os.path.abspath(path)
+    for source, relative in files:
+        absolute = os.path.abspath(source)
         if absolute not in seen:
             seen.add(absolute)
-            unique.append(absolute)
+            unique.append((absolute, relative.replace(os.sep, "/")))
     return unique
 
 
@@ -75,14 +78,15 @@ def create(args):
         raise SystemExit("FAIL: 至少需要一个 --artifact")
 
     entries = []
-    for source in files:
-        name = os.path.basename(source)
-        target_name = name
+    for source, relative in files:
+        target_name = relative
         suffix = 1
         while os.path.exists(os.path.join(run_dir, target_name)):
-            target_name = f"{name}.{suffix}"
+            stem, ext = os.path.splitext(relative)
+            target_name = f"{stem}.{suffix}{ext}"
             suffix += 1
         target = os.path.join(run_dir, target_name)
+        os.makedirs(os.path.dirname(target) or run_dir, exist_ok=True)
         shutil.copy2(source, target)
         entries.append({"file": target_name, "bytes": os.path.getsize(target), "sha256": sha256_file(target)})
 
@@ -150,12 +154,14 @@ def verify(args):
         if digest != entry["sha256"]:
             print(f"FAIL hash {entry['file']}: {digest} != {entry['sha256']}")
             failures += 1
-    for name in os.listdir(run_dir):
-        if name in {"run.json", "sha256sums.txt", "README.md"}:
-            continue
-        if name not in listed:
-            print(f"FAIL 未登记文件 {name}")
-            failures += 1
+    for root, _dirs, names in os.walk(run_dir):
+        for name in names:
+            if root == run_dir and name in {"run.json", "sha256sums.txt", "README.md"}:
+                continue
+            relative = os.path.relpath(os.path.join(root, name), run_dir).replace(os.sep, "/")
+            if relative not in listed:
+                print(f"FAIL 未登记文件 {relative}")
+                failures += 1
     sums_path = os.path.join(run_dir, "sha256sums.txt")
     if os.path.isfile(sums_path):
         with open(sums_path, encoding="utf-8") as handle:

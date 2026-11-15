@@ -63,8 +63,10 @@ python3 scripts/spikes/e2e_run_archive.py verify \
 
 本轮 c4-matrix / reset-idempotency / jitter 均自动归档并校验通过
 （`runs/<run_id>/{run.json,README.md,sha256sums.txt}`，`run.json` 含
-result/command/commit/binary/manifest/files+sha256）；run_id 与
-`/state.run_id`、`/events`、`/fault` 审计同值。
+result/command/commit/binary/manifest/files+sha256；目录型 artifact 保留子目录结构，
+如 `runs/c4-matrix-*/c4-matrix/program/...`）；run_id 与 `/state.run_id`、`/events`、
+`/fault` 审计同值。归档里的 `commit` 记产品代码提交 `7a919cf`（本轮 gap 脚本/文档
+不改变二进制，二进制 sha256 与 F-PROC 版一致），gap 脚本/文档本身随后单独提交。
 
 ## 4. A3：REF schema 与 CNC demo-state 字段映射
 
