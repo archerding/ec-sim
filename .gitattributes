@@ -2,4 +2,5 @@
 *.png binary
 *.jpg binary
 *.wasm binary
-*.zip binarydocs/verification/assets/cnc-e2e/runs/** -text
+*.zip binary
+docs/verification/assets/cnc-e2e/runs/** -text
