@@ -1,0 +1,14 @@
+{
+  "diffs": [],
+  "equal": true,
+  "ref": {
+    "al_state": null,
+    "op_slaves": null,
+    "pdo": null,
+    "slave_count": 0,
+    "slaves": [],
+    "watchdog_trips": null
+  },
+  "runs": 3,
+  "schema": "ec-sim/e2e-ref-compare-v1"
+}

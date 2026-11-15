@@ -5697,3 +5697,34 @@
   `docs/verification/assets/cnc-e2e/{fault-matrix,process-fault,b1-29.log}`。
 - 边界：到期清理由数据面帧推进（无帧时 `remaining_ms=0` 仍 active）；进程重启会换
   run_id；DC/8 IO/AL 运行期注入仍 P1；不宣称认证。
+
+### 缺口补齐（lead m04142 / sim-expert 复核 `9ca34c2`）：C4 10 类、C1 抖动、C3/A7 归档、A3 REF、A4 reset
+
+- **C4**：`scripts/spikes/c4_matrix_probe.py` 覆盖 10 类 SIM 可观测等价路径
+  （program/jog/MDI/home/override/tool/offset/probe/alarm/link-loss），每类落
+  `stimulus/samples/state-before/state-after/events/result`；`cnc-e2e-c4-matrix.sh`
+  起 UDS 3×CSP 服务、跑矩阵、按 `runs/<run_id>/` 归档并 verify。首跑修 4 个探针缺陷：
+  failure 计数把 bool 当 +1、SDO 上传值偏移应为 `[6:10]`、home 需 cw `0x001F`（bit4）、
+  `al_error` 后为 OP+error（`state=0x18`，不能断言 `op=false`）。最终 **10/10 PASS**。
+- **C1**：`c1_jitter_probe.py`/`cnc-e2e-jitter-probe.sh` 量化主站发送间隔与
+  `/state` 往返；B-1 轮（samples=200）主站 mean 20.419 ms/std 0.145/p95 20.650/p99 20.701，
+  `/state` 往返 p95 0.642 ms，146.91 fps 合计（48.97 fps/站），WKC 恒 3；
+  `/state.master.fps` 为粗估不作为抖动依据；WKC 不由 SIM 声称。
+- **C3/A7**：`e2e_run_archive.py create|verify` 生成 `runs/<run_id>/`（run.json/README/
+  sha256sums，含 commit/binary/manifest sha 与逐文件 sha256）；本轮 c4/reset/jitter 均归档并 verify。
+- **A3**：新增 `docs/cnc-e2e/REF.schema.json` + `REF.example.json`，`ref_state` 七字段映射到
+  `cnc-station` demo-state；`REF.json` 仍 **PENDING**（等 cnc-impl 实测值，届时只填 `cnc.values`、
+  `status=CAPTURED`）。
+- **A4**：`e2e_reset_probe.py`/`cnc-e2e-reset-idempotency.sh`：3 轮启动→3/3 OP 用时
+  **43/42/42 ms**（上限 30 s）、停止后无进程/socket/端口残留、3 次 REF 6 字段一致；
+  修复 ec-sim 退出未 unlink UDS socket（stack-down 显式清理后再断言）。
+- EC-Sim 验证机（未碰 CNC VM）：C4 PASS、reset PASS、jitter PASS、
+  B-1 整轮 **32 PASS / 0 FAIL / 0 SKIP（共 32）**；二进制 sha256
+  `66587fa0…f30c1f`（1,157,928 B）、manifest `5f96adc1…45e9`；
+  本机 `cargo test --workspace` **271 passed**，fmt/clippy 0。
+- 文档：`docs/CNC-E2E-OBSERVABILITY.md` §4/§7、`docs/CNC-E2E-PROFILE.md` §9、
+  `docs/CONTROL-PLANE.md` §10.3、`docs/STATUS.md`、`docs/VERIFICATION.md`；
+  证据 [缺口补齐记录](docs/verification/2026-11-15-cnc-e2e-gap-closure.md) 与
+  `docs/verification/assets/cnc-e2e/{c4-matrix,reset-idempotency,jitter,runs,b1-32.log}`。
+- 边界：C4 是 SIM 等价路径，不是 CNC HMI/桥/LinuxCNC 操作证据；CNC 侧 D1–D3、HMI
+  STALE/LOST 联动仍 PENDING（G1 判定后窗口）；8 IO/DC/AL 运行期注入仍 P1；不宣称认证。

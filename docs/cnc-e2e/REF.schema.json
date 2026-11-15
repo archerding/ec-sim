@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ec-sim.local/schemas/cnc-e2e-ref-v1.json",
+  "title": "EC-Sim CNC E2E REF snapshot (A3)",
+  "description": "固定场景 REF-CNC-E2E-3CSP 的机读 REF 快照。字段与 cnc-impl 的 demo-state.json 对齐；CNC 侧实际值未定稿前 cnc.status=PENDING，不得据此判 PASS。",
+  "type": "object",
+  "required": ["schema", "run_id", "captured_at", "side", "profile", "topology", "ref_state", "sim", "field_map"],
+  "properties": {
+    "schema": { "const": "ec-sim/cnc-e2e-ref-v1" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "captured_at": { "type": "string", "format": "date-time" },
+    "side": { "enum": ["sim", "cnc", "both"] },
+    "profile": { "const": "REF-CNC-E2E-3CSP" },
+    "topology": {
+      "type": "object",
+      "required": ["master_count", "slaves"],
+      "properties": {
+        "master_count": { "type": "integer", "minimum": 1 },
+        "slaves": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "type": "object",
+            "required": ["index", "alias", "position", "vid", "pid", "al_state", "pdo"],
+            "properties": {
+              "index": { "type": "integer", "minimum": 0 },
+              "alias": { "type": "integer", "minimum": 0 },
+              "position": { "type": "integer", "minimum": 0 },
+              "vid": { "type": "string", "pattern": "^0x[0-9a-fA-F]{8}$" },
+              "pid": { "type": "string", "pattern": "^0x[0-9a-fA-F]{8}$" },
+              "al_state": { "type": "string", "pattern": "^0x[0-9a-fA-F]{2}$" },
+              "pdo": {
+                "type": "object",
+                "required": ["rx_bytes", "tx_bytes"],
+                "properties": {
+                  "rx_bytes": { "const": 7 },
+                  "tx_bytes": { "const": 11 }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ref_state": {
+      "type": "object",
+      "required": ["program", "dro", "tool", "wcs", "overrides", "machine", "estop"],
+      "properties": {
+        "program": { "enum": ["none", "loaded", "running"] },
+        "dro": { "type": "string", "pattern": "^-?[0-9]+\\.[0-9]{3}$" },
+        "tool": { "type": "string" },
+        "wcs": { "type": "string", "pattern": "^G5[4-9](\\.[1-3])?$" },
+        "overrides": { "type": "integer", "minimum": 0, "maximum": 200 },
+        "machine": { "enum": ["ON", "OFF"] },
+        "estop": { "type": "boolean" }
+      }
+    },
+    "sim": {
+      "type": "object",
+      "required": ["op_slaves", "al_code", "pdo", "frames_in"],
+      "properties": {
+        "op_slaves": { "type": "integer", "minimum": 0 },
+        "al_code": { "type": "string", "pattern": "^0x[0-9a-fA-F]{4}$" },
+        "pdo": {
+          "type": "object",
+          "required": ["tx", "rx"],
+          "properties": {
+            "tx": { "const": 7 },
+            "rx": { "const": 11 }
+          }
+        },
+        "frames_in": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "cnc": {
+      "type": "object",
+      "description": "CNC 侧 demo-state 实测值；未定稿时 status=PENDING 且 values 可空。",
+      "properties": {
+        "demo_state_file": { "type": "string" },
+        "status": { "enum": ["PENDING", "CAPTURED"] },
+        "values": { "type": "object" }
+      }
+    },
+    "field_map": {
+      "type": "object",
+      "description": "REF 字段 → 来源路径（SIM endpoint / CNC demo-state key）。",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

@@ -104,8 +104,14 @@ python3 scripts/spikes/e2e_observability_collect.py \
 | --- | --- | --- |
 | 栈启动/3×CSP OP | `/state.master.op_slaves`、`slaves[].op`、`al_code` | `3/3`、`al_code=0x0000` |
 | PDO 布局/方向 | `master.pdo.tx/rx`；`/pdo`（逐站原始字节，P1） | `7/11`；lcec HAL 侧另验 |
-| 程序/循环/暂停 | 无直接信号（HMI/桥/LinuxCNC 侧） | SIM 仅给 run_id 关联 |
-| AL 单站故障（P1） | `fault_injected` + `slaves[i].al_code` + `op=false` | 注入码、恢复后 `0x0000` |
+| program（程序/轨迹） | TxPDO `position` 逐点跟随 [100,200,300,400,500]；`statusword` Target reached(bit10) | 每点到位、位 10 置位（`c4-matrix/program`） |
+| jog（增量点动） | `position` +100×5 | 每次增量 100（`c4-matrix/jog`） |
+| MDI（单条绝对移动） | `position` → 5000，Target reached | 到位 + bit10（`c4-matrix/mdi`） |
+| home（回零） | CiA402 HM：mode 6 + 控制字 bit4 → `position=0`、`statusword` Homing attained(bit12)、mode=6 | 归零 + bit12（`c4-matrix/home`；SIM Tier0 不模拟寻零开关/轨迹） |
+| override（进给倍率） | 目标增量速率 100% vs 50%：+200×10 vs +100×10 | 增量 2000/1000、比率 0.4–0.6（`c4-matrix/override`） |
+| tool（参数装载） | SDO 写/读 `0x60FF=750`、`/sdo-audit` 200 | 写成功、读回 750、审计可关联（`c4-matrix/tool`） |
+| offset（坐标偏置） | 目标 1000→3500(+2500)→3000(-500)，`position` 同步平移 | 位置随目标同步（`c4-matrix/offset`） |
+| AL 单站故障（P1） | `fault_injected` + `slaves[i].al_code` + `state` error bit | 注入码、恢复后 `0x0000` |
 | link_loss / TAP down/up | `fault_injected`/`link` down/up、`/state` 帧计数停滞；TAP 层由 `ip link` 验证 | 事件成对、恢复；down 期间 `/state` 仍 200 |
 | slave_drop / 重连 | `fault_injected`、目标站 `frames_dropped` 增长、其他站继续收帧、到期 `fault_cleared` | 帧计数与事件同时成立 |
 | sdo_reject | 目标站 SDO Upload/Download 返回 Abort `0x06010000`，到期恢复；`sdo-audit` 可关联 | 正常 `0x43` → abort → 恢复 `0x43` |
@@ -115,6 +121,11 @@ python3 scripts/spikes/e2e_observability_collect.py \
 | watchdog | `sm_watchdog_triggers_total`、`watchdog` 事件、`al_code=0x001B` | 触发/ACK |
 | STALE/LOST | 无直接信号（桥/GUI 侧）；`/metrics` 帧率可辅助 | HMI 证据 |
 | 探针 tripped | `/probe`、`probe_state` 事件 | 置位/清除成对 |
+
+覆盖说明：`c4_matrix_probe.py` 的 10 类为 **SIM 可观测等价路径**（合成主站 + PDO/状态 + SDO/事件），
+可执行证据在 `docs/verification/assets/cnc-e2e/c4-matrix/<class>/`，汇总在
+`c4-matrix-summary.json`；CNC 侧 HMI/桥的真实操作证据仍由 CNC E2E harness 提供（PENDING）。
+`c4-matrix` 已注册 B-1（`scripts/spikes/cnc-e2e-c4-matrix.sh`），在本轮 EC-Sim 验证机上 10/10 通过。
 
 ## 5. 与 C5 24h 的关系
 
@@ -134,3 +145,67 @@ C5 的硬判据仍是 `ethercat slaves` 全 OP + 采样；SIM 的 `/state`、`/m
 - `ack_latency_ms` 当前 `null`；`fps` 依赖主站帧，合成主站空闲时可能为 0。
 - 8 IO 混合拓扑 P1/NOT-JUDGED（`--slaves` 复制同一 manifest）。
 - 不宣称 EtherCAT 一致性/CTT/LinuxCNC 认证。
+
+## 7. 缺口补齐（2026-11-15，lead m04142）
+
+### 7.1 C1 抖动来源与量化
+
+来源分三层，均由 SIM 侧可观测面测量：
+
+1. **主站发送间隔**（合成 UDS master）：Python 睡眠粒度 + 主机调度 + socket 唤醒；
+2. **采样/遥测**：`GET /state` 往返（serve 线程调度 + JSON 序列化）；
+3. **帧率**：`/state.master.fps` 是 serve 线程两次调用间的粗估（可能瞬时为 0 或跳变，
+   不作为抖动依据）；本探针另给 `frame_rate`（窗口内 `frames_in` 增量/墙钟，逐站/总数）。
+
+测量（EC-Sim 验证机，`c1_jitter_probe.py`，300 周期，目标 20ms）：
+
+| 指标 | mean | std | p95 | p99 | max |
+| --- | --- | --- | --- | --- | --- |
+| master 发送间隔（ms） | 20.424 | 0.149 | 20.636 | 20.714 | 21.052 |
+| `GET /state` 延迟（ms） | 0.546 | 0.082 | 0.696 | 0.709 | 0.803 |
+
+帧率：900 帧/6.13s = 146.88 fps（3 站合计）= **48.96 fps/站**；WKC 恒 3（3 站）。
+WKC 来源：SIM 帧回复（每帧 3 站）；**内核/IgH 侧 WKC 不由 SIM 提供或声称**。
+证据：`docs/verification/assets/cnc-e2e/jitter/jitter.json`。
+
+### 7.2 C3/A7 按 run 归档
+
+`scripts/spikes/e2e_run_archive.py`：
+
+- `create --out-root <root> --run-id <id> --meta k=v --artifact <path>...` →
+  `<root>/runs/<run_id>/`，含 `run.json`（schema `ec-sim/e2e-run-v1`、result/command/
+  commit/binary_sha256/manifest_sha256/meta/files[{file,bytes,sha256}]）、`README.md`、
+  `sha256sums.txt`；
+- `verify --dir <root>/runs/<id>` 重算全部 sha256 并检查未登记/缺文件；退出码 0/1。
+
+本轮 `c4-matrix`、`reset-idempotency`、`jitter` 均自动归档并 `verify` 通过；
+`run_id` 与 `/state`、`/events`、`/fault` 审计同值（harness 传入为权威）。
+
+### 7.3 C4 10 类矩阵
+
+`scripts/spikes/c4_matrix_probe.py` + `cnc-e2e-c4-matrix.sh`：program/jog/MDI/home/
+override/tool/offset/probe/alarm/link-loss 各写
+`<class>/{stimulus,samples,state-before,state-after,events.jsonl,result.json}`，
+汇总 `c4-matrix-summary.json`；本轮 **10/10 通过**（见 §4 各行证据路径）。
+
+### 7.4 A3 REF schema 与字段映射
+
+`docs/cnc-e2e/REF.schema.json`（`ec-sim/cnc-e2e-ref-v1`）+ `REF.example.json`：
+SIM 侧字段已在 schema 固化；CNC 侧 `ref_state` 与 `cnc-station` 的
+`docs/product/assets/cnc-hmi-g1/demo-state.json` 字段映射（program/dro/tool/wcs/
+overrides/machine/estop）已写入 `field_map`。`REF.json` 仍 **PENDING**（等 cnc-impl
+实测值；届时替换 `cnc.values`、`status=CAPTURED`，schema 不变）。
+
+### 7.5 A4 reset 幂等
+
+`cnc-e2e-reset-idempotency.sh` + `e2e_reset_probe.py`：3 次独立启动→3/3 OP→停止，
+reset/teardown 结果：
+
+| 轮次 | 到 REF 用时 | 停止后残留 | REF 字段 |
+| --- | --- | --- | --- |
+| 1 | 43 ms | 无进程/socket/端口 | 一致 |
+| 2 | 42 ms | 无 | 一致 |
+| 3 | 42 ms | 无 | 一致 |
+
+3 次均 ≤30s 上限；`ref-compare.json` 显示 6 个 REF 字段级一致（`equal=true`）。
+证据：`docs/verification/assets/cnc-e2e/reset-idempotency/`。

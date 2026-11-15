@@ -1,0 +1,5 @@
+{
+  "equivalence": "刀具/工艺参数装载走 SDO 参数面：写 0x60FF=750 再读回",
+  "index": "0x60FF",
+  "value": 750
+}

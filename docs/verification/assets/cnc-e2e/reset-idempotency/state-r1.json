@@ -1,0 +1,41 @@
+{
+  "elapsed_ms": 43,
+  "ok": true,
+  "ref": {
+    "al_state": "0x08",
+    "op_slaves": 3,
+    "pdo": {
+      "miss": 0,
+      "rx": 11,
+      "tx": 7,
+      "wkc_errors": 0
+    },
+    "slave_count": 3,
+    "slaves": [
+      {
+        "al_code": "0x0000",
+        "index": 0,
+        "op": true,
+        "state": "0x08",
+        "station_address": "0x0000"
+      },
+      {
+        "al_code": "0x0000",
+        "index": 1,
+        "op": true,
+        "state": "0x08",
+        "station_address": "0x0000"
+      },
+      {
+        "al_code": "0x0000",
+        "index": 2,
+        "op": true,
+        "state": "0x08",
+        "station_address": "0x0000"
+      }
+    ],
+    "watchdog_trips": 0
+  },
+  "run_id": "reset-idem-20261115081720-r1",
+  "schema": "ec-sim/e2e-reset-v1"
+}

@@ -1,0 +1,83 @@
+{
+  "schema": "ec-sim/cnc-e2e-ref-v1",
+  "run_id": "fixed-scene-example-0001",
+  "captured_at": "2026-11-15T00:00:00+08:00",
+  "side": "both",
+  "profile": "REF-CNC-E2E-3CSP",
+  "topology": {
+    "master_count": 1,
+    "slaves": [
+      {
+        "index": 0,
+        "alias": 0,
+        "position": 0,
+        "vid": "0x00000ec5",
+        "pid": "0x0000e5e3",
+        "al_state": "0x08",
+        "pdo": { "rx_bytes": 7, "tx_bytes": 11 }
+      },
+      {
+        "index": 1,
+        "alias": 0,
+        "position": 0,
+        "vid": "0x00000ec5",
+        "pid": "0x0000e5e3",
+        "al_state": "0x08",
+        "pdo": { "rx_bytes": 7, "tx_bytes": 11 }
+      },
+      {
+        "index": 2,
+        "alias": 0,
+        "position": 0,
+        "vid": "0x00000ec5",
+        "pid": "0x0000e5e3",
+        "al_state": "0x08",
+        "pdo": { "rx_bytes": 7, "tx_bytes": 11 }
+      }
+    ]
+  },
+  "ref_state": {
+    "program": "none",
+    "dro": "0.000",
+    "tool": "none",
+    "wcs": "G54",
+    "overrides": 100,
+    "machine": "ON",
+    "estop": false
+  },
+  "sim": {
+    "op_slaves": 3,
+    "al_code": "0x0000",
+    "pdo": { "tx": 7, "rx": 11 },
+    "frames_in": 975
+  },
+  "cnc": {
+    "demo_state_file": "cnc-station:docs/product/assets/cnc-hmi-g1/demo-state.json",
+    "status": "PENDING",
+    "values": {
+      "ref_state.program": "none",
+      "ref_state.dro": "0.000",
+      "ref_state.tool": "none",
+      "ref_state.wcs": "G54",
+      "ref_state.overrides": 100,
+      "ref_state.machine": "ON",
+      "ref_state.estop": false
+    }
+  },
+  "field_map": {
+    "run_id": "控制面 --run-id / /state.run_id（四处同值；C3 以 harness 为权威）",
+    "topology.slaves[].al_state": "SIM /state.slaves[].state（0x08=OP）",
+    "topology.slaves[].vid/pid": "SIM /topology 或 manifest（0x00000EC5/0x0000E5E3）",
+    "sim.op_slaves": "SIM /state.master.op_slaves",
+    "sim.al_code": "SIM /state.slaves[].al_code（全 0 为 REF）",
+    "sim.pdo.tx/rx": "SIM /state.master.pdo.tx/rx（7/11）",
+    "sim.frames_in": "SIM /state.slaves[].frames_in（仅连续性参考，不作 REF 相等字段）",
+    "ref_state.program": "CNC demo-state.ref_state.program（PENDING 实测；LinuxCNC 状态）",
+    "ref_state.dro": "CNC demo-state.ref_state.dro（PENDING 实测）",
+    "ref_state.tool": "CNC demo-state.ref_state.tool（PENDING 实测）",
+    "ref_state.wcs": "CNC demo-state.ref_state.wcs（PENDING 实测）",
+    "ref_state.overrides": "CNC demo-state.ref_state.overrides（PENDING 实测）",
+    "ref_state.machine": "CNC demo-state.ref_state.machine（PENDING 实测）",
+    "ref_state.estop": "CNC demo-state.ref_state.estop（PENDING 实测）"
+  }
+}

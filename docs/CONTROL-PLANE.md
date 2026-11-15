@@ -341,3 +341,12 @@ TAP 层 down/up 不是 `/fault` 类型，由验证脚本 `ip link set <tap> down
   `frames_in` 停止、控制面 `/state` 仍 200、主站存活；TAP up 后第二个主站重新
   `all slaves are now operational`、3/3 OP、帧恢复。证据
   [verification/2026-11-15-cnc-e2e-fault-matrix.md](verification/2026-11-15-cnc-e2e-fault-matrix.md)。
+- `scripts/spikes/cnc-e2e-c4-matrix.sh`（Linux/UDS，C4）：10 类 SIM 可观测等价路径
+  （program/jog/MDI/home/override/tool/offset/probe/alarm/link-loss），每类
+  `stimulus/samples/state-before/state-after/events/result`，并按 `runs/<run_id>/`
+  归档；证据 [verification/2026-11-15-cnc-e2e-gap-closure.md](verification/2026-11-15-cnc-e2e-gap-closure.md)。
+- `scripts/spikes/cnc-e2e-reset-idempotency.sh`（Linux/UDS，A4）：3 次启动→3/3 OP，
+  每次 ≤30s、停止后无进程/socket/端口残留、3 次 REF 字段级一致。
+- `scripts/spikes/cnc-e2e-jitter-probe.sh`（Linux/UDS，C1）：主站发送间隔、
+  `/state` 往返延迟、窗口帧率与 WKC 量化；WKC 仅 SIM 帧回复，不代表内核/IgH WKC。
+- 归档/校验：`python3 scripts/spikes/e2e_run_archive.py create|verify`（C3/A7）。

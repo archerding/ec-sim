@@ -1,0 +1,44 @@
+[00:14:14] round 1/3：启动 reset-idem-20261115081414-r1
+RESET_OK elapsed_ms=44 run_id=reset-idem-20261115081414-r1 op_slaves=3 al_state=0x08
+[00:14:14] round 1：reset 到 REF 用时 44ms（上限 30000ms）
+[00:14:14] round 1：停止后无残留（进程/socket/端口）
+[00:14:14] round 2/3：启动 reset-idem-20261115081414-r2
+RESET_OK elapsed_ms=41 run_id=reset-idem-20261115081414-r2 op_slaves=3 al_state=0x08
+[00:14:15] round 2：reset 到 REF 用时 41ms（上限 30000ms）
+[00:14:15] round 2：停止后无残留（进程/socket/端口）
+[00:14:15] round 3/3：启动 reset-idem-20261115081414-r3
+RESET_OK elapsed_ms=42 run_id=reset-idem-20261115081414-r3 op_slaves=3 al_state=0x08
+[00:14:16] round 3：reset 到 REF 用时 42ms（上限 30000ms）
+[00:14:16] round 3：停止后无残留（进程/socket/端口）
+REF_EQUAL runs=3 fields=6
+[00:14:16] 3 次运行 REF 字段级一致
+[00:14:31] round 1/3：启动 reset-idem-20261115081431-r1
+RESET_OK elapsed_ms=43 run_id=reset-idem-20261115081431-r1 op_slaves=3 al_state=0x08
+[00:14:32] round 1：reset 到 REF 用时 43ms（上限 30000ms）
+[00:14:32] round 1：停止后无残留（进程/socket/端口）
+[00:14:32] round 2/3：启动 reset-idem-20261115081431-r2
+RESET_OK elapsed_ms=44 run_id=reset-idem-20261115081431-r2 op_slaves=3 al_state=0x08
+[00:14:33] round 2：reset 到 REF 用时 44ms（上限 30000ms）
+[00:14:33] round 2：停止后无残留（进程/socket/端口）
+[00:14:33] round 3/3：启动 reset-idem-20261115081431-r3
+RESET_OK elapsed_ms=42 run_id=reset-idem-20261115081431-r3 op_slaves=3 al_state=0x08
+[00:14:33] round 3：reset 到 REF 用时 42ms（上限 30000ms）
+[00:14:33] round 3：停止后无残留（进程/socket/端口）
+REF_EQUAL runs=3 fields=6
+[00:14:33] 3 次运行 REF 字段级一致
+[00:14:33] reset 幂等通过：3 轮均 ≤30000ms、回 REF、无残留
+[00:17:20] round 1/3：启动 reset-idem-20261115081720-r1
+RESET_OK elapsed_ms=43 run_id=reset-idem-20261115081720-r1 op_slaves=3 al_state=0x08
+[00:17:21] round 1：reset 到 REF 用时 43ms（上限 30000ms）
+[00:17:21] round 1：停止后无残留（进程/socket/端口）
+[00:17:21] round 2/3：启动 reset-idem-20261115081720-r2
+RESET_OK elapsed_ms=42 run_id=reset-idem-20261115081720-r2 op_slaves=3 al_state=0x08
+[00:17:22] round 2：reset 到 REF 用时 42ms（上限 30000ms）
+[00:17:22] round 2：停止后无残留（进程/socket/端口）
+[00:17:22] round 3/3：启动 reset-idem-20261115081720-r3
+RESET_OK elapsed_ms=42 run_id=reset-idem-20261115081720-r3 op_slaves=3 al_state=0x08
+[00:17:22] round 3：reset 到 REF 用时 42ms（上限 30000ms）
+[00:17:22] round 3：停止后无残留（进程/socket/端口）
+REF_EQUAL runs=3 fields=6
+[00:17:22] 3 次运行 REF 字段级一致
+[00:17:22] reset 幂等通过：3 轮均 ≤30000ms、回 REF、无残留

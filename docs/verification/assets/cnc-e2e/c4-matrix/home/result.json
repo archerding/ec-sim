@@ -1,0 +1,15 @@
+{
+  "class": "home",
+  "run_id": "c4-matrix-20261115081713",
+  "ok": true,
+  "assertions": [
+    {
+      "name": "回零：位置 0 + Homing attained(bit12)",
+      "ok": true,
+      "detail": "{'statusword': 4663, 'position': 0, 'velocity': 0, 'mode': 6, 'tx_hex': '3712000000000000000006', 't_ms': 1794701834759}"
+    }
+  ],
+  "notes": [
+    "Tier0 不模拟寻零开关/过程；CNC 侧 HOME ALL 证据 PENDING"
+  ]
+}

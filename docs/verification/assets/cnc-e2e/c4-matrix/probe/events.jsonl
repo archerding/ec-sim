@@ -1,0 +1,2 @@
+{"seq": 19, "ts": 1794701837530, "run_id": "c4-matrix-20261115081713", "type": "probe_state", "slave": 0, "details": {"target": 0, "tripped": true, "confirm": true, "who": "http"}}
+{"seq": 20, "ts": 1794701837531, "run_id": "c4-matrix-20261115081713", "type": "probe_state", "slave": 0, "details": {"target": 0, "tripped": false, "confirm": true, "who": "http"}}

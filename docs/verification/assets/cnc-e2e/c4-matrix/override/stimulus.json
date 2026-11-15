@@ -1,0 +1,6 @@
+{
+  "equivalence": "轨迹目标增量速率 100% vs 50%（feed override 等效）",
+  "full_step": 200,
+  "half_step": 100,
+  "period_ms": 100
+}

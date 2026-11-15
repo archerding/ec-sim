@@ -1,0 +1,5 @@
+{
+  "equivalence": "CiA402 HM 模式 6，控制字 bit4=1（Tier0 归零）",
+  "mode": 6,
+  "controlword": "0x000F"
+}

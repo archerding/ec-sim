@@ -1,0 +1,12 @@
+[00:10:09] 启动 ec-sim-esc --uds（3×cnc-csp-servo，run_id=c4-matrix-20261115081009）
+[00:10:09] 控制面就绪；开始 C4 10 类矩阵
+[00:10:17] 归档 runs/c4-matrix-20261115081009（binary=66587fa0094a94190eb82fb7ec42bd7377a3a0ab61369fc191c1ce7ba2f30c1f manifest=5f96adc131c19f1448b29f8cd30577e20a12e72ed7fd8ae4ffd2d80f3dcd45e9）
+[00:10:17] 归档完成；校验 sha256
+RESULT: PASS（66 个文件校验通过）
+[00:10:17] C4 10 类覆盖通过；证据：/root/ecsim-gap/docs/verification/assets/cnc-e2e/c4-matrix 与 /root/ecsim-gap/docs/verification/assets/cnc-e2e/runs/c4-matrix-20261115081009
+[00:17:13] 启动 ec-sim-esc --uds（3×cnc-csp-servo，run_id=c4-matrix-20261115081713）
+[00:17:13] 控制面就绪；开始 C4 10 类矩阵
+[00:17:20] 归档 runs/c4-matrix-20261115081713（binary=66587fa0094a94190eb82fb7ec42bd7377a3a0ab61369fc191c1ce7ba2f30c1f manifest=5f96adc131c19f1448b29f8cd30577e20a12e72ed7fd8ae4ffd2d80f3dcd45e9）
+[00:17:20] 归档完成；校验 sha256
+RESULT: PASS（66 个文件校验通过）
+[00:17:20] C4 10 类覆盖通过；证据：/root/ecsim-gap/docs/verification/assets/cnc-e2e/c4-matrix 与 /root/ecsim-gap/docs/verification/assets/cnc-e2e/runs/c4-matrix-20261115081713

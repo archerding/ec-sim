@@ -1,0 +1,30 @@
+{
+  "class": "probe",
+  "run_id": "c4-matrix-20261115081713",
+  "ok": true,
+  "assertions": [
+    {
+      "name": "probe 置位 200",
+      "ok": true,
+      "detail": "200"
+    },
+    {
+      "name": "/probe 读回 tripped=true",
+      "ok": true,
+      "detail": "True"
+    },
+    {
+      "name": "probe 清除 200",
+      "ok": true,
+      "detail": "200"
+    },
+    {
+      "name": "probe_state 事件成对",
+      "ok": true,
+      "detail": "events=2"
+    }
+  ],
+  "notes": [
+    "CNC 侧 touch plate/probe 流程证据 PENDING；SIM 侧只覆盖 tripped 信号与事件"
+  ]
+}

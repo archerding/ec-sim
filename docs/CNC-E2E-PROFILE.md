@@ -26,7 +26,11 @@ PDO 逐字节布局见 [plan/CNC-V1-integration.md](../plan/CNC-V1-integration.m
 ## 2. REF 状态（SIM 侧可断言部分）
 
 CNC 侧 REF（demo-state）由 `cnc-impl` 的用例清单定稿后落到 `REF.json`（本目录，当前 **PENDING**，
-不得用本文件替代）。SIM 侧 REF 断言：
+不得用本文件替代）。机读契约：[REF.schema.json](cnc-e2e/REF.schema.json) +
+[REF.example.json](cnc-e2e/REF.example.json)。字段映射已与 cnc-impl 的
+`docs/product/assets/cnc-hmi-g1/demo-state.json` 对齐（`ref_state.program/dro/tool/wcs/
+overrides/machine/estop`），CNC 实测值到位后只需替换 `cnc.values` 并把 `cnc.status`
+改 `CAPTURED`，SIM 字段无需改 schema。SIM 侧 REF 断言：
 
 | 断言 | 位置 | 期望 |
 | --- | --- | --- |
@@ -155,3 +159,27 @@ bash scripts/spikes/cnc-e2e-tap-fault.sh --tap ecsimfault0
 边界：上述结果来自 EC-Sim 验证机（UDS/TAP 自证），不代表 CNC VM 上 lcec/HMI 的
 STALE/LOST 行为；CNC 侧联调仍待 G1 判定后的窗口。故障到期清理由数据面帧推进：
 无帧流量时 `tick` 不前进，`/fault/status` 可能 `remaining_ms=0` 但仍 active。
+
+## 9. 缺口补齐（A3/A4/A7，2026-11-15）
+
+| 项 | 状态 | 产物 / 证据 |
+| --- | --- | --- |
+| A3 REF schema + demo-state 字段映射 | ✅ schema/映射就绪；`REF.json` **PENDING**（等 cnc-impl 实测值） | `docs/cnc-e2e/REF.schema.json`、`REF.example.json`、本文 §2 |
+| A4 reset/stack-down 幂等 ≤30s、3/3、无残留 | ✅ 3 轮 43/42/42 ms，回 REF，停止后无进程/socket/端口残留 | `scripts/spikes/cnc-e2e-reset-idempotency.sh`、`docs/verification/assets/cnc-e2e/reset-idempotency/` |
+| A7 证据结构 `runs/<run_id>/` + README + sha256 | ✅ 归档/校验工具落地；本轮 c4/reset/jitter 均归档并 verify 通过 | `scripts/spikes/e2e_run_archive.py`、`docs/verification/assets/cnc-e2e/runs/` |
+
+命令：
+
+```bash
+# A4：3 次独立启动→3/3 OP→停止，REF 字段级一致（端口 18137）
+EC_SIM_BIN=target/release/ec-sim-esc \
+  bash scripts/spikes/cnc-e2e-reset-idempotency.sh
+# 归档校验（任意一次 run）
+python3 scripts/spikes/e2e_run_archive.py verify \
+  --dir docs/verification/assets/cnc-e2e/runs/<run_id>
+```
+
+A4 口径：reset 用时 = 进程启动（`--start-ms`）到 `/state` 首次 3/3 OP 且逐站
+`al_code=0x0000`、PDO 7/11；stack-down 后由脚本清理运行期 UDS socket 并断言
+无 `ec-sim-esc` 进程、socket 与端口残留。CNC 侧 stack-down（IgH/lcec/LinuxCNC）
+不在此脚本内。

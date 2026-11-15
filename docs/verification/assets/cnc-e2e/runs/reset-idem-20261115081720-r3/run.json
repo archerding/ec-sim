@@ -1,0 +1,26 @@
+{
+  "schema": "ec-sim/e2e-run-v1",
+  "run_id": "reset-idem-20261115081720-r3",
+  "created_at": "2026-11-15T08:17:22+08:00",
+  "result": "RESET_OK",
+  "command": "cnc-e2e-reset-idempotency.sh round 3 (3x cnc-csp-servo, UDS, port 18137)",
+  "commit": "",
+  "binary_sha256": "",
+  "manifest_sha256": "",
+  "meta": {
+    "elapsed_ms": "42",
+    "limit_ms": "30000"
+  },
+  "files": [
+    {
+      "file": "state-r3.json",
+      "bytes": 775,
+      "sha256": "b991e686686912998bed188eab15cb9d27c57136cb348277449e2f5316f63064"
+    },
+    {
+      "file": "server-r3.log",
+      "bytes": 1266,
+      "sha256": "98b98c0c393c3fb901b9265c7007a7703ba649abee8c7de5856cc01ad6ce3f9e"
+    }
+  ]
+}

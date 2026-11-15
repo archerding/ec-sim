@@ -1,0 +1,26 @@
+[
+  {
+    "statusword": 1591,
+    "position": 1000,
+    "velocity": 0,
+    "mode": 8,
+    "tx_hex": "3706e80300000000000008",
+    "t_ms": 1794701837227
+  },
+  {
+    "statusword": 1591,
+    "position": 3500,
+    "velocity": 0,
+    "mode": 8,
+    "tx_hex": "3706ac0d00000000000008",
+    "t_ms": 1794701837377
+  },
+  {
+    "statusword": 1591,
+    "position": 3000,
+    "velocity": 0,
+    "mode": 8,
+    "tx_hex": "3706b80b00000000000008",
+    "t_ms": 1794701837528
+  }
+]

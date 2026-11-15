@@ -1,0 +1,35 @@
+{
+  "class": "link-loss",
+  "run_id": "c4-matrix-20261115081713",
+  "ok": true,
+  "assertions": [
+    {
+      "name": "注入 200",
+      "ok": true,
+      "detail": "200"
+    },
+    {
+      "name": "期间 frames 停更",
+      "ok": true,
+      "detail": "{0: 290, 1: 290, 2: 290} -> {0: 290, 1: 290, 2: 290}"
+    },
+    {
+      "name": "到期清理",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "恢复后 frames 增长",
+      "ok": true,
+      "detail": "{0: 290, 1: 290, 2: 290} -> {0: 307, 1: 307, 2: 307}"
+    },
+    {
+      "name": "link down/up 事件",
+      "ok": true,
+      "detail": "events=2"
+    }
+  ],
+  "notes": [
+    "CNC 侧 STALE/LOST 证据 PENDING；SIM 侧覆盖帧停更/恢复与 link 事件"
+  ]
+}

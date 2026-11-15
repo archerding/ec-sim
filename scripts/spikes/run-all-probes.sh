@@ -70,6 +70,9 @@ cnc-e2e-fixed-scene|linux|cnc-e2e-fixed-scene.sh|no
 fault-matrix|linux|cnc-e2e-fault-matrix.sh|no
 tap-fault|root|cnc-e2e-tap-fault.sh|no
 proc-fault|linux|cnc-e2e-process-fault.sh|no
+c4-matrix|linux|cnc-e2e-c4-matrix.sh|no
+reset-idempotency|linux|cnc-e2e-reset-idempotency.sh|no
+jitter|linux|cnc-e2e-jitter-probe.sh|no
 "
 
 skip_reason() {
