@@ -17,6 +17,12 @@ __pycache__/
 *.log
 # 验证证据里的日志必须入库（只保留 CNC E2E 证据目录下的）
 !docs/verification/assets/cnc-e2e/**/*.log
+# HMI go-b 证据日志（文档 §4 已声称归档，2026-11-16 补入；逐文件例外，避免误放 45MB master.log）
+!docs/verification/assets/hmi-go-b/c4-4h-v2/master-op-lines.log
+!docs/verification/assets/hmi-go-b/c4-4h-v2/sim.log
+!docs/verification/assets/hmi-go-b/c4-4h-v2/unit.log
+!docs/verification/assets/hmi-go-b/c4-4h/sse.log
+!docs/verification/assets/hmi-go-b/c4-master-attempts/c4v3-sim.log
 *.pcap
 *.pcapng
 *.trace

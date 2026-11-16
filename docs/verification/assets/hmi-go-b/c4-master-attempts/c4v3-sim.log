@@ -1,0 +1,3 @@
+MANIFEST id=com.ecsim.profile.cnc-csp-servo name=CNC virtual-loop CSP servo (SIMULATED) vendor=0x00000EC5 product=0x0000E5E3
+READY tap=escsim0 mac=42:42:32:79:76:34
+SERVE (live) http://0.0.0.0:18210 routes=/state,/dict

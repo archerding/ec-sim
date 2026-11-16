@@ -24,6 +24,8 @@ attempt3 参数：`START.txt` 记 `PID=50004 START=2026-11-14T08:35:48+08:00 ETA
 
 证据归档：`docs/verification/assets/hmi-go-b/c4-browser-4h/attempt3/`（`browser.jsonl` 7,863 B、`START.txt`、`sampler.out` 6,510 B、`sampler.err` 0 B）。
 
+⚠️ **attempt1/2 原始数据已丢失**（2026-11-16 本地清理误删，见 §6）；本节的行数与失败表现描述保留，但原始 JSONL 不再可查。
+
 ## 3. 失败分析（未定论）
 
 - attempt2 为 CDP 解析异常；attempt3 为**静默退出**，无 stderr、无异常栈，页面侧 `crashed=false` / `sse_errors=0`。
@@ -42,3 +44,13 @@ attempt3 参数：`START.txt` 记 `PID=50004 START=2026-11-14T08:35:48+08:00 ETA
 - EC-Sim 验证机：已终止旧 `ec-sim-esc --tap escsim0 --slaves 8 --serve 0.0.0.0:18210`（PID 91518/91519）与 `hmi-c4-master-loop.sh`；`ip link del escsim0` 后确认 `TAP_GONE`。
 - `vm-ecsim.lock` 由 Lead 释放（原 owner sim-impl，task-78）。
 - EC-Sim HMI 设计线按用户指令暂停（task-89 HOLD），本证据不改变该状态。
+
+## 6. 更正（2026-11-16）：本地清理误删 attempt1/2 原始数据
+
+- 换机前本地清理时，`.local/c4browser/`（attempt1，5 行）与 `.local/c4browser2/`（attempt2，161 行）的
+  `browser.jsonl` 及 sampler 输出被误判为“重复取证数据”删除；两份**从未入库**，无法从 git 恢复。
+- 仍然保留：本文件 §2 的行数/时间/失败表现、attempt3 全量归档（`c4-browser-4h/attempt3/`，33 行）、
+  另一窗口的 `c4-4h-v2/browser.jsonl`（5 行，与 attempt1/2 无关）。§4 第 4 条“不删除 attempt1–3 证据”
+  自本条起对 attempt1/2 已不成立，后续重跑须重新生成原始数据。
+- 影响评估：attempt1/2 本就是未收满 4h 的失败尝试，未被任何 PASS 结论引用（§1 三项均非 PASS），
+  故既有判定不变；本条仅记录原始数据缺失这一事实。
